@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{54FF8BD6-1631-4C09-9481-2184DC42AA4E}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>TrafficView</RootNamespace>
+    <AssemblyName>TrafficView</AssemblyName>
+    <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <StartupObject>TrafficView.Program</StartupObject>
+    <ApplicationManifest>TrafficView.manifest</ApplicationManifest>
+    <ApplicationIcon>TrafficView.ico</ApplicationIcon>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="src\Program.cs" />
+    <Compile Include="src\AppLog.cs" />
+    <Compile Include="src\DpiHelper.cs" />
+    <Compile Include="src\UiLanguage.cs" />
+    <Compile Include="src\MonitorSettings.cs" />
+    <None Include="TrafficView.exe.config" />
+    <None Include="TrafficView.languages.ini" />
+    <None Include="TrafficView.manifest" />
+    <Content Include="TrafficView.ico" />
+    <Content Include="TrafficView.panel.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="CopySupportFiles" AfterTargets="Build">
+    <Copy SourceFiles="TrafficView.exe.config" DestinationFiles="$(TargetDir)TrafficView.exe.config" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="TrafficView.languages.ini" DestinationFiles="$(TargetDir)TrafficView.languages.ini" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="TrafficView.panel.png" DestinationFiles="$(TargetDir)TrafficView.panel.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.png')" />
+
+    <ItemGroup>
+      <DefaultSettingsLines Include="AdapterId=" />
+      <DefaultSettingsLines Include="AdapterName=" />
+      <DefaultSettingsLines Include="CalibrationPeakBytesPerSecond=0" />
+      <DefaultSettingsLines Include="CalibrationDownloadPeakBytesPerSecond=0" />
+      <DefaultSettingsLines Include="CalibrationUploadPeakBytesPerSecond=0" />
+      <DefaultSettingsLines Include="InitialCalibrationPromptHandled=0" />
+      <DefaultSettingsLines Include="InitialLanguagePromptHandled=0" />
+      <DefaultSettingsLines Include="TransparencyPercent=0" />
+      <DefaultSettingsLines Include="LanguageCode=de" />
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(TargetDir)TrafficView.settings.ini" Lines="@(DefaultSettingsLines)" Overwrite="true" Encoding="ASCII" />
+  </Target>
+
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
