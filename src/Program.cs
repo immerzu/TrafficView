@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.2.0")]
-[assembly: AssemblyFileVersion("1.4.2.0")]
+[assembly: AssemblyVersion("1.4.3.0")]
+[assembly: AssemblyFileVersion("1.4.3.0")]
 
 namespace TrafficView
 {
@@ -1284,17 +1284,25 @@ namespace TrafficView
         public void ApplySettings(MonitorSettings newSettings)
         {
             bool popupScaleChanged = this.settings.PopupScalePercent != newSettings.PopupScalePercent;
-            Point previousLocation = this.Location;
+            Rectangle previousBounds = new Rectangle(this.Location, this.Size);
             this.settings = newSettings.Clone();
 
             if (popupScaleChanged)
             {
-                this.ApplyDpiLayout(this.currentDpi);
-                this.Location = this.GetVisiblePopupLocation(
-                    previousLocation,
-                    null,
-                    "popup-scale-clamped",
-                    "Popup-Position wurde nach einer Groessenaenderung auf einen sichtbaren Arbeitsbereich begrenzt.");
+                this.ApplyDpiLayout(this.currentDpi, false);
+
+                if (this.Visible)
+                {
+                    Point preferredLocation = this.GetPopupScaleAdjustedLocation(previousBounds);
+                    this.Location = this.GetVisiblePopupLocation(
+                        preferredLocation,
+                        GetRectangleCenter(previousBounds),
+                        "popup-scale-clamped",
+                        "Popup-Position wurde nach einer Groessenaenderung auf einen sichtbaren Arbeitsbereich begrenzt.");
+                }
+
+                this.lastPresentedLocation = new Point(int.MinValue, int.MinValue);
+                this.lastPresentedSize = Size.Empty;
             }
 
             this.staticSurfaceDirty = true;
@@ -3543,6 +3551,11 @@ namespace TrafficView
 
         private void ApplyDpiLayout(int dpi)
         {
+            this.ApplyDpiLayout(dpi, true);
+        }
+
+        private void ApplyDpiLayout(int dpi, bool refreshIfVisible)
+        {
             dpi = DpiHelper.NormalizeDpi(dpi);
             this.currentDpi = dpi;
 
@@ -3586,7 +3599,7 @@ namespace TrafficView
             this.UpdateWindowRegion();
             this.staticSurfaceDirty = true;
 
-            if (this.Visible)
+            if (refreshIfVisible && this.Visible)
             {
                 this.RefreshVisualSurface();
             }
@@ -3613,6 +3626,19 @@ namespace TrafficView
         private double GetPopupScaleFactor()
         {
             return Math.Max(0.5D, this.settings.PopupScalePercent / 100D);
+        }
+
+        private Point GetPopupScaleAdjustedLocation(Rectangle previousBounds)
+        {
+            if (previousBounds.Width <= 0 || previousBounds.Height <= 0)
+            {
+                return this.Location;
+            }
+
+            Point previousCenter = GetRectangleCenter(previousBounds);
+            return new Point(
+                previousCenter.X - (this.Width / 2),
+                previousCenter.Y - (this.Height / 2));
         }
 
         private void UpdateWindowRegion()
