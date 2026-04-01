@@ -18,6 +18,9 @@ $panelAssetFiles = @(
     "TrafficView.panel.125.png",
     "TrafficView.panel.150.png"
 )
+$menuAssetFiles = @(
+    "LOLO-SOFT_00_SW.png"
+)
 $sourceFiles = Get-ChildItem -Path $sourceDir -Filter *.cs | Sort-Object Name | ForEach-Object { $_.FullName }
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
@@ -83,6 +86,14 @@ foreach ($panelAssetFile in $panelAssetFiles) {
     $panelAssetOutputFile = Join-Path $outputDir $panelAssetFile
     if (Test-Path $panelAssetSourceFile) {
         Copy-Item $panelAssetSourceFile $panelAssetOutputFile -Force
+    }
+}
+
+foreach ($menuAssetFile in $menuAssetFiles) {
+    $menuAssetSourceFile = Join-Path $root $menuAssetFile
+    $menuAssetOutputFile = Join-Path $outputDir $menuAssetFile
+    if (Test-Path $menuAssetSourceFile) {
+        Copy-Item $menuAssetSourceFile $menuAssetOutputFile -Force
     }
 }
 

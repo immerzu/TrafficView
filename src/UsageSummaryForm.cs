@@ -32,6 +32,12 @@ namespace TrafficView
         private readonly Func<UsageWindowData> loadUsageWindowData;
         private readonly Func<bool> clearUsageData;
         private readonly Func<long, string> formatUsageAmount;
+        private readonly TableLayoutPanel usageGrid;
+        private readonly Label dailyHeaderLabel;
+        private readonly Label monthlyHeaderLabel;
+        private readonly Label weeklyHeaderLabel;
+        private readonly Label uploadRowLabel;
+        private readonly Label downloadRowLabel;
         private readonly Label adapterValueLabel;
         private readonly Label dailyUploadValueLabel;
         private readonly Label monthlyUploadValueLabel;
@@ -79,7 +85,7 @@ namespace TrafficView
             Font valueFont = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
 
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.StartPosition = FormStartPosition.CenterParent;
+            this.StartPosition = FormStartPosition.CenterScreen;
             this.ShowInTaskbar = false;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
@@ -130,40 +136,40 @@ namespace TrafficView
             adapterLayout.Controls.Add(this.adapterValueLabel, 1, 0);
             adapterLayout.Controls.Add(new Panel() { Dock = DockStyle.Fill, Margin = new Padding(0) }, 2, 0);
 
-            TableLayoutPanel grid = new TableLayoutPanel();
-            grid.Dock = DockStyle.Top;
-            grid.AutoSize = false;
-            grid.ColumnCount = 4;
-            grid.RowCount = 3;
-            grid.Width = 525;
-            grid.Height = 116;
-            grid.Margin = new Padding(0, 0, 0, 12);
-            grid.Padding = new Padding(0);
-            grid.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
-            grid.ColumnStyles.Clear();
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
-            grid.RowStyles.Clear();
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
-            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            this.usageGrid = new TableLayoutPanel();
+            this.usageGrid.Dock = DockStyle.Top;
+            this.usageGrid.AutoSize = false;
+            this.usageGrid.ColumnCount = 4;
+            this.usageGrid.RowCount = 3;
+            this.usageGrid.Width = 530;
+            this.usageGrid.Height = 118;
+            this.usageGrid.Margin = new Padding(0, 0, 0, 12);
+            this.usageGrid.Padding = new Padding(0);
+            this.usageGrid.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
+            this.usageGrid.ColumnStyles.Clear();
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            this.usageGrid.RowStyles.Clear();
+            this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+            this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
-            AddCell(grid, 0, 0, string.Empty, headerFont, ContentAlignment.MiddleCenter, new Padding(0));
-            AddCell(grid, 1, 0, UiLanguage.Get("UsageWindow.ColumnDaily", "Täglich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
-            AddCell(grid, 2, 0, UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
-            AddCell(grid, 3, 0, UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            AddCell(this.usageGrid, 0, 0, string.Empty, headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.dailyHeaderLabel = AddCell(this.usageGrid, 1, 0, UiLanguage.Get("UsageWindow.ColumnDaily", "Täglich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyHeaderLabel = AddCell(this.usageGrid, 2, 0, UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyHeaderLabel = AddCell(this.usageGrid, 3, 0, UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
 
-            AddCell(grid, 0, 1, UiLanguage.Get("UsageWindow.RowUpload", "Upload"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
-            this.dailyUploadValueLabel = AddCell(grid, 1, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.monthlyUploadValueLabel = AddCell(grid, 2, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.weeklyUploadValueLabel = AddCell(grid, 3, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.uploadRowLabel = AddCell(this.usageGrid, 0, 1, UiLanguage.Get("UsageWindow.RowUpload", "Upload"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
+            this.dailyUploadValueLabel = AddCell(this.usageGrid, 1, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyUploadValueLabel = AddCell(this.usageGrid, 2, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyUploadValueLabel = AddCell(this.usageGrid, 3, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
 
-            AddCell(grid, 0, 2, UiLanguage.Get("UsageWindow.RowDownload", "Download"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
-            this.dailyDownloadValueLabel = AddCell(grid, 1, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.monthlyDownloadValueLabel = AddCell(grid, 2, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.weeklyDownloadValueLabel = AddCell(grid, 3, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.downloadRowLabel = AddCell(this.usageGrid, 0, 2, UiLanguage.Get("UsageWindow.RowDownload", "Download"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
+            this.dailyDownloadValueLabel = AddCell(this.usageGrid, 1, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyDownloadValueLabel = AddCell(this.usageGrid, 2, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyDownloadValueLabel = AddCell(this.usageGrid, 3, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
 
             Panel buttonPanel = new Panel();
             buttonPanel.Dock = DockStyle.Fill;
@@ -214,7 +220,7 @@ namespace TrafficView
             };
 
             rootLayout.Controls.Add(adapterLayout, 0, 0);
-            rootLayout.Controls.Add(grid, 0, 1);
+            rootLayout.Controls.Add(this.usageGrid, 0, 1);
             rootLayout.Controls.Add(buttonPanel, 0, 2);
 
             this.AcceptButton = okButton;
@@ -254,6 +260,83 @@ namespace TrafficView
             this.dailyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.DownloadBytes);
             this.monthlyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.DownloadBytes);
             this.weeklyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.DownloadBytes);
+            this.UpdateDynamicLayout();
+        }
+
+        private void UpdateDynamicLayout()
+        {
+            int rowLabelWidth = Math.Max(
+                150,
+                Math.Max(
+                    MeasureTextWidth(this.uploadRowLabel),
+                    MeasureTextWidth(this.downloadRowLabel)) + 24);
+
+            int dailyColumnWidth = Math.Max(
+                MeasureTextWidth(this.dailyHeaderLabel),
+                Math.Max(MeasureTextWidth(this.dailyUploadValueLabel), MeasureTextWidth(this.dailyDownloadValueLabel))) + 24;
+            int monthlyColumnWidth = Math.Max(
+                MeasureTextWidth(this.monthlyHeaderLabel),
+                Math.Max(MeasureTextWidth(this.monthlyUploadValueLabel), MeasureTextWidth(this.monthlyDownloadValueLabel))) + 24;
+            int weeklyColumnWidth = Math.Max(
+                MeasureTextWidth(this.weeklyHeaderLabel),
+                Math.Max(MeasureTextWidth(this.weeklyUploadValueLabel), MeasureTextWidth(this.weeklyDownloadValueLabel))) + 24;
+
+            dailyColumnWidth = Math.Max(125, dailyColumnWidth);
+            monthlyColumnWidth = Math.Max(125, monthlyColumnWidth);
+            weeklyColumnWidth = Math.Max(125, weeklyColumnWidth);
+
+            int headerRowHeight = Math.Max(34, Math.Max(
+                MeasureTextHeight(this.dailyHeaderLabel),
+                Math.Max(MeasureTextHeight(this.monthlyHeaderLabel), MeasureTextHeight(this.weeklyHeaderLabel))) + 12);
+            int uploadRowHeight = Math.Max(
+                MeasureTextHeight(this.uploadRowLabel),
+                Math.Max(
+                    MeasureTextHeight(this.dailyUploadValueLabel),
+                    Math.Max(MeasureTextHeight(this.monthlyUploadValueLabel), MeasureTextHeight(this.weeklyUploadValueLabel)))) + 14;
+            int downloadRowHeight = Math.Max(
+                MeasureTextHeight(this.downloadRowLabel),
+                Math.Max(
+                    MeasureTextHeight(this.dailyDownloadValueLabel),
+                    Math.Max(MeasureTextHeight(this.monthlyDownloadValueLabel), MeasureTextHeight(this.weeklyDownloadValueLabel)))) + 14;
+
+            uploadRowHeight = Math.Max(40, uploadRowHeight);
+            downloadRowHeight = Math.Max(40, downloadRowHeight);
+
+            this.usageGrid.SuspendLayout();
+            this.usageGrid.ColumnStyles[0].Width = rowLabelWidth;
+            this.usageGrid.ColumnStyles[1].Width = dailyColumnWidth;
+            this.usageGrid.ColumnStyles[2].Width = monthlyColumnWidth;
+            this.usageGrid.ColumnStyles[3].Width = weeklyColumnWidth;
+            this.usageGrid.RowStyles[0].Height = headerRowHeight;
+            this.usageGrid.RowStyles[1].Height = uploadRowHeight;
+            this.usageGrid.RowStyles[2].Height = downloadRowHeight;
+            this.usageGrid.Width = rowLabelWidth + dailyColumnWidth + monthlyColumnWidth + weeklyColumnWidth + 5;
+            this.usageGrid.Height = headerRowHeight + uploadRowHeight + downloadRowHeight + 4;
+            this.usageGrid.ResumeLayout();
+
+            int minimumClientWidth = this.usageGrid.Width + 40;
+            int minimumClientHeight = this.usageGrid.Height + 177;
+            this.ClientSize = new Size(
+                Math.Max(570, minimumClientWidth),
+                Math.Max(295, minimumClientHeight));
+        }
+
+        private static int MeasureTextWidth(Label label)
+        {
+            return TextRenderer.MeasureText(
+                label.Text ?? string.Empty,
+                label.Font ?? Control.DefaultFont,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+        }
+
+        private static int MeasureTextHeight(Label label)
+        {
+            return TextRenderer.MeasureText(
+                label.Text ?? string.Empty,
+                label.Font ?? Control.DefaultFont,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Height;
         }
 
         private static Label AddCell(

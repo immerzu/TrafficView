@@ -72,6 +72,9 @@
     <Content Include="TrafficView.panel.150.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="LOLO-SOFT_00_SW.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <Target Name="CopySupportFiles" AfterTargets="Build">
@@ -82,6 +85,7 @@
     <Copy SourceFiles="TrafficView.panel.110.png" DestinationFiles="$(TargetDir)TrafficView.panel.110.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.110.png')" />
     <Copy SourceFiles="TrafficView.panel.125.png" DestinationFiles="$(TargetDir)TrafficView.panel.125.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.125.png')" />
     <Copy SourceFiles="TrafficView.panel.150.png" DestinationFiles="$(TargetDir)TrafficView.panel.150.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.150.png')" />
+    <Copy SourceFiles="LOLO-SOFT_00_SW.png" DestinationFiles="$(TargetDir)LOLO-SOFT_00_SW.png" SkipUnchangedFiles="true" Condition="Exists('LOLO-SOFT_00_SW.png')" />
 
     <ItemGroup>
       <DefaultSettingsLines Include="AdapterId=" />

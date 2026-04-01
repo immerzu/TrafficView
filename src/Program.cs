@@ -97,6 +97,8 @@ namespace TrafficView
 
     internal sealed class TrafficViewContext : ApplicationContext
     {
+        private const string CompanyLogoFileName = "LOLO-SOFT_00_SW.png";
+
         private enum SharedMenuOpenSource
         {
             None,
@@ -116,6 +118,8 @@ namespace TrafficView
         private readonly ToolStripMenuItem exitItem;
         private readonly ContextMenuStrip sharedMenu;
         private readonly Icon notifyIconHandle;
+        private readonly Image companyLogoImage;
+        private readonly ToolStripControlHost companyLogoHost;
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
@@ -144,6 +148,8 @@ namespace TrafficView
                 Math.Max(10F, SystemFonts.MenuFont.Size),
                 FontStyle.Regular,
                 GraphicsUnit.Point);
+            this.companyLogoImage = LoadCompanyLogoImage();
+            this.companyLogoHost = this.CreateCompanyLogoHost(this.companyLogoImage);
             this.toggleItem = new ToolStripMenuItem(string.Empty, null, this.ToggleItem_Click);
             this.calibrationStatusItem = new ToolStripMenuItem(string.Empty);
             this.calibrationStatusItem.Enabled = false;
@@ -170,6 +176,12 @@ namespace TrafficView
                 item.Tag = popupScalePercents[i];
                 this.popupScaleMenuItems[popupScalePercents[i]] = item;
                 this.sizeItem.DropDownItems.Add(item);
+            }
+
+            if (this.companyLogoHost != null)
+            {
+                this.sharedMenu.Items.Add(this.companyLogoHost);
+                this.sharedMenu.Items.Add(new ToolStripSeparator());
             }
 
             this.sharedMenu.Items.Add(this.toggleItem);
@@ -218,9 +230,217 @@ namespace TrafficView
             this.notifyIcon.Visible = false;
             this.notifyIcon.Dispose();
             this.sharedMenu.Dispose();
+            if (this.companyLogoImage != null)
+            {
+                this.companyLogoImage.Dispose();
+            }
             this.popupForm.Dispose();
             this.notifyIconHandle.Dispose();
             base.ExitThreadCore();
+        }
+
+        private static Image LoadCompanyLogoImage()
+        {
+            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, CompanyLogoFileName);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (Image image = Image.FromStream(stream))
+                {
+                    return new Bitmap(image);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "company-logo-load-failed",
+                    string.Format("Firmenlogo konnte nicht aus '{0}' geladen werden.", path),
+                    ex);
+                return null;
+            }
+        }
+
+        private ToolStripControlHost CreateCompanyLogoHost(Image logoImage)
+        {
+            if (logoImage == null)
+            {
+                return null;
+            }
+
+            Image trimmedLogoImage = TrimMenuLogoImage(logoImage);
+            Panel panel = new Panel();
+            panel.Size = new Size(82, 72);
+            panel.Margin = Padding.Empty;
+            panel.Padding = new Padding(0);
+            panel.BackColor = SystemColors.Menu;
+
+            PictureBox pictureBox = new PictureBox();
+            pictureBox.Location = new Point(0, 0);
+            pictureBox.Size = panel.Size;
+            pictureBox.Margin = Padding.Empty;
+            pictureBox.Padding = Padding.Empty;
+            pictureBox.TabStop = false;
+            pictureBox.Image = trimmedLogoImage;
+            pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
+            pictureBox.BackColor = SystemColors.Menu;
+            pictureBox.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+            pictureBox.Cursor = Cursors.Hand;
+            pictureBox.Click += this.CompanyLogo_Click;
+
+            panel.Cursor = Cursors.Hand;
+            panel.Click += this.CompanyLogo_Click;
+
+            panel.Controls.Add(pictureBox);
+
+            ToolStripControlHost host = new ToolStripControlHost(panel);
+            host.AutoSize = false;
+            host.Size = panel.Size;
+            host.Margin = Padding.Empty;
+            host.Padding = Padding.Empty;
+            return host;
+        }
+
+        private void CompanyLogo_Click(object sender, EventArgs e)
+        {
+            if (this.sharedMenu != null && this.sharedMenu.Visible)
+            {
+                this.sharedMenu.Close(ToolStripDropDownCloseReason.ItemClicked);
+            }
+
+            this.ShowCompanyLogoWindow();
+        }
+
+        private void ShowCompanyLogoWindow()
+        {
+            if (this.companyLogoImage == null)
+            {
+                return;
+            }
+
+            bool pausePopupTopMost = this.popupForm.Visible;
+            if (pausePopupTopMost)
+            {
+                this.popupForm.SuspendTopMostEnforcement();
+            }
+
+            try
+            {
+                Rectangle workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+                int clientWidth = Math.Min(this.companyLogoImage.Width, Math.Max(320, workingArea.Width - 80));
+                int clientHeight = Math.Min(this.companyLogoImage.Height, Math.Max(240, workingArea.Height - 80));
+
+                using (Form logoForm = new Form())
+                using (Panel containerPanel = new Panel())
+                using (PictureBox pictureBox = new PictureBox())
+                {
+                    logoForm.Text = "LOLO-SOFT";
+                    logoForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                    logoForm.StartPosition = FormStartPosition.CenterScreen;
+                    logoForm.ShowInTaskbar = false;
+                    logoForm.MaximizeBox = false;
+                    logoForm.MinimizeBox = false;
+                    logoForm.AutoScaleMode = AutoScaleMode.Dpi;
+                    logoForm.Font = this.sharedMenu.Font;
+                    logoForm.ClientSize = new Size(clientWidth, clientHeight);
+                    logoForm.TopMost = true;
+
+                    containerPanel.Dock = DockStyle.Fill;
+                    containerPanel.AutoScroll = true;
+                    containerPanel.BackColor = Color.White;
+                    containerPanel.Padding = Padding.Empty;
+
+                    pictureBox.Location = new Point(0, 0);
+                    pictureBox.Size = this.companyLogoImage.Size;
+                    pictureBox.Margin = Padding.Empty;
+                    pictureBox.Padding = Padding.Empty;
+                    pictureBox.Image = this.companyLogoImage;
+                    pictureBox.SizeMode = PictureBoxSizeMode.Normal;
+                    pictureBox.BackColor = Color.White;
+
+                    containerPanel.Controls.Add(pictureBox);
+                    logoForm.Controls.Add(containerPanel);
+
+                    if (this.popupForm.Visible)
+                    {
+                        logoForm.ShowDialog(this.popupForm);
+                    }
+                    else
+                    {
+                        logoForm.ShowDialog();
+                    }
+                }
+            }
+            finally
+            {
+                if (pausePopupTopMost)
+                {
+                    this.popupForm.ResumeTopMostEnforcement(false);
+                }
+            }
+        }
+
+        private static Image TrimMenuLogoImage(Image logoImage)
+        {
+            Bitmap sourceBitmap = logoImage as Bitmap;
+            if (sourceBitmap == null)
+            {
+                return logoImage;
+            }
+
+            int minX = sourceBitmap.Width;
+            int minY = sourceBitmap.Height;
+            int maxX = -1;
+            int maxY = -1;
+
+            for (int y = 0; y < sourceBitmap.Height; y++)
+            {
+                for (int x = 0; x < sourceBitmap.Width; x++)
+                {
+                    Color pixel = sourceBitmap.GetPixel(x, y);
+                    if (pixel.A <= 8)
+                    {
+                        continue;
+                    }
+
+                    if (pixel.R >= 245 && pixel.G >= 245 && pixel.B >= 245)
+                    {
+                        continue;
+                    }
+
+                    if (x < minX)
+                    {
+                        minX = x;
+                    }
+
+                    if (y < minY)
+                    {
+                        minY = y;
+                    }
+
+                    if (x > maxX)
+                    {
+                        maxX = x;
+                    }
+
+                    if (y > maxY)
+                    {
+                        maxY = y;
+                    }
+                }
+            }
+
+            if (maxX < minX || maxY < minY)
+            {
+                return logoImage;
+            }
+
+            Rectangle cropBounds = Rectangle.FromLTRB(minX, minY, maxX + 1, maxY + 1);
+            return sourceBitmap.Clone(cropBounds, sourceBitmap.PixelFormat);
         }
 
         private void Menu_Opening(object sender, System.ComponentModel.CancelEventArgs e)
