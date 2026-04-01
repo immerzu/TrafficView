@@ -15,11 +15,19 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.6.0")]
-[assembly: AssemblyFileVersion("1.4.6.0")]
+[assembly: AssemblyVersion("1.4.8.0")]
+[assembly: AssemblyFileVersion("1.4.8.0")]
 
 namespace TrafficView
 {
+    internal enum AdapterAvailabilityState
+    {
+        Automatic,
+        Available,
+        Inactive,
+        Missing
+    }
+
     internal static class Program
     {
         [STAThread]
@@ -893,7 +901,11 @@ namespace TrafficView
                 pair.Value.Checked = pair.Key == this.settings.PopupScalePercent;
             }
 
-            if (this.settings.HasCalibrationData())
+            AdapterAvailabilityState adapterAvailabilityState = GetAdapterAvailabilityState(this.settings);
+
+            if (this.settings.HasCalibrationData() &&
+                adapterAvailabilityState != AdapterAvailabilityState.Missing &&
+                adapterAvailabilityState != AdapterAvailabilityState.Inactive)
             {
                 this.calibrationStatusItem.Text = UiLanguage.Get(
                     "Menu.CalibrationStatusSaved",
@@ -903,9 +915,29 @@ namespace TrafficView
 
             if (this.settings.HasAdapterSelection())
             {
+                if (adapterAvailabilityState == AdapterAvailabilityState.Missing)
+                {
+                    this.calibrationStatusItem.Text = UiLanguage.Get(
+                        "Menu.CalibrationStatusAdapterMissing",
+                        "Kalibrationsstatus: Adapter nicht gefunden");
+                    return;
+                }
+
+                if (adapterAvailabilityState == AdapterAvailabilityState.Inactive)
+                {
+                    this.calibrationStatusItem.Text = UiLanguage.Get(
+                        "Menu.CalibrationStatusAdapterInactive",
+                        "Kalibrationsstatus: Adapter inaktiv");
+                    return;
+                }
+
                 this.calibrationStatusItem.Text = UiLanguage.Get(
-                    "Menu.CalibrationStatusAdapterSelected",
-                    "Kalibrationsstatus: Adapter gewaehlt");
+                    this.settings.HasCalibrationData()
+                        ? "Menu.CalibrationStatusSaved"
+                        : "Menu.CalibrationStatusAdapterSelected",
+                    this.settings.HasCalibrationData()
+                        ? "Kalibrationsstatus: gespeichert"
+                        : "Kalibrationsstatus: Adapter gewaehlt");
                 return;
             }
 
@@ -918,12 +950,13 @@ namespace TrafficView
         {
             this.trafficUsageLog.FlushPending();
             this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            TrafficUsageSummaries summaries = this.trafficUsageLog.GetSummaries(this.settings);
 
             return new UsageWindowData(
                 this.settings.GetAdapterDisplayName(),
-                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Daily),
-                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Monthly),
-                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Weekly));
+                summaries.Daily,
+                summaries.Monthly,
+                summaries.Weekly);
         }
 
         private bool ClearUsageData()
@@ -931,6 +964,13 @@ namespace TrafficView
             bool cleared = this.trafficUsageLog.ClearAll();
             this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
             return cleared;
+        }
+
+        private bool ExportUsageData(string targetPath)
+        {
+            this.trafficUsageLog.FlushPending();
+            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            return this.trafficUsageLog.ExportCsv(this.settings, this.settings.GetAdapterDisplayName(), targetPath);
         }
 
         private void ShowUsageWindow()
@@ -946,7 +986,8 @@ namespace TrafficView
                 using (UsageSummaryForm usageSummaryForm = new UsageSummaryForm(
                     new Func<UsageWindowData>(this.CreateUsageWindowData),
                     new Func<bool>(this.ClearUsageData),
-                    new Func<long, string>(FormatUsageAmount)))
+                    new Func<long, string>(FormatUsageAmount),
+                    new Func<string, bool>(this.ExportUsageData)))
                 {
                     if (this.popupForm.Visible)
                     {
@@ -986,6 +1027,16 @@ namespace TrafficView
 
             string format = value >= 100D ? "0" : (value >= 10D ? "0.#" : "0.0");
             return string.Format("{0:" + format + "} {1}", value, units[unitIndex]);
+        }
+
+        private static AdapterAvailabilityState GetAdapterAvailabilityState(MonitorSettings settings)
+        {
+            if (settings == null || !settings.HasAdapterSelection())
+            {
+                return AdapterAvailabilityState.Automatic;
+            }
+
+            return NetworkSnapshot.GetAdapterAvailabilityState(settings);
         }
     }
 
@@ -4266,6 +4317,7 @@ namespace TrafficView
         private readonly Button cancelButton;
         private readonly Timer calibrationTimer;
         private readonly TableLayoutPanel rootLayout;
+        private bool selectedAdapterAvailable = true;
         private MonitorSettings currentSettings;
         private MonitorSettings activeSettings;
         private NetworkSnapshot lastSnapshot;
@@ -4358,6 +4410,7 @@ namespace TrafficView
             this.adapterComboBox.IntegralHeight = false;
             this.adapterComboBox.Margin = new Padding(0);
             this.adapterComboBox.MinimumSize = new Size(0, Math.Max(30, this.adapterComboBox.PreferredHeight + 6));
+            this.adapterComboBox.SelectedIndexChanged += this.AdapterComboBox_SelectedIndexChanged;
             adapterLayout.Controls.Add(this.adapterComboBox, 0, 1);
 
             this.progressBar = new ProgressBar();
@@ -4397,14 +4450,14 @@ namespace TrafficView
             this.startButton.Margin = new Padding(0, 0, 8, 0);
             this.ConfigureDialogButton(this.startButton);
             this.startButton.Click += this.StartButton_Click;
-            buttonPanel.Controls.Add(this.startButton, 0, 0);
+            buttonPanel.Controls.Add(this.startButton, 1, 0);
 
             this.saveAdapterButton = new Button();
             this.saveAdapterButton.Text = UiLanguage.Get("Calibration.SaveAdapter", "Adapter speichern");
             this.saveAdapterButton.Margin = new Padding(0, 0, 8, 0);
             this.ConfigureDialogButton(this.saveAdapterButton);
             this.saveAdapterButton.Click += this.SaveAdapterButton_Click;
-            buttonPanel.Controls.Add(this.saveAdapterButton, 1, 0);
+            buttonPanel.Controls.Add(this.saveAdapterButton, 0, 0);
 
             this.saveButton = new Button();
             this.saveButton.Text = UiLanguage.Get("Calibration.Save", "Speichern");
@@ -4429,6 +4482,7 @@ namespace TrafficView
             this.calibrationTimer.Tick += this.CalibrationTimer_Tick;
 
             this.LoadAdapterItems();
+            this.UpdateAdapterAvailabilityUi();
             this.Load += this.CalibrationForm_Load;
             this.Shown += this.CalibrationForm_Shown;
         }
@@ -4517,6 +4571,12 @@ namespace TrafficView
                 return;
             }
 
+            if (!this.selectedAdapterAvailable)
+            {
+                this.UpdateAdapterAvailabilityUi();
+                return;
+            }
+
             AdapterListItem selectedItem = this.adapterComboBox.SelectedItem as AdapterListItem;
             string adapterId = string.Empty;
             string adapterName = string.Empty;
@@ -4568,6 +4628,12 @@ namespace TrafficView
 
         private void SaveAdapterButton_Click(object sender, EventArgs e)
         {
+            if (!this.selectedAdapterAvailable)
+            {
+                this.UpdateAdapterAvailabilityUi();
+                return;
+            }
+
             this.currentSettings = this.CreateSettingsFromSelectedAdapter(
                 this.currentSettings.CalibrationPeakBytesPerSecond,
                 this.currentSettings.CalibrationDownloadPeakBytesPerSecond,
@@ -4846,10 +4912,12 @@ namespace TrafficView
             AdapterListItem automaticItem = new AdapterListItem(
                 string.Empty,
                 string.Empty,
-                UiLanguage.Get("Calibration.AdapterAutomatic", "Automatisch (alle aktiven Adapter)"));
+                UiLanguage.Get("Calibration.AdapterAutomatic", "Automatisch (alle aktiven Adapter)"),
+                true);
             this.adapterComboBox.Items.Add(automaticItem);
 
             int selectedIndex = 0;
+            bool selectedAdapterFound = false;
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -4860,10 +4928,61 @@ namespace TrafficView
                     string.Equals(item.Id, this.currentSettings.AdapterId, StringComparison.OrdinalIgnoreCase))
                 {
                     selectedIndex = i + 1;
+                    selectedAdapterFound = true;
                 }
             }
 
+            if (!selectedAdapterFound &&
+                !string.IsNullOrEmpty(this.currentSettings.AdapterId))
+            {
+                AdapterListItem missingItem = new AdapterListItem(
+                    this.currentSettings.AdapterId,
+                    this.currentSettings.AdapterName,
+                    UiLanguage.Format(
+                        "Calibration.AdapterMissingItem",
+                        "{0} (nicht verfügbar)",
+                        this.currentSettings.GetAdapterDisplayName()),
+                    false);
+                this.adapterComboBox.Items.Add(missingItem);
+                selectedIndex = this.adapterComboBox.Items.Count - 1;
+            }
+
             this.adapterComboBox.SelectedIndex = selectedIndex;
+        }
+
+        private void AdapterComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            this.UpdateAdapterAvailabilityUi();
+        }
+
+        private void UpdateAdapterAvailabilityUi()
+        {
+            AdapterListItem selectedItem = this.adapterComboBox.SelectedItem as AdapterListItem;
+            this.selectedAdapterAvailable = selectedItem == null || selectedItem.IsAvailable;
+
+            if (this.calibrationTimer.Enabled)
+            {
+                return;
+            }
+
+            this.startButton.Enabled = this.selectedAdapterAvailable;
+            this.saveAdapterButton.Enabled = this.selectedAdapterAvailable;
+
+            if (selectedItem != null && !selectedItem.IsAvailable)
+            {
+                this.statusLabel.Text = UiLanguage.Format(
+                    "Calibration.AdapterUnavailableStatus",
+                    "Der gespeicherte Adapter '{0}' ist derzeit nicht verfügbar. Bitte einen aktiven Adapter oder 'Automatisch' auswählen.",
+                    this.currentSettings.GetAdapterDisplayName());
+                return;
+            }
+
+            if (!this.saveButton.Enabled)
+            {
+                this.statusLabel.Text = UiLanguage.Get(
+                    "Calibration.ReadyStatus",
+                    "Bereit fuer die Kalibration. Bitte mit 'Starten' beginnen und spaeter mit 'Speichern' uebernehmen oder mit 'Abbrechen' schliessen.");
+            }
         }
     }
 
@@ -5112,11 +5231,12 @@ namespace TrafficView
 
     internal sealed class AdapterListItem
     {
-        public AdapterListItem(string id, string name, string displayText)
+        public AdapterListItem(string id, string name, string displayText, bool isAvailable = true)
         {
             this.Id = id ?? string.Empty;
             this.Name = name ?? string.Empty;
             this.DisplayText = displayText ?? string.Empty;
+            this.IsAvailable = isAvailable;
         }
 
         public string Id { get; private set; }
@@ -5124,6 +5244,8 @@ namespace TrafficView
         public string Name { get; private set; }
 
         public string DisplayText { get; private set; }
+
+        public bool IsAvailable { get; private set; }
 
         public override string ToString()
         {
@@ -5238,10 +5360,14 @@ namespace TrafficView
                 OperationalStatus operationalStatus;
                 string stateText = TryGetOperationalStatus(networkInterface, out operationalStatus) &&
                     operationalStatus == OperationalStatus.Up
-                    ? "aktiv"
-                    : "inaktiv";
+                    ? UiLanguage.Get("Calibration.AdapterStateActive", "aktiv")
+                    : UiLanguage.Get("Calibration.AdapterStateInactive", "inaktiv");
                 string displayText = string.Format("{0} ({1})", networkInterface.Name, stateText);
-                items.Add(new AdapterListItem(networkInterface.Id, networkInterface.Name, displayText));
+                items.Add(new AdapterListItem(
+                    networkInterface.Id,
+                    networkInterface.Name,
+                    displayText,
+                    IsCapturable(networkInterface)));
             }
 
             items.Sort(
@@ -5273,6 +5399,45 @@ namespace TrafficView
             }
 
             return CaptureAutomatic(interfaces);
+        }
+
+        public static AdapterAvailabilityState GetAdapterAvailabilityState(MonitorSettings settings)
+        {
+            if (settings == null || string.IsNullOrEmpty(settings.AdapterId))
+            {
+                return AdapterAvailabilityState.Automatic;
+            }
+
+            NetworkInterface[] interfaces;
+
+            try
+            {
+                interfaces = NetworkInterface.GetAllNetworkInterfaces();
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce("network-getallnetworkinterfaces-availability", "Failed to enumerate network interfaces for availability check.", ex);
+                return AdapterAvailabilityState.Missing;
+            }
+
+            foreach (NetworkInterface networkInterface in interfaces)
+            {
+                if (!IsSelectable(networkInterface))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(networkInterface.Id, settings.AdapterId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return IsCapturable(networkInterface)
+                    ? AdapterAvailabilityState.Available
+                    : AdapterAvailabilityState.Inactive;
+            }
+
+            return AdapterAvailabilityState.Missing;
         }
 
         private static NetworkSnapshot CaptureAutomatic(NetworkInterface[] interfaces)

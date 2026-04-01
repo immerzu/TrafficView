@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace TrafficView
@@ -32,27 +33,35 @@ namespace TrafficView
         private readonly Func<UsageWindowData> loadUsageWindowData;
         private readonly Func<bool> clearUsageData;
         private readonly Func<long, string> formatUsageAmount;
+        private readonly Func<string, bool> exportUsageData;
+        private readonly TableLayoutPanel rootLayout;
+        private readonly TableLayoutPanel adapterLayout;
         private readonly TableLayoutPanel usageGrid;
+        private readonly Panel adapterRightSpacerPanel;
+        private readonly Panel buttonPanel;
         private readonly Label dailyHeaderLabel;
-        private readonly Label monthlyHeaderLabel;
         private readonly Label weeklyHeaderLabel;
+        private readonly Label monthlyHeaderLabel;
         private readonly Label uploadRowLabel;
         private readonly Label downloadRowLabel;
         private readonly Label adapterValueLabel;
         private readonly Label adapterCaptionLabel;
         private readonly Label dailyUploadValueLabel;
-        private readonly Label monthlyUploadValueLabel;
         private readonly Label weeklyUploadValueLabel;
+        private readonly Label monthlyUploadValueLabel;
         private readonly Label dailyDownloadValueLabel;
-        private readonly Label monthlyDownloadValueLabel;
         private readonly Label weeklyDownloadValueLabel;
+        private readonly Label monthlyDownloadValueLabel;
+        private readonly Button exportButton;
         private readonly Button clearButton;
         private readonly Button okButton;
+        private bool isUpdatingLayout;
 
         public UsageSummaryForm(
             Func<UsageWindowData> loadUsageWindowData,
             Func<bool> clearUsageData,
-            Func<long, string> formatUsageAmount)
+            Func<long, string> formatUsageAmount,
+            Func<string, bool> exportUsageData)
         {
             if (loadUsageWindowData == null)
             {
@@ -69,9 +78,15 @@ namespace TrafficView
                 throw new ArgumentNullException("formatUsageAmount");
             }
 
+            if (exportUsageData == null)
+            {
+                throw new ArgumentNullException("exportUsageData");
+            }
+
             this.loadUsageWindowData = loadUsageWindowData;
             this.clearUsageData = clearUsageData;
             this.formatUsageAmount = formatUsageAmount;
+            this.exportUsageData = exportUsageData;
 
             UsageWindowData usageWindowData = this.loadUsageWindowData();
             if (usageWindowData == null)
@@ -87,7 +102,7 @@ namespace TrafficView
             Font rowFont = new Font("Segoe UI", 10F, FontStyle.Bold, GraphicsUnit.Point);
             Font valueFont = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
 
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.FormBorderStyle = FormBorderStyle.Sizable;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.ShowInTaskbar = false;
             this.MaximizeBox = false;
@@ -97,28 +112,28 @@ namespace TrafficView
             this.TopMost = true;
             this.ClientSize = new Size(570, 295);
 
-            TableLayoutPanel rootLayout = new TableLayoutPanel();
-            rootLayout.Dock = DockStyle.Fill;
-            rootLayout.Padding = new Padding(10);
-            rootLayout.ColumnCount = 1;
-            rootLayout.RowCount = 3;
-            rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+            this.rootLayout = new TableLayoutPanel();
+            this.rootLayout.Dock = DockStyle.Fill;
+            this.rootLayout.Padding = new Padding(10);
+            this.rootLayout.ColumnCount = 1;
+            this.rootLayout.RowCount = 3;
+            this.rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            this.rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
 
-            TableLayoutPanel adapterLayout = new TableLayoutPanel();
-            adapterLayout.Dock = DockStyle.Top;
-            adapterLayout.AutoSize = false;
-            adapterLayout.Height = 32;
-            adapterLayout.Margin = new Padding(0, 0, 0, 8);
-            adapterLayout.Padding = new Padding(0);
-            adapterLayout.ColumnCount = 3;
-            adapterLayout.RowCount = 1;
-            adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
-            adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
-            adapterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            this.adapterLayout = new TableLayoutPanel();
+            this.adapterLayout.Dock = DockStyle.Top;
+            this.adapterLayout.AutoSize = false;
+            this.adapterLayout.Height = 34;
+            this.adapterLayout.Margin = new Padding(0, 0, 0, 8);
+            this.adapterLayout.Padding = new Padding(0);
+            this.adapterLayout.ColumnCount = 3;
+            this.adapterLayout.RowCount = 1;
+            this.adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+            this.adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            this.adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+            this.adapterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             this.adapterCaptionLabel = new Label();
             this.adapterCaptionLabel.Dock = DockStyle.Fill;
@@ -132,12 +147,17 @@ namespace TrafficView
             this.adapterValueLabel.Dock = DockStyle.Fill;
             this.adapterValueLabel.AutoSize = false;
             this.adapterValueLabel.Margin = new Padding(0);
+            this.adapterValueLabel.AutoEllipsis = true;
             this.adapterValueLabel.Font = adapterValueFont;
             this.adapterValueLabel.TextAlign = ContentAlignment.MiddleCenter;
 
-            adapterLayout.Controls.Add(this.adapterCaptionLabel, 0, 0);
-            adapterLayout.Controls.Add(this.adapterValueLabel, 1, 0);
-            adapterLayout.Controls.Add(new Panel() { Dock = DockStyle.Fill, Margin = new Padding(0) }, 2, 0);
+            this.adapterRightSpacerPanel = new Panel();
+            this.adapterRightSpacerPanel.Dock = DockStyle.Fill;
+            this.adapterRightSpacerPanel.Margin = new Padding(0);
+
+            this.adapterLayout.Controls.Add(this.adapterCaptionLabel, 0, 0);
+            this.adapterLayout.Controls.Add(this.adapterValueLabel, 1, 0);
+            this.adapterLayout.Controls.Add(this.adapterRightSpacerPanel, 2, 0);
 
             this.usageGrid = new TableLayoutPanel();
             this.usageGrid.Dock = DockStyle.Top;
@@ -146,14 +166,14 @@ namespace TrafficView
             this.usageGrid.RowCount = 3;
             this.usageGrid.Width = 530;
             this.usageGrid.Height = 118;
-            this.usageGrid.Margin = new Padding(0, 0, 0, 12);
+            this.usageGrid.Margin = new Padding(0, 0, 8, 12);
             this.usageGrid.Padding = new Padding(0);
             this.usageGrid.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
             this.usageGrid.ColumnStyles.Clear();
             this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
-            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
-            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
-            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
+            this.usageGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             this.usageGrid.RowStyles.Clear();
             this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
@@ -161,23 +181,39 @@ namespace TrafficView
 
             AddCell(this.usageGrid, 0, 0, string.Empty, headerFont, ContentAlignment.MiddleCenter, new Padding(0));
             this.dailyHeaderLabel = AddCell(this.usageGrid, 1, 0, UiLanguage.Get("UsageWindow.ColumnDaily", "Täglich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.monthlyHeaderLabel = AddCell(this.usageGrid, 2, 0, UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.weeklyHeaderLabel = AddCell(this.usageGrid, 3, 0, UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyHeaderLabel = AddCell(this.usageGrid, 2, 0, UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyHeaderLabel = AddCell(this.usageGrid, 3, 0, UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
 
             this.uploadRowLabel = AddCell(this.usageGrid, 0, 1, UiLanguage.Get("UsageWindow.RowUpload", "Upload"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
             this.dailyUploadValueLabel = AddCell(this.usageGrid, 1, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.monthlyUploadValueLabel = AddCell(this.usageGrid, 2, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.weeklyUploadValueLabel = AddCell(this.usageGrid, 3, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyUploadValueLabel = AddCell(this.usageGrid, 2, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyUploadValueLabel = AddCell(this.usageGrid, 3, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
 
             this.downloadRowLabel = AddCell(this.usageGrid, 0, 2, UiLanguage.Get("UsageWindow.RowDownload", "Download"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
             this.dailyDownloadValueLabel = AddCell(this.usageGrid, 1, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.monthlyDownloadValueLabel = AddCell(this.usageGrid, 2, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
-            this.weeklyDownloadValueLabel = AddCell(this.usageGrid, 3, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyDownloadValueLabel = AddCell(this.usageGrid, 2, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyDownloadValueLabel = AddCell(this.usageGrid, 3, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
 
-            Panel buttonPanel = new Panel();
-            buttonPanel.Dock = DockStyle.Fill;
-            buttonPanel.Margin = new Padding(0, 12, 0, 0);
-            buttonPanel.Padding = new Padding(0);
+            this.buttonPanel = new Panel();
+            this.buttonPanel.Dock = DockStyle.Fill;
+            this.buttonPanel.Margin = new Padding(0, 12, 0, 0);
+            this.buttonPanel.Padding = new Padding(0);
+
+            this.exportButton = new Button();
+            this.exportButton.Text = UiLanguage.Get("UsageWindow.ExportCsv", "CSV exportieren...");
+            this.exportButton.AutoSize = false;
+            this.exportButton.FlatStyle = FlatStyle.System;
+            Size exportButtonTextSize = TextRenderer.MeasureText(
+                this.exportButton.Text,
+                this.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            int exportButtonWidth = Math.Max(180, exportButtonTextSize.Width + 28);
+            this.exportButton.Size = new Size(exportButtonWidth, 36);
+            this.exportButton.MinimumSize = new Size(exportButtonWidth, 36);
+            this.exportButton.Anchor = AnchorStyles.Left;
+            this.exportButton.Location = new Point(0, 2);
+            this.exportButton.Click += this.ExportButton_Click;
 
             this.clearButton = new Button();
             this.clearButton.Text = UiLanguage.Get("UsageWindow.ClearAll", "Datenverbrauch löschen");
@@ -192,7 +228,7 @@ namespace TrafficView
             this.clearButton.Size = new Size(clearButtonWidth, 36);
             this.clearButton.MinimumSize = new Size(clearButtonWidth, 36);
             this.clearButton.Anchor = AnchorStyles.Left;
-            this.clearButton.Location = new Point(0, 2);
+            this.clearButton.Location = new Point(this.exportButton.Right + 8, 2);
             this.clearButton.Click += this.ClearButton_Click;
 
             this.okButton = new Button();
@@ -208,27 +244,32 @@ namespace TrafficView
             this.okButton.Padding = Padding.Empty;
             this.okButton.Margin = Padding.Empty;
             this.okButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            this.okButton.Location = new Point(buttonPanel.Width - this.okButton.Width, 2);
+            this.okButton.Location = new Point(this.buttonPanel.Width - this.okButton.Width, 2);
 
-            buttonPanel.Controls.Add(this.clearButton);
-            buttonPanel.Controls.Add(this.okButton);
-            buttonPanel.Resize += delegate
+            this.buttonPanel.Controls.Add(this.exportButton);
+            this.buttonPanel.Controls.Add(this.clearButton);
+            this.buttonPanel.Controls.Add(this.okButton);
+            this.buttonPanel.Resize += delegate
             {
-                this.clearButton.Location = new Point(
+                this.exportButton.Location = new Point(
                     0,
-                    Math.Max(0, (buttonPanel.ClientSize.Height - this.clearButton.Height) / 2));
+                    Math.Max(0, (this.buttonPanel.ClientSize.Height - this.exportButton.Height) / 2));
+                this.clearButton.Location = new Point(
+                    this.exportButton.Right + 8,
+                    Math.Max(0, (this.buttonPanel.ClientSize.Height - this.clearButton.Height) / 2));
                 this.okButton.Location = new Point(
-                    Math.Max(0, buttonPanel.ClientSize.Width - this.okButton.Width),
-                    Math.Max(0, (buttonPanel.ClientSize.Height - this.okButton.Height) / 2));
+                    Math.Max(0, this.buttonPanel.ClientSize.Width - this.okButton.Width),
+                    Math.Max(0, (this.buttonPanel.ClientSize.Height - this.okButton.Height) / 2));
             };
 
-            rootLayout.Controls.Add(adapterLayout, 0, 0);
-            rootLayout.Controls.Add(this.usageGrid, 0, 1);
-            rootLayout.Controls.Add(buttonPanel, 0, 2);
+            this.rootLayout.Controls.Add(this.adapterLayout, 0, 0);
+            this.rootLayout.Controls.Add(this.usageGrid, 0, 1);
+            this.rootLayout.Controls.Add(this.buttonPanel, 0, 2);
 
             this.AcceptButton = this.okButton;
             this.CancelButton = this.okButton;
-            this.Controls.Add(rootLayout);
+            this.Controls.Add(this.rootLayout);
+            this.Resize += this.UsageSummaryForm_Resize;
             this.ApplyUsageData(usageWindowData);
         }
 
@@ -254,20 +295,103 @@ namespace TrafficView
             }
         }
 
+        private void ExportButton_Click(object sender, EventArgs e)
+        {
+            using (SaveFileDialog saveFileDialog = new SaveFileDialog())
+            {
+                saveFileDialog.Title = UiLanguage.Get("UsageWindow.ExportDialogTitle", "CSV exportieren");
+                saveFileDialog.Filter = UiLanguage.Get(
+                    "UsageWindow.ExportDialogFilter",
+                    "CSV-Datei (*.csv)|*.csv|Alle Dateien (*.*)|*.*");
+                saveFileDialog.DefaultExt = "csv";
+                saveFileDialog.AddExtension = true;
+                saveFileDialog.OverwritePrompt = true;
+                saveFileDialog.InitialDirectory = AppStorage.BaseDirectory;
+                saveFileDialog.FileName = this.GetDefaultExportFileName();
+
+                if (saveFileDialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                if (!this.exportUsageData(saveFileDialog.FileName))
+                {
+                    MessageBox.Show(
+                        this,
+                        UiLanguage.Get(
+                            "UsageWindow.ExportFailed",
+                            "Die Verbrauchsdaten konnten nicht exportiert werden."),
+                        this.Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                MessageBox.Show(
+                    this,
+                    UiLanguage.Get("UsageWindow.ExportSucceededPrefix", "CSV-Export gespeichert:") +
+                        Environment.NewLine +
+                        saveFileDialog.FileName,
+                    this.Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+        }
+
         private void ApplyUsageData(UsageWindowData usageWindowData)
         {
             this.adapterValueLabel.Text = usageWindowData.AdapterDisplayName ?? string.Empty;
             this.dailyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.UploadBytes);
-            this.monthlyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.UploadBytes);
             this.weeklyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.UploadBytes);
+            this.monthlyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.UploadBytes);
             this.dailyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.DownloadBytes);
-            this.monthlyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.DownloadBytes);
             this.weeklyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.DownloadBytes);
+            this.monthlyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.DownloadBytes);
+            this.UpdateDynamicLayout();
+        }
+
+        private void UsageSummaryForm_Resize(object sender, EventArgs e)
+        {
             this.UpdateDynamicLayout();
         }
 
         private void UpdateDynamicLayout()
         {
+            if (this.isUpdatingLayout)
+            {
+                return;
+            }
+
+            this.isUpdatingLayout = true;
+
+            try
+            {
+            int contentPaddingWidth = this.rootLayout.Padding.Horizontal;
+            int contentPaddingHeight = this.rootLayout.Padding.Vertical;
+            int headerSpacing = this.adapterLayout.Margin.Bottom;
+            int buttonSpacing = this.buttonPanel.Margin.Top;
+            int buttonRowHeight = Math.Max(
+                48,
+                Math.Max(Math.Max(this.exportButton.Height, this.clearButton.Height), this.okButton.Height) + 8);
+
+            int exportButtonTextWidth = TextRenderer.MeasureText(
+                this.exportButton.Text,
+                this.exportButton.Font ?? this.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+            int exportButtonWidth = Math.Max(180, exportButtonTextWidth + 28);
+            this.exportButton.Size = new Size(exportButtonWidth, Math.Max(36, this.exportButton.Height));
+            this.exportButton.MinimumSize = this.exportButton.Size;
+
+            int clearButtonTextWidth = TextRenderer.MeasureText(
+                this.clearButton.Text,
+                this.clearButton.Font ?? this.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+            int clearButtonWidth = Math.Max(260, clearButtonTextWidth + 28);
+            this.clearButton.Size = new Size(clearButtonWidth, Math.Max(36, this.clearButton.Height));
+            this.clearButton.MinimumSize = this.clearButton.Size;
+
             int rowLabelWidth = Math.Max(
                 150,
                 Math.Max(
@@ -280,16 +404,16 @@ namespace TrafficView
             int dailyColumnWidth = Math.Max(
                 MeasureTextWidth(this.dailyHeaderLabel),
                 Math.Max(MeasureTextWidth(this.dailyUploadValueLabel), MeasureTextWidth(this.dailyDownloadValueLabel))) + 24;
-            int monthlyColumnWidth = Math.Max(
-                MeasureTextWidth(this.monthlyHeaderLabel),
-                Math.Max(MeasureTextWidth(this.monthlyUploadValueLabel), MeasureTextWidth(this.monthlyDownloadValueLabel))) + 24;
             int weeklyColumnWidth = Math.Max(
                 MeasureTextWidth(this.weeklyHeaderLabel),
-                Math.Max(MeasureTextWidth(this.weeklyUploadValueLabel), MeasureTextWidth(this.weeklyDownloadValueLabel))) + 24;
+                Math.Max(MeasureTextWidth(this.weeklyUploadValueLabel), MeasureTextWidth(this.weeklyDownloadValueLabel))) + 52;
+            int monthlyColumnWidth = Math.Max(
+                MeasureTextWidth(this.monthlyHeaderLabel),
+                Math.Max(MeasureTextWidth(this.monthlyUploadValueLabel), MeasureTextWidth(this.monthlyDownloadValueLabel))) + 28;
 
-            dailyColumnWidth = Math.Max(125, dailyColumnWidth);
-            monthlyColumnWidth = Math.Max(125, monthlyColumnWidth);
-            weeklyColumnWidth = Math.Max(125, weeklyColumnWidth);
+            dailyColumnWidth = Math.Max(130, dailyColumnWidth);
+            weeklyColumnWidth = Math.Max(164, weeklyColumnWidth);
+            monthlyColumnWidth = Math.Max(140, monthlyColumnWidth);
 
             int headerRowHeight = Math.Max(34, Math.Max(
                 MeasureTextHeight(this.dailyHeaderLabel),
@@ -308,25 +432,60 @@ namespace TrafficView
             uploadRowHeight = Math.Max(40, uploadRowHeight);
             downloadRowHeight = Math.Max(40, downloadRowHeight);
 
+            int minimumGridWidth = rowLabelWidth + dailyColumnWidth + weeklyColumnWidth + monthlyColumnWidth + 10;
+
+            int mirroredSideWidth = Math.Max(130, adapterCaptionWidth + 18);
+            this.adapterLayout.ColumnStyles[0].Width = mirroredSideWidth;
+            this.adapterLayout.ColumnStyles[2].Width = mirroredSideWidth;
+
+            int adapterMinimumWidth = (mirroredSideWidth * 2) + Math.Max(adapterValueWidth + 24, 160);
+            int buttonsMinimumWidth = this.exportButton.Width + this.clearButton.Width + this.okButton.Width + 64;
+            int minimumContentWidth = Math.Max(minimumGridWidth + 12, Math.Max(adapterMinimumWidth, buttonsMinimumWidth));
+            int minimumClientWidth = minimumContentWidth + contentPaddingWidth;
+            int minimumClientHeight = contentPaddingHeight +
+                this.adapterLayout.Height +
+                headerSpacing +
+                (headerRowHeight + uploadRowHeight + downloadRowHeight + 4) +
+                buttonSpacing +
+                buttonRowHeight;
+
+            this.MinimumSize = this.SizeFromClientSize(new Size(
+                Math.Max(570, minimumClientWidth),
+                Math.Max(295, minimumClientHeight)));
+
+            int targetClientWidth = Math.Max(this.ClientSize.Width, Math.Max(570, minimumClientWidth));
+            int targetClientHeight = Math.Max(this.ClientSize.Height, Math.Max(295, minimumClientHeight));
+            if (targetClientWidth != this.ClientSize.Width || targetClientHeight != this.ClientSize.Height)
+            {
+                this.ClientSize = new Size(targetClientWidth, targetClientHeight);
+            }
+
+            int availableGridWidth = Math.Max(
+                minimumGridWidth,
+                this.ClientSize.Width - contentPaddingWidth - this.usageGrid.Margin.Horizontal);
+            int additionalGridWidth = Math.Max(0, availableGridWidth - minimumGridWidth);
+            int extraDailyWidth = additionalGridWidth / 3;
+            int extraWeeklyWidth = additionalGridWidth / 3;
+            int extraMonthlyWidth = additionalGridWidth - extraDailyWidth - extraWeeklyWidth;
+
             this.usageGrid.SuspendLayout();
             this.usageGrid.ColumnStyles[0].Width = rowLabelWidth;
-            this.usageGrid.ColumnStyles[1].Width = dailyColumnWidth;
-            this.usageGrid.ColumnStyles[2].Width = monthlyColumnWidth;
-            this.usageGrid.ColumnStyles[3].Width = weeklyColumnWidth;
+            this.usageGrid.ColumnStyles[1].Width = dailyColumnWidth + extraDailyWidth;
+            this.usageGrid.ColumnStyles[2].Width = weeklyColumnWidth + extraWeeklyWidth;
+            this.usageGrid.ColumnStyles[3].Width = monthlyColumnWidth + extraMonthlyWidth;
             this.usageGrid.RowStyles[0].Height = headerRowHeight;
             this.usageGrid.RowStyles[1].Height = uploadRowHeight;
             this.usageGrid.RowStyles[2].Height = downloadRowHeight;
-            this.usageGrid.Width = rowLabelWidth + dailyColumnWidth + monthlyColumnWidth + weeklyColumnWidth + 5;
+            this.usageGrid.Width = availableGridWidth;
             this.usageGrid.Height = headerRowHeight + uploadRowHeight + downloadRowHeight + 4;
             this.usageGrid.ResumeLayout();
 
-            int adapterMinimumWidth = adapterCaptionWidth + Math.Max(adapterValueWidth, 140) + 150;
-            int buttonsMinimumWidth = this.clearButton.Width + this.okButton.Width + 56;
-            int minimumClientWidth = Math.Max(this.usageGrid.Width + 40, Math.Max(adapterMinimumWidth, buttonsMinimumWidth));
-            int minimumClientHeight = this.usageGrid.Height + 177;
-            this.ClientSize = new Size(
-                Math.Max(570, minimumClientWidth),
-                Math.Max(295, minimumClientHeight));
+            this.buttonPanel.PerformLayout();
+            }
+            finally
+            {
+                this.isUpdatingLayout = false;
+            }
         }
 
         private static int MeasureTextWidth(Label label)
@@ -372,6 +531,26 @@ namespace TrafficView
 
             grid.Controls.Add(label, column, row);
             return label;
+        }
+
+        private string GetDefaultExportFileName()
+        {
+            string adapterName = this.adapterValueLabel.Text ?? string.Empty;
+            foreach (char invalidChar in Path.GetInvalidFileNameChars())
+            {
+                adapterName = adapterName.Replace(invalidChar, '_');
+            }
+
+            if (string.IsNullOrWhiteSpace(adapterName))
+            {
+                adapterName = "Adapter";
+            }
+
+            return string.Format(
+                "{0}_{1}_{2:yyyy-MM-dd}.csv",
+                "Verbrauch",
+                adapterName,
+                DateTime.Now);
         }
     }
 }
