@@ -39,12 +39,15 @@ namespace TrafficView
         private readonly Label uploadRowLabel;
         private readonly Label downloadRowLabel;
         private readonly Label adapterValueLabel;
+        private readonly Label adapterCaptionLabel;
         private readonly Label dailyUploadValueLabel;
         private readonly Label monthlyUploadValueLabel;
         private readonly Label weeklyUploadValueLabel;
         private readonly Label dailyDownloadValueLabel;
         private readonly Label monthlyDownloadValueLabel;
         private readonly Label weeklyDownloadValueLabel;
+        private readonly Button clearButton;
+        private readonly Button okButton;
 
         public UsageSummaryForm(
             Func<UsageWindowData> loadUsageWindowData,
@@ -117,13 +120,13 @@ namespace TrafficView
             adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             adapterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            Label adapterCaptionLabel = new Label();
-            adapterCaptionLabel.Dock = DockStyle.Fill;
-            adapterCaptionLabel.AutoSize = false;
-            adapterCaptionLabel.Margin = new Padding(0);
-            adapterCaptionLabel.Text = UiLanguage.Get("UsageWindow.AdapterCaption", "Schnittstelle:");
-            adapterCaptionLabel.Font = interfaceFont;
-            adapterCaptionLabel.TextAlign = ContentAlignment.MiddleLeft;
+            this.adapterCaptionLabel = new Label();
+            this.adapterCaptionLabel.Dock = DockStyle.Fill;
+            this.adapterCaptionLabel.AutoSize = false;
+            this.adapterCaptionLabel.Margin = new Padding(0);
+            this.adapterCaptionLabel.Text = UiLanguage.Get("UsageWindow.AdapterCaption", "Schnittstelle:");
+            this.adapterCaptionLabel.Font = interfaceFont;
+            this.adapterCaptionLabel.TextAlign = ContentAlignment.MiddleLeft;
 
             this.adapterValueLabel = new Label();
             this.adapterValueLabel.Dock = DockStyle.Fill;
@@ -132,7 +135,7 @@ namespace TrafficView
             this.adapterValueLabel.Font = adapterValueFont;
             this.adapterValueLabel.TextAlign = ContentAlignment.MiddleCenter;
 
-            adapterLayout.Controls.Add(adapterCaptionLabel, 0, 0);
+            adapterLayout.Controls.Add(this.adapterCaptionLabel, 0, 0);
             adapterLayout.Controls.Add(this.adapterValueLabel, 1, 0);
             adapterLayout.Controls.Add(new Panel() { Dock = DockStyle.Fill, Margin = new Padding(0) }, 2, 0);
 
@@ -176,55 +179,55 @@ namespace TrafficView
             buttonPanel.Margin = new Padding(0, 12, 0, 0);
             buttonPanel.Padding = new Padding(0);
 
-            Button clearButton = new Button();
-            clearButton.Text = UiLanguage.Get("UsageWindow.ClearAll", "Datenverbrauch löschen");
-            clearButton.AutoSize = false;
-            clearButton.FlatStyle = FlatStyle.System;
+            this.clearButton = new Button();
+            this.clearButton.Text = UiLanguage.Get("UsageWindow.ClearAll", "Datenverbrauch löschen");
+            this.clearButton.AutoSize = false;
+            this.clearButton.FlatStyle = FlatStyle.System;
             Size clearButtonTextSize = TextRenderer.MeasureText(
-                clearButton.Text,
+                this.clearButton.Text,
                 this.Font,
                 new Size(int.MaxValue, int.MaxValue),
                 TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
             int clearButtonWidth = Math.Max(260, clearButtonTextSize.Width + 28);
-            clearButton.Size = new Size(clearButtonWidth, 36);
-            clearButton.MinimumSize = new Size(clearButtonWidth, 36);
-            clearButton.Anchor = AnchorStyles.Left;
-            clearButton.Location = new Point(0, 2);
-            clearButton.Click += this.ClearButton_Click;
+            this.clearButton.Size = new Size(clearButtonWidth, 36);
+            this.clearButton.MinimumSize = new Size(clearButtonWidth, 36);
+            this.clearButton.Anchor = AnchorStyles.Left;
+            this.clearButton.Location = new Point(0, 2);
+            this.clearButton.Click += this.ClearButton_Click;
 
-            Button okButton = new Button();
-            okButton.Text = UiLanguage.Get("Common.Ok", "OK");
-            okButton.DialogResult = DialogResult.OK;
-            okButton.Font = this.Font;
-            okButton.AutoSize = false;
-            okButton.FlatStyle = FlatStyle.System;
-            okButton.Size = new Size(92, 32);
-            okButton.MinimumSize = new Size(92, 32);
-            okButton.UseVisualStyleBackColor = true;
-            okButton.TextAlign = ContentAlignment.MiddleCenter;
-            okButton.Padding = Padding.Empty;
-            okButton.Margin = Padding.Empty;
-            okButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            okButton.Location = new Point(buttonPanel.Width - okButton.Width, 2);
+            this.okButton = new Button();
+            this.okButton.Text = UiLanguage.Get("Common.Ok", "OK");
+            this.okButton.DialogResult = DialogResult.OK;
+            this.okButton.Font = this.Font;
+            this.okButton.AutoSize = false;
+            this.okButton.FlatStyle = FlatStyle.System;
+            this.okButton.Size = new Size(92, 32);
+            this.okButton.MinimumSize = new Size(92, 32);
+            this.okButton.UseVisualStyleBackColor = true;
+            this.okButton.TextAlign = ContentAlignment.MiddleCenter;
+            this.okButton.Padding = Padding.Empty;
+            this.okButton.Margin = Padding.Empty;
+            this.okButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            this.okButton.Location = new Point(buttonPanel.Width - this.okButton.Width, 2);
 
-            buttonPanel.Controls.Add(clearButton);
-            buttonPanel.Controls.Add(okButton);
+            buttonPanel.Controls.Add(this.clearButton);
+            buttonPanel.Controls.Add(this.okButton);
             buttonPanel.Resize += delegate
             {
-                clearButton.Location = new Point(
+                this.clearButton.Location = new Point(
                     0,
-                    Math.Max(0, (buttonPanel.ClientSize.Height - clearButton.Height) / 2));
-                okButton.Location = new Point(
-                    Math.Max(0, buttonPanel.ClientSize.Width - okButton.Width),
-                    Math.Max(0, (buttonPanel.ClientSize.Height - okButton.Height) / 2));
+                    Math.Max(0, (buttonPanel.ClientSize.Height - this.clearButton.Height) / 2));
+                this.okButton.Location = new Point(
+                    Math.Max(0, buttonPanel.ClientSize.Width - this.okButton.Width),
+                    Math.Max(0, (buttonPanel.ClientSize.Height - this.okButton.Height) / 2));
             };
 
             rootLayout.Controls.Add(adapterLayout, 0, 0);
             rootLayout.Controls.Add(this.usageGrid, 0, 1);
             rootLayout.Controls.Add(buttonPanel, 0, 2);
 
-            this.AcceptButton = okButton;
-            this.CancelButton = okButton;
+            this.AcceptButton = this.okButton;
+            this.CancelButton = this.okButton;
             this.Controls.Add(rootLayout);
             this.ApplyUsageData(usageWindowData);
         }
@@ -271,6 +274,9 @@ namespace TrafficView
                     MeasureTextWidth(this.uploadRowLabel),
                     MeasureTextWidth(this.downloadRowLabel)) + 24);
 
+            int adapterCaptionWidth = MeasureTextWidth(this.adapterCaptionLabel) + 8;
+            int adapterValueWidth = MeasureTextWidth(this.adapterValueLabel) + 16;
+
             int dailyColumnWidth = Math.Max(
                 MeasureTextWidth(this.dailyHeaderLabel),
                 Math.Max(MeasureTextWidth(this.dailyUploadValueLabel), MeasureTextWidth(this.dailyDownloadValueLabel))) + 24;
@@ -314,7 +320,9 @@ namespace TrafficView
             this.usageGrid.Height = headerRowHeight + uploadRowHeight + downloadRowHeight + 4;
             this.usageGrid.ResumeLayout();
 
-            int minimumClientWidth = this.usageGrid.Width + 40;
+            int adapterMinimumWidth = adapterCaptionWidth + Math.Max(adapterValueWidth, 140) + 150;
+            int buttonsMinimumWidth = this.clearButton.Width + this.okButton.Width + 56;
+            int minimumClientWidth = Math.Max(this.usageGrid.Width + 40, Math.Max(adapterMinimumWidth, buttonsMinimumWidth));
             int minimumClientHeight = this.usageGrid.Height + 177;
             this.ClientSize = new Size(
                 Math.Max(570, minimumClientWidth),

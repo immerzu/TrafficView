@@ -120,6 +120,8 @@ namespace TrafficView
         private readonly Icon notifyIconHandle;
         private readonly Image companyLogoImage;
         private readonly ToolStripControlHost companyLogoHost;
+        private readonly string menuVersionNumber;
+        private Label menuVersionLabel;
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
@@ -139,17 +141,19 @@ namespace TrafficView
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
+            this.menuVersionNumber = GetMenuVersionNumber();
 
             this.sharedMenu = new ContextMenuStrip();
             this.sharedMenu.RenderMode = ToolStripRenderMode.System;
             this.sharedMenu.ShowImageMargin = false;
+            this.sharedMenu.Padding = Padding.Empty;
             this.sharedMenu.Font = new Font(
                 SystemFonts.MenuFont.FontFamily,
                 Math.Max(10F, SystemFonts.MenuFont.Size),
                 FontStyle.Regular,
                 GraphicsUnit.Point);
             this.companyLogoImage = LoadCompanyLogoImage();
-            this.companyLogoHost = this.CreateCompanyLogoHost(this.companyLogoImage);
+            this.companyLogoHost = this.CreateCompanyLogoHost(this.companyLogoImage, this.GetMenuVersionText());
             this.toggleItem = new ToolStripMenuItem(string.Empty, null, this.ToggleItem_Click);
             this.calibrationStatusItem = new ToolStripMenuItem(string.Empty);
             this.calibrationStatusItem.Enabled = false;
@@ -265,7 +269,30 @@ namespace TrafficView
             }
         }
 
-        private ToolStripControlHost CreateCompanyLogoHost(Image logoImage)
+        private static string GetMenuVersionNumber()
+        {
+            Version version = typeof(Program).Assembly.GetName().Version;
+            if (version == null)
+            {
+                return "?";
+            }
+
+            return string.Format(
+                "{0}.{1}.{2:00}",
+                version.Major,
+                version.Minor,
+                version.Build);
+        }
+
+        private string GetMenuVersionText()
+        {
+            return UiLanguage.Format(
+                "Menu.VersionFormat",
+                "Version {0}",
+                this.menuVersionNumber);
+        }
+
+        private ToolStripControlHost CreateCompanyLogoHost(Image logoImage, string versionText)
         {
             if (logoImage == null)
             {
@@ -273,15 +300,29 @@ namespace TrafficView
             }
 
             Image trimmedLogoImage = TrimMenuLogoImage(logoImage);
-            Panel panel = new Panel();
-            panel.Size = new Size(82, 72);
+            TableLayoutPanel panel = new TableLayoutPanel();
+            panel.Size = new Size(286, 72);
             panel.Margin = Padding.Empty;
-            panel.Padding = new Padding(0);
+            panel.Padding = Padding.Empty;
             panel.BackColor = SystemColors.Menu;
+            panel.ColumnCount = 2;
+            panel.RowCount = 1;
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82F));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
+            Panel logoPanel = new Panel();
+            logoPanel.Dock = DockStyle.Fill;
+            logoPanel.Margin = Padding.Empty;
+            logoPanel.Padding = Padding.Empty;
+            logoPanel.BackColor = SystemColors.Menu;
+            logoPanel.Cursor = Cursors.Hand;
+            logoPanel.Click += this.CompanyLogo_Click;
+
+            int logoWidth = Math.Min(82, Math.Max(1, (int)Math.Round(72D * trimmedLogoImage.Width / trimmedLogoImage.Height)));
             PictureBox pictureBox = new PictureBox();
             pictureBox.Location = new Point(0, 0);
-            pictureBox.Size = panel.Size;
+            pictureBox.Size = new Size(logoWidth, 72);
             pictureBox.Margin = Padding.Empty;
             pictureBox.Padding = Padding.Empty;
             pictureBox.TabStop = false;
@@ -291,11 +332,25 @@ namespace TrafficView
             pictureBox.Anchor = AnchorStyles.Left | AnchorStyles.Top;
             pictureBox.Cursor = Cursors.Hand;
             pictureBox.Click += this.CompanyLogo_Click;
+            logoPanel.Controls.Add(pictureBox);
 
-            panel.Cursor = Cursors.Hand;
-            panel.Click += this.CompanyLogo_Click;
+            Label versionLabel = new Label();
+            versionLabel.Dock = DockStyle.Fill;
+            versionLabel.Margin = Padding.Empty;
+            versionLabel.Padding = new Padding(0, 0, 8, 0);
+            versionLabel.AutoSize = false;
+            versionLabel.Text = string.IsNullOrWhiteSpace(versionText) ? "?" : versionText;
+            versionLabel.TextAlign = ContentAlignment.MiddleCenter;
+            versionLabel.Font = new Font(
+                this.sharedMenu.Font.FontFamily,
+                this.sharedMenu.Font.Size + 0.5F,
+                FontStyle.Bold,
+                GraphicsUnit.Point);
+            versionLabel.BackColor = SystemColors.Menu;
+            this.menuVersionLabel = versionLabel;
 
-            panel.Controls.Add(pictureBox);
+            panel.Controls.Add(logoPanel, 0, 0);
+            panel.Controls.Add(versionLabel, 1, 0);
 
             ToolStripControlHost host = new ToolStripControlHost(panel);
             host.AutoSize = false;
@@ -822,6 +877,10 @@ namespace TrafficView
                 this.settings.PopupScalePercent);
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
+            if (this.menuVersionLabel != null)
+            {
+                this.menuVersionLabel.Text = this.GetMenuVersionText();
+            }
 
             foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.languageMenuItems)
             {

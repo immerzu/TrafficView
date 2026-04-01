@@ -87,20 +87,6 @@
     <Copy SourceFiles="TrafficView.panel.150.png" DestinationFiles="$(TargetDir)TrafficView.panel.150.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.150.png')" />
     <Copy SourceFiles="LOLO-SOFT_00_SW.png" DestinationFiles="$(TargetDir)LOLO-SOFT_00_SW.png" SkipUnchangedFiles="true" Condition="Exists('LOLO-SOFT_00_SW.png')" />
 
-    <ItemGroup>
-      <DefaultSettingsLines Include="AdapterId=" />
-      <DefaultSettingsLines Include="AdapterName=" />
-      <DefaultSettingsLines Include="CalibrationPeakBytesPerSecond=0" />
-      <DefaultSettingsLines Include="CalibrationDownloadPeakBytesPerSecond=0" />
-      <DefaultSettingsLines Include="CalibrationUploadPeakBytesPerSecond=0" />
-      <DefaultSettingsLines Include="InitialCalibrationPromptHandled=0" />
-      <DefaultSettingsLines Include="InitialLanguagePromptHandled=0" />
-      <DefaultSettingsLines Include="TransparencyPercent=0" />
-      <DefaultSettingsLines Include="LanguageCode=de" />
-      <DefaultSettingsLines Include="PopupScalePercent=100" />
-    </ItemGroup>
-
-    <WriteLinesToFile File="$(TargetDir)TrafficView.settings.ini" Lines="@(DefaultSettingsLines)" Overwrite="true" Encoding="ASCII" />
   </Target>
 
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

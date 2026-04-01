@@ -1,4 +1,1116 @@
-﻿===== Program.cs =====
+﻿===== src\AppLog.cs =====
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace TrafficView
+{
+    internal static class AppLog
+    {
+        private const string ApplicationDirectoryName = "TrafficView";
+        private const string LogDirectoryName = "Logs";
+        private const string LogFileName = "TrafficView.log";
+        private const long MaxLogFileBytes = 256L * 1024L;
+        private static readonly object SyncRoot = new object();
+        private static readonly HashSet<string> LoggedOnceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public static void Info(string message)
+        {
+            Write("INFO", message, null);
+        }
+
+        public static void Warn(string message, Exception exception = null)
+        {
+            Write("WARN", message, exception);
+        }
+
+        public static void WarnOnce(string key, string message, Exception exception = null)
+        {
+            if (!TryMarkOnce(key))
+            {
+                return;
+            }
+
+            Write("WARN", message, exception);
+        }
+
+        public static void Error(string message, Exception exception = null)
+        {
+            Write("ERROR", message, exception);
+        }
+
+        private static bool TryMarkOnce(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return true;
+            }
+
+            lock (SyncRoot)
+            {
+                if (LoggedOnceKeys.Contains(key))
+                {
+                    return false;
+                }
+
+                LoggedOnceKeys.Add(key);
+                return true;
+            }
+        }
+
+        private static void Write(string level, string message, Exception exception)
+        {
+            try
+            {
+                string logPath = GetLogPath();
+                if (string.IsNullOrWhiteSpace(logPath))
+                {
+                    return;
+                }
+
+                lock (SyncRoot)
+                {
+                    string directory = Path.GetDirectoryName(logPath);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+
+                    RotateIfNeeded(logPath);
+
+                    using (FileStream stream = new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                    using (StreamWriter writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
+                    {
+                        writer.WriteLine(CreateLogLine(level, message, exception));
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static string CreateLogLine(string level, string message, Exception exception)
+        {
+            string line = string.Format(
+                "{0:yyyy-MM-dd HH:mm:ss.fff} [{1}] {2}",
+                DateTime.Now,
+                string.IsNullOrWhiteSpace(level) ? "INFO" : level,
+                Sanitize(message));
+
+            if (exception != null)
+            {
+                line += " | " + Sanitize(DescribeException(exception));
+            }
+
+            return line;
+        }
+
+        private static string DescribeException(Exception exception)
+        {
+            List<string> parts = new List<string>();
+            Exception current = exception;
+            int depth = 0;
+
+            while (current != null && depth < 4)
+            {
+                parts.Add(current.GetType().Name + ": " + current.Message);
+                current = current.InnerException;
+                depth++;
+            }
+
+            return string.Join(" -> ", parts.ToArray());
+        }
+
+        private static string Sanitize(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\r", " ")
+                .Replace("\n", " ");
+        }
+
+        private static string GetLogPath()
+        {
+            string baseDirectory;
+
+            try
+            {
+                baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            }
+            catch
+            {
+                baseDirectory = string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(baseDirectory))
+            {
+                baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            }
+
+            return Path.Combine(baseDirectory, ApplicationDirectoryName, LogDirectoryName, LogFileName);
+        }
+
+        private static void RotateIfNeeded(string logPath)
+        {
+            try
+            {
+                if (!File.Exists(logPath))
+                {
+                    return;
+                }
+
+                FileInfo info = new FileInfo(logPath);
+                if (info.Length < MaxLogFileBytes)
+                {
+                    return;
+                }
+
+                string backupPath = logPath + ".1";
+                if (File.Exists(backupPath))
+                {
+                    File.Delete(backupPath);
+                }
+
+                File.Move(logPath, backupPath);
+            }
+            catch
+            {
+            }
+        }
+    }
+}
+
+
+===== src\DpiHelper.cs =====
+using System;
+using System.Drawing;
+using System.Runtime.InteropServices;
+
+namespace TrafficView
+{
+    internal static class DpiHelper
+    {
+        private const int BaseDpi = 96;
+        private static readonly IntPtr DpiAwarenessContextPerMonitorAwareV2 = new IntPtr(-4);
+
+        private enum ProcessDpiAwareness
+        {
+            ProcessDpiUnaware = 0,
+            ProcessSystemDpiAware = 1,
+            ProcessPerMonitorDpiAware = 2
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
+
+        [DllImport("shcore.dll", SetLastError = true)]
+        private static extern int SetProcessDpiAwareness(ProcessDpiAwareness awareness);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hWnd);
+
+        public static void EnableHighDpiSupport()
+        {
+            try
+            {
+                if (Environment.OSVersion.Version.Major >= 10 &&
+                    SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2))
+                {
+                    return;
+                }
+            }
+            catch (EntryPointNotFoundException)
+            {
+                AppLog.WarnOnce(
+                    "dpi-awareness-context-entrypoint",
+                    "Per-monitor V2 DPI API is not available; falling back to older DPI handling.");
+            }
+
+            try
+            {
+                int result = SetProcessDpiAwareness(ProcessDpiAwareness.ProcessPerMonitorDpiAware);
+                if (result == 0)
+                {
+                    return;
+                }
+
+                AppLog.WarnOnce(
+                    "dpi-awareness-shcore-result",
+                    string.Format(
+                        "SetProcessDpiAwareness failed with result {0}; falling back to legacy DPI handling.",
+                        result));
+            }
+            catch (DllNotFoundException)
+            {
+                AppLog.WarnOnce(
+                    "dpi-awareness-shcore-missing",
+                    "shcore.dll is not available; falling back to legacy DPI handling.");
+            }
+            catch (EntryPointNotFoundException)
+            {
+                AppLog.WarnOnce(
+                    "dpi-awareness-shcore-entrypoint",
+                    "SetProcessDpiAwareness is not available; falling back to legacy DPI handling.");
+            }
+
+            try
+            {
+                if (!SetProcessDPIAware())
+                {
+                    AppLog.WarnOnce(
+                        "dpi-awareness-legacy-failed",
+                        "Legacy SetProcessDPIAware call did not succeed.");
+                }
+            }
+            catch (EntryPointNotFoundException)
+            {
+                AppLog.WarnOnce(
+                    "dpi-awareness-legacy-entrypoint",
+                    "Legacy DPI API is not available.");
+            }
+        }
+
+        public static int GetDesktopDpi()
+        {
+            using (Graphics graphics = Graphics.FromHwnd(IntPtr.Zero))
+            {
+                return NormalizeDpi((int)Math.Round(graphics.DpiX));
+            }
+        }
+
+        public static int GetWindowDpi(IntPtr handle)
+        {
+            if (handle != IntPtr.Zero)
+            {
+                try
+                {
+                    uint dpi = GetDpiForWindow(handle);
+                    if (dpi > 0U)
+                    {
+                        return NormalizeDpi((int)dpi);
+                    }
+                }
+                catch (EntryPointNotFoundException)
+                {
+                    AppLog.WarnOnce(
+                        "dpi-get-window-fallback",
+                        "GetDpiForWindow is not available; using desktop DPI fallback.");
+                }
+            }
+
+            return GetDesktopDpi();
+        }
+
+        public static int NormalizeDpi(int dpi)
+        {
+            return Math.Max(BaseDpi, dpi);
+        }
+
+        public static int Scale(int value, int dpi)
+        {
+            return Math.Max(
+                1,
+                (int)Math.Round(
+                    (value * NormalizeDpi(dpi)) / (double)BaseDpi,
+                    MidpointRounding.AwayFromZero));
+        }
+
+        public static float Scale(float value, int dpi)
+        {
+            return (float)(value * NormalizeDpi(dpi) / (double)BaseDpi);
+        }
+
+        public static int HiWord(IntPtr value)
+        {
+            long raw = value.ToInt64();
+            return (int)((raw >> 16) & 0xFFFF);
+        }
+    }
+}
+
+
+===== src\MonitorSettings.cs =====
+using System;
+using System.Drawing;
+using System.IO;
+
+namespace TrafficView
+{
+    internal sealed class MonitorSettings
+    {
+        private const string SettingsFileName = "TrafficView.settings.ini";
+        private const string SettingsDirectoryName = "TrafficView";
+        private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
+
+        public MonitorSettings(
+            string adapterId,
+            string adapterName,
+            double calibrationPeakBytesPerSecond,
+            double calibrationDownloadPeakBytesPerSecond = 0D,
+            double calibrationUploadPeakBytesPerSecond = 0D,
+            bool initialCalibrationPromptHandled = false,
+            bool initialLanguagePromptHandled = false,
+            int transparencyPercent = 0,
+            string languageCode = "de",
+            bool hasSavedPopupLocation = false,
+            int popupLocationX = 0,
+            int popupLocationY = 0,
+            int popupScalePercent = 100)
+        {
+            this.AdapterId = adapterId ?? string.Empty;
+            this.AdapterName = adapterName ?? string.Empty;
+            this.CalibrationPeakBytesPerSecond = Math.Max(0D, calibrationPeakBytesPerSecond);
+            this.CalibrationDownloadPeakBytesPerSecond = Math.Max(0D, calibrationDownloadPeakBytesPerSecond);
+            this.CalibrationUploadPeakBytesPerSecond = Math.Max(0D, calibrationUploadPeakBytesPerSecond);
+            this.InitialCalibrationPromptHandled = initialCalibrationPromptHandled;
+            this.InitialLanguagePromptHandled = initialLanguagePromptHandled;
+            this.TransparencyPercent = ClampTransparencyPercent(transparencyPercent);
+            this.LanguageCode = UiLanguage.NormalizeLanguageCode(languageCode);
+            this.HasSavedPopupLocation = hasSavedPopupLocation;
+            this.PopupLocationX = popupLocationX;
+            this.PopupLocationY = popupLocationY;
+            this.PopupScalePercent = NormalizePopupScalePercent(popupScalePercent);
+        }
+
+        public string AdapterId { get; private set; }
+
+        public string AdapterName { get; private set; }
+
+        public double CalibrationPeakBytesPerSecond { get; private set; }
+
+        public double CalibrationDownloadPeakBytesPerSecond { get; private set; }
+
+        public double CalibrationUploadPeakBytesPerSecond { get; private set; }
+
+        public bool InitialCalibrationPromptHandled { get; private set; }
+
+        public bool InitialLanguagePromptHandled { get; private set; }
+
+        public int TransparencyPercent { get; private set; }
+
+        public string LanguageCode { get; private set; }
+
+        public bool HasSavedPopupLocation { get; private set; }
+
+        public int PopupLocationX { get; private set; }
+
+        public int PopupLocationY { get; private set; }
+
+        public Point PopupLocation
+        {
+            get
+            {
+                return new Point(this.PopupLocationX, this.PopupLocationY);
+            }
+        }
+
+        public int PopupScalePercent { get; private set; }
+
+        public MonitorSettings Clone()
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                handled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                handled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithTransparencyPercent(int transparencyPercent)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                transparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithLanguageCode(string languageCode)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                languageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithPopupLocation(Point popupLocation)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                true,
+                popupLocation.X,
+                popupLocation.Y,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithPopupScalePercent(int popupScalePercent)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                popupScalePercent);
+        }
+
+        public double GetDownloadVisualizationPeak()
+        {
+            if (this.CalibrationDownloadPeakBytesPerSecond > 0D)
+            {
+                return this.CalibrationDownloadPeakBytesPerSecond;
+            }
+
+            return this.CalibrationPeakBytesPerSecond;
+        }
+
+        public double GetUploadVisualizationPeak()
+        {
+            if (this.CalibrationUploadPeakBytesPerSecond > 0D)
+            {
+                return this.CalibrationUploadPeakBytesPerSecond;
+            }
+
+            return this.CalibrationPeakBytesPerSecond;
+        }
+
+        public string GetAdapterDisplayName()
+        {
+            if (string.IsNullOrEmpty(this.AdapterId))
+            {
+                return UiLanguage.Get("Common.Automatic", "Automatisch");
+            }
+
+            if (string.IsNullOrEmpty(this.AdapterName))
+            {
+                return UiLanguage.Get("Common.Adapter", "Adapter");
+            }
+
+            return this.AdapterName;
+        }
+
+        public bool HasAdapterSelection()
+        {
+            return !string.IsNullOrEmpty(this.AdapterId) || !string.IsNullOrEmpty(this.AdapterName);
+        }
+
+        public bool HasCalibrationData()
+        {
+            return this.CalibrationPeakBytesPerSecond > 0D ||
+                this.CalibrationDownloadPeakBytesPerSecond > 0D ||
+                this.CalibrationUploadPeakBytesPerSecond > 0D;
+        }
+
+        public void Save()
+        {
+            string settingsPath = GetSettingsPath();
+            if (!TryWriteSettingsFile(settingsPath, this.CreateSerializedLines()))
+            {
+                AppLog.WarnOnce(
+                    "settings-save-failed-" + settingsPath,
+                    string.Format("Settings save failed; current values could not be persisted to '{0}'.", settingsPath));
+            }
+        }
+
+        public static MonitorSettings Load()
+        {
+            MonitorSettings settings = new MonitorSettings(string.Empty, string.Empty, 0D);
+            string settingsPath = GetSettingsPath();
+            string[] lines;
+            bool primarySettingsFileExists = File.Exists(settingsPath);
+
+            if (TryReadSettingsLines(settingsPath, out lines))
+            {
+                return LoadFromLines(lines, settings);
+            }
+
+            string legacySettingsPath = GetLegacySettingsPath();
+            bool legacySettingsFileExists = !ArePathsEqual(settingsPath, legacySettingsPath) &&
+                File.Exists(legacySettingsPath);
+            if (!ArePathsEqual(settingsPath, legacySettingsPath) &&
+                !File.Exists(settingsPath) &&
+                TryReadSettingsLines(legacySettingsPath, out lines))
+            {
+                MonitorSettings migratedSettings = LoadFromLines(lines, settings);
+                AppLog.WarnOnce(
+                    "settings-legacy-migration-" + legacySettingsPath,
+                    string.Format(
+                        "Legacy settings path '{0}' was used and migration to '{1}' was attempted.",
+                        legacySettingsPath,
+                        settingsPath));
+                TryWriteSettingsFile(settingsPath, migratedSettings.CreateSerializedLines());
+                return migratedSettings;
+            }
+
+            if (primarySettingsFileExists || legacySettingsFileExists)
+            {
+                AppLog.WarnOnce(
+                    "settings-load-defaults",
+                    string.Format(
+                        "Settings could not be loaded from available path(s); defaults are being used. Primary='{0}', Legacy='{1}'.",
+                        settingsPath,
+                        legacySettingsPath));
+            }
+
+            return settings;
+        }
+
+        public static bool SettingsFileExists()
+        {
+            return File.Exists(GetSettingsPath()) || File.Exists(GetLegacySettingsPath());
+        }
+
+        private static MonitorSettings LoadFromLines(string[] lines, MonitorSettings defaults)
+        {
+            defaults = defaults ?? new MonitorSettings(string.Empty, string.Empty, 0D);
+
+            if (lines == null || lines.Length == 0)
+            {
+                return defaults;
+            }
+
+            string adapterId = defaults.AdapterId;
+            string adapterName = defaults.AdapterName;
+            double calibrationPeak = defaults.CalibrationPeakBytesPerSecond;
+            double calibrationDownloadPeak = defaults.CalibrationDownloadPeakBytesPerSecond;
+            double calibrationUploadPeak = defaults.CalibrationUploadPeakBytesPerSecond;
+            bool initialCalibrationPromptHandled = defaults.InitialCalibrationPromptHandled;
+            bool initialLanguagePromptHandled = defaults.InitialLanguagePromptHandled;
+            int transparencyPercent = defaults.TransparencyPercent;
+            string languageCode = defaults.LanguageCode;
+            bool hasSavedPopupLocation = defaults.HasSavedPopupLocation;
+            int popupLocationX = defaults.PopupLocationX;
+            int popupLocationY = defaults.PopupLocationY;
+            int popupScalePercent = defaults.PopupScalePercent;
+
+            foreach (string line in lines)
+            {
+                int splitIndex = line.IndexOf('=');
+                if (splitIndex <= 0)
+                {
+                    continue;
+                }
+
+                string key = line.Substring(0, splitIndex).Trim();
+                string value = line.Substring(splitIndex + 1).Trim();
+
+                if (string.Equals(key, "AdapterId", StringComparison.OrdinalIgnoreCase))
+                {
+                    adapterId = value;
+                    continue;
+                }
+
+                if (string.Equals(key, "AdapterName", StringComparison.OrdinalIgnoreCase))
+                {
+                    adapterName = value;
+                    continue;
+                }
+
+                if (string.Equals(key, "CalibrationPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
+                {
+                    double parsedValue;
+                    if (double.TryParse(
+                        value,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out parsedValue))
+                    {
+                        calibrationPeak = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "CalibrationDownloadPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
+                {
+                    double parsedValue;
+                    if (double.TryParse(
+                        value,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out parsedValue))
+                    {
+                        calibrationDownloadPeak = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "CalibrationUploadPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
+                {
+                    double parsedValue;
+                    if (double.TryParse(
+                        value,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out parsedValue))
+                    {
+                        calibrationUploadPeak = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "InitialCalibrationPromptHandled", StringComparison.OrdinalIgnoreCase))
+                {
+                    initialCalibrationPromptHandled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                if (string.Equals(key, "InitialLanguagePromptHandled", StringComparison.OrdinalIgnoreCase))
+                {
+                    initialLanguagePromptHandled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                if (string.Equals(key, "TransparencyPercent", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        transparencyPercent = ClampTransparencyPercent(parsedValue);
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "LanguageCode", StringComparison.OrdinalIgnoreCase))
+                {
+                    languageCode = UiLanguage.NormalizeLanguageCode(value);
+                    continue;
+                }
+
+                if (string.Equals(key, "HasSavedPopupLocation", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasSavedPopupLocation = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupLocationX", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        popupLocationX = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupLocationY", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        popupLocationY = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupScalePercent", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        popupScalePercent = NormalizePopupScalePercent(parsedValue);
+                    }
+                }
+            }
+
+            return new MonitorSettings(
+                adapterId,
+                adapterName,
+                calibrationPeak,
+                calibrationDownloadPeak,
+                calibrationUploadPeak,
+                initialCalibrationPromptHandled,
+                initialLanguagePromptHandled,
+                transparencyPercent,
+                languageCode,
+                hasSavedPopupLocation,
+                popupLocationX,
+                popupLocationY,
+                popupScalePercent);
+        }
+
+        private string[] CreateSerializedLines()
+        {
+            return new string[]
+            {
+                string.Format("AdapterId={0}", this.AdapterId),
+                string.Format("AdapterName={0}", this.AdapterName),
+                string.Format(
+                    "CalibrationPeakBytesPerSecond={0}",
+                    this.CalibrationPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                string.Format(
+                    "CalibrationDownloadPeakBytesPerSecond={0}",
+                    this.CalibrationDownloadPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                string.Format(
+                    "CalibrationUploadPeakBytesPerSecond={0}",
+                    this.CalibrationUploadPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                string.Format("InitialCalibrationPromptHandled={0}", this.InitialCalibrationPromptHandled ? "1" : "0"),
+                string.Format("InitialLanguagePromptHandled={0}", this.InitialLanguagePromptHandled ? "1" : "0"),
+                string.Format("TransparencyPercent={0}", this.TransparencyPercent),
+                string.Format("LanguageCode={0}", this.LanguageCode),
+                string.Format("HasSavedPopupLocation={0}", this.HasSavedPopupLocation ? "1" : "0"),
+                string.Format("PopupLocationX={0}", this.PopupLocationX),
+                string.Format("PopupLocationY={0}", this.PopupLocationY),
+                string.Format("PopupScalePercent={0}", this.PopupScalePercent)
+            };
+        }
+
+        public static int[] GetSupportedPopupScalePercents()
+        {
+            return (int[])SupportedPopupScalePercents.Clone();
+        }
+
+        private static string GetSettingsPath()
+        {
+            return Path.Combine(GetSettingsDirectoryPath(), SettingsFileName);
+        }
+
+        private static string GetLegacySettingsPath()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, SettingsFileName);
+        }
+
+        private static string GetSettingsDirectoryPath()
+        {
+            string localApplicationDataPath;
+
+            try
+            {
+                localApplicationDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            }
+            catch (System.Security.SecurityException)
+            {
+                AppLog.WarnOnce(
+                    "settings-directory-security",
+                    "LocalAppData is not accessible for settings storage; falling back to application directory.");
+                localApplicationDataPath = string.Empty;
+            }
+
+            if (string.IsNullOrWhiteSpace(localApplicationDataPath))
+            {
+                return AppDomain.CurrentDomain.BaseDirectory;
+            }
+
+            return Path.Combine(localApplicationDataPath, SettingsDirectoryName);
+        }
+
+        private static bool TryReadSettingsLines(string path, out string[] lines)
+        {
+            lines = null;
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+
+                lines = File.ReadAllLines(path);
+                return true;
+            }
+            catch (IOException)
+            {
+                AppLog.WarnOnce(
+                    "settings-read-io-" + (path ?? string.Empty),
+                    string.Format("Settings file could not be read: {0}", path ?? string.Empty));
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                AppLog.WarnOnce(
+                    "settings-read-access-" + (path ?? string.Empty),
+                    string.Format("Settings file is not accessible: {0}", path ?? string.Empty));
+                return false;
+            }
+            catch (System.Security.SecurityException)
+            {
+                AppLog.WarnOnce(
+                    "settings-read-security-" + (path ?? string.Empty),
+                    string.Format("Settings file access was denied by security policy: {0}", path ?? string.Empty));
+                return false;
+            }
+            catch (NotSupportedException)
+            {
+                AppLog.WarnOnce(
+                    "settings-read-path-" + (path ?? string.Empty),
+                    string.Format("Settings file path is not supported: {0}", path ?? string.Empty));
+                return false;
+            }
+        }
+
+        private static bool TryWriteSettingsFile(string path, string[] lines)
+        {
+            if (string.IsNullOrWhiteSpace(path) || lines == null)
+            {
+                return false;
+            }
+
+            string tempPath = null;
+
+            try
+            {
+                string directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                File.WriteAllLines(tempPath, lines);
+
+                if (File.Exists(path))
+                {
+                    File.Replace(tempPath, path, null, true);
+                }
+                else
+                {
+                    File.Move(tempPath, path);
+                }
+
+                return true;
+            }
+            catch (IOException)
+            {
+                AppLog.WarnOnce(
+                    "settings-write-io-" + (path ?? string.Empty),
+                    string.Format("Settings file could not be written: {0}", path ?? string.Empty));
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                AppLog.WarnOnce(
+                    "settings-write-access-" + (path ?? string.Empty),
+                    string.Format("Settings file is not writable: {0}", path ?? string.Empty));
+                return false;
+            }
+            catch (System.Security.SecurityException)
+            {
+                AppLog.WarnOnce(
+                    "settings-write-security-" + (path ?? string.Empty),
+                    string.Format("Settings file write was denied by security policy: {0}", path ?? string.Empty));
+                return false;
+            }
+            catch (NotSupportedException)
+            {
+                AppLog.WarnOnce(
+                    "settings-write-path-" + (path ?? string.Empty),
+                    string.Format("Settings file path is not supported for writing: {0}", path ?? string.Empty));
+                return false;
+            }
+            finally
+            {
+                TryDeleteFile(tempPath);
+            }
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException)
+            {
+                AppLog.WarnOnce(
+                    "settings-temp-delete-io-" + (path ?? string.Empty),
+                    string.Format("Temporary settings file could not be deleted: {0}", path ?? string.Empty));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                AppLog.WarnOnce(
+                    "settings-temp-delete-access-" + (path ?? string.Empty),
+                    string.Format("Temporary settings file is not deletable: {0}", path ?? string.Empty));
+            }
+            catch (System.Security.SecurityException)
+            {
+                AppLog.WarnOnce(
+                    "settings-temp-delete-security-" + (path ?? string.Empty),
+                    string.Format("Temporary settings file deletion was denied by security policy: {0}", path ?? string.Empty));
+            }
+        }
+
+        private static bool ArePathsEqual(string left, string right)
+        {
+            string normalizedLeft = NormalizePathForComparison(left);
+            string normalizedRight = NormalizePathForComparison(right);
+
+            if (normalizedLeft == null || normalizedRight == null)
+            {
+                return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizePathForComparison(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+            catch (PathTooLongException)
+            {
+                return null;
+            }
+        }
+
+        public static double ToOpacityValue(int transparencyPercent)
+        {
+            int clamped = ClampTransparencyPercent(transparencyPercent);
+            return Math.Max(0D, Math.Min(1D, 1D - (clamped / 100D)));
+        }
+
+        public static byte ToOpacityByte(int transparencyPercent)
+        {
+            return (byte)Math.Round(ToOpacityValue(transparencyPercent) * 255D);
+        }
+
+        private static int ClampTransparencyPercent(int transparencyPercent)
+        {
+            return Math.Max(0, Math.Min(100, transparencyPercent));
+        }
+
+        private static int NormalizePopupScalePercent(int popupScalePercent)
+        {
+            int normalized = SupportedPopupScalePercents[0];
+            int bestDistance = Math.Abs(popupScalePercent - normalized);
+
+            for (int i = 1; i < SupportedPopupScalePercents.Length; i++)
+            {
+                int candidate = SupportedPopupScalePercents[i];
+                int distance = Math.Abs(popupScalePercent - candidate);
+                if (distance < bestDistance)
+                {
+                    normalized = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            return normalized;
+        }
+    }
+}
+
+
+===== src\Program.cs =====
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -121,6 +1233,8 @@ namespace TrafficView
         private readonly Icon notifyIconHandle;
         private readonly Image companyLogoImage;
         private readonly ToolStripControlHost companyLogoHost;
+        private readonly string menuVersionNumber;
+        private Label menuVersionLabel;
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
@@ -140,17 +1254,19 @@ namespace TrafficView
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
+            this.menuVersionNumber = GetMenuVersionNumber();
 
             this.sharedMenu = new ContextMenuStrip();
             this.sharedMenu.RenderMode = ToolStripRenderMode.System;
             this.sharedMenu.ShowImageMargin = false;
+            this.sharedMenu.Padding = Padding.Empty;
             this.sharedMenu.Font = new Font(
                 SystemFonts.MenuFont.FontFamily,
                 Math.Max(10F, SystemFonts.MenuFont.Size),
                 FontStyle.Regular,
                 GraphicsUnit.Point);
             this.companyLogoImage = LoadCompanyLogoImage();
-            this.companyLogoHost = this.CreateCompanyLogoHost(this.companyLogoImage);
+            this.companyLogoHost = this.CreateCompanyLogoHost(this.companyLogoImage, this.GetMenuVersionText());
             this.toggleItem = new ToolStripMenuItem(string.Empty, null, this.ToggleItem_Click);
             this.calibrationStatusItem = new ToolStripMenuItem(string.Empty);
             this.calibrationStatusItem.Enabled = false;
@@ -266,7 +1382,30 @@ namespace TrafficView
             }
         }
 
-        private ToolStripControlHost CreateCompanyLogoHost(Image logoImage)
+        private static string GetMenuVersionNumber()
+        {
+            Version version = typeof(Program).Assembly.GetName().Version;
+            if (version == null)
+            {
+                return "?";
+            }
+
+            return string.Format(
+                "{0}.{1}.{2:00}",
+                version.Major,
+                version.Minor,
+                version.Build);
+        }
+
+        private string GetMenuVersionText()
+        {
+            return UiLanguage.Format(
+                "Menu.VersionFormat",
+                "Version {0}",
+                this.menuVersionNumber);
+        }
+
+        private ToolStripControlHost CreateCompanyLogoHost(Image logoImage, string versionText)
         {
             if (logoImage == null)
             {
@@ -274,15 +1413,29 @@ namespace TrafficView
             }
 
             Image trimmedLogoImage = TrimMenuLogoImage(logoImage);
-            Panel panel = new Panel();
-            panel.Size = new Size(82, 72);
+            TableLayoutPanel panel = new TableLayoutPanel();
+            panel.Size = new Size(286, 72);
             panel.Margin = Padding.Empty;
-            panel.Padding = new Padding(0);
+            panel.Padding = Padding.Empty;
             panel.BackColor = SystemColors.Menu;
+            panel.ColumnCount = 2;
+            panel.RowCount = 1;
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82F));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
+            Panel logoPanel = new Panel();
+            logoPanel.Dock = DockStyle.Fill;
+            logoPanel.Margin = Padding.Empty;
+            logoPanel.Padding = Padding.Empty;
+            logoPanel.BackColor = SystemColors.Menu;
+            logoPanel.Cursor = Cursors.Hand;
+            logoPanel.Click += this.CompanyLogo_Click;
+
+            int logoWidth = Math.Min(82, Math.Max(1, (int)Math.Round(72D * trimmedLogoImage.Width / trimmedLogoImage.Height)));
             PictureBox pictureBox = new PictureBox();
             pictureBox.Location = new Point(0, 0);
-            pictureBox.Size = panel.Size;
+            pictureBox.Size = new Size(logoWidth, 72);
             pictureBox.Margin = Padding.Empty;
             pictureBox.Padding = Padding.Empty;
             pictureBox.TabStop = false;
@@ -292,11 +1445,25 @@ namespace TrafficView
             pictureBox.Anchor = AnchorStyles.Left | AnchorStyles.Top;
             pictureBox.Cursor = Cursors.Hand;
             pictureBox.Click += this.CompanyLogo_Click;
+            logoPanel.Controls.Add(pictureBox);
 
-            panel.Cursor = Cursors.Hand;
-            panel.Click += this.CompanyLogo_Click;
+            Label versionLabel = new Label();
+            versionLabel.Dock = DockStyle.Fill;
+            versionLabel.Margin = Padding.Empty;
+            versionLabel.Padding = new Padding(0, 0, 8, 0);
+            versionLabel.AutoSize = false;
+            versionLabel.Text = string.IsNullOrWhiteSpace(versionText) ? "?" : versionText;
+            versionLabel.TextAlign = ContentAlignment.MiddleCenter;
+            versionLabel.Font = new Font(
+                this.sharedMenu.Font.FontFamily,
+                this.sharedMenu.Font.Size + 0.5F,
+                FontStyle.Bold,
+                GraphicsUnit.Point);
+            versionLabel.BackColor = SystemColors.Menu;
+            this.menuVersionLabel = versionLabel;
 
-            panel.Controls.Add(pictureBox);
+            panel.Controls.Add(logoPanel, 0, 0);
+            panel.Controls.Add(versionLabel, 1, 0);
 
             ToolStripControlHost host = new ToolStripControlHost(panel);
             host.AutoSize = false;
@@ -823,6 +1990,10 @@ namespace TrafficView
                 this.settings.PopupScalePercent);
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
+            if (this.menuVersionLabel != null)
+            {
+                this.menuVersionLabel.Text = this.GetMenuVersionText();
+            }
 
             foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.languageMenuItems)
             {
@@ -5709,1363 +6880,7 @@ namespace TrafficView
 }
 
 
-===== AppLog.cs =====
-using System;
-using System.Collections.Generic;
-using System.IO;
-
-namespace TrafficView
-{
-    internal static class AppLog
-    {
-        private const string ApplicationDirectoryName = "TrafficView";
-        private const string LogDirectoryName = "Logs";
-        private const string LogFileName = "TrafficView.log";
-        private const long MaxLogFileBytes = 256L * 1024L;
-        private static readonly object SyncRoot = new object();
-        private static readonly HashSet<string> LoggedOnceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        public static void Info(string message)
-        {
-            Write("INFO", message, null);
-        }
-
-        public static void Warn(string message, Exception exception = null)
-        {
-            Write("WARN", message, exception);
-        }
-
-        public static void WarnOnce(string key, string message, Exception exception = null)
-        {
-            if (!TryMarkOnce(key))
-            {
-                return;
-            }
-
-            Write("WARN", message, exception);
-        }
-
-        public static void Error(string message, Exception exception = null)
-        {
-            Write("ERROR", message, exception);
-        }
-
-        private static bool TryMarkOnce(string key)
-        {
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                return true;
-            }
-
-            lock (SyncRoot)
-            {
-                if (LoggedOnceKeys.Contains(key))
-                {
-                    return false;
-                }
-
-                LoggedOnceKeys.Add(key);
-                return true;
-            }
-        }
-
-        private static void Write(string level, string message, Exception exception)
-        {
-            try
-            {
-                string logPath = GetLogPath();
-                if (string.IsNullOrWhiteSpace(logPath))
-                {
-                    return;
-                }
-
-                lock (SyncRoot)
-                {
-                    string directory = Path.GetDirectoryName(logPath);
-                    if (!string.IsNullOrWhiteSpace(directory))
-                    {
-                        Directory.CreateDirectory(directory);
-                    }
-
-                    RotateIfNeeded(logPath);
-
-                    using (FileStream stream = new FileStream(logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
-                    using (StreamWriter writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
-                    {
-                        writer.WriteLine(CreateLogLine(level, message, exception));
-                    }
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        private static string CreateLogLine(string level, string message, Exception exception)
-        {
-            string line = string.Format(
-                "{0:yyyy-MM-dd HH:mm:ss.fff} [{1}] {2}",
-                DateTime.Now,
-                string.IsNullOrWhiteSpace(level) ? "INFO" : level,
-                Sanitize(message));
-
-            if (exception != null)
-            {
-                line += " | " + Sanitize(DescribeException(exception));
-            }
-
-            return line;
-        }
-
-        private static string DescribeException(Exception exception)
-        {
-            List<string> parts = new List<string>();
-            Exception current = exception;
-            int depth = 0;
-
-            while (current != null && depth < 4)
-            {
-                parts.Add(current.GetType().Name + ": " + current.Message);
-                current = current.InnerException;
-                depth++;
-            }
-
-            return string.Join(" -> ", parts.ToArray());
-        }
-
-        private static string Sanitize(string value)
-        {
-            return (value ?? string.Empty)
-                .Replace("\r", " ")
-                .Replace("\n", " ");
-        }
-
-        private static string GetLogPath()
-        {
-            string baseDirectory;
-
-            try
-            {
-                baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            }
-            catch
-            {
-                baseDirectory = string.Empty;
-            }
-
-            if (string.IsNullOrWhiteSpace(baseDirectory))
-            {
-                baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-            }
-
-            return Path.Combine(baseDirectory, ApplicationDirectoryName, LogDirectoryName, LogFileName);
-        }
-
-        private static void RotateIfNeeded(string logPath)
-        {
-            try
-            {
-                if (!File.Exists(logPath))
-                {
-                    return;
-                }
-
-                FileInfo info = new FileInfo(logPath);
-                if (info.Length < MaxLogFileBytes)
-                {
-                    return;
-                }
-
-                string backupPath = logPath + ".1";
-                if (File.Exists(backupPath))
-                {
-                    File.Delete(backupPath);
-                }
-
-                File.Move(logPath, backupPath);
-            }
-            catch
-            {
-            }
-        }
-    }
-}
-
-
-===== DpiHelper.cs =====
-using System;
-using System.Drawing;
-using System.Runtime.InteropServices;
-
-namespace TrafficView
-{
-    internal static class DpiHelper
-    {
-        private const int BaseDpi = 96;
-        private static readonly IntPtr DpiAwarenessContextPerMonitorAwareV2 = new IntPtr(-4);
-
-        private enum ProcessDpiAwareness
-        {
-            ProcessDpiUnaware = 0,
-            ProcessSystemDpiAware = 1,
-            ProcessPerMonitorDpiAware = 2
-        }
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
-
-        [DllImport("shcore.dll", SetLastError = true)]
-        private static extern int SetProcessDpiAwareness(ProcessDpiAwareness awareness);
-
-        [DllImport("user32.dll")]
-        private static extern bool SetProcessDPIAware();
-
-        [DllImport("user32.dll")]
-        private static extern uint GetDpiForWindow(IntPtr hWnd);
-
-        public static void EnableHighDpiSupport()
-        {
-            try
-            {
-                if (Environment.OSVersion.Version.Major >= 10 &&
-                    SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2))
-                {
-                    return;
-                }
-            }
-            catch (EntryPointNotFoundException)
-            {
-                AppLog.WarnOnce(
-                    "dpi-awareness-context-entrypoint",
-                    "Per-monitor V2 DPI API is not available; falling back to older DPI handling.");
-            }
-
-            try
-            {
-                int result = SetProcessDpiAwareness(ProcessDpiAwareness.ProcessPerMonitorDpiAware);
-                if (result == 0)
-                {
-                    return;
-                }
-
-                AppLog.WarnOnce(
-                    "dpi-awareness-shcore-result",
-                    string.Format(
-                        "SetProcessDpiAwareness failed with result {0}; falling back to legacy DPI handling.",
-                        result));
-            }
-            catch (DllNotFoundException)
-            {
-                AppLog.WarnOnce(
-                    "dpi-awareness-shcore-missing",
-                    "shcore.dll is not available; falling back to legacy DPI handling.");
-            }
-            catch (EntryPointNotFoundException)
-            {
-                AppLog.WarnOnce(
-                    "dpi-awareness-shcore-entrypoint",
-                    "SetProcessDpiAwareness is not available; falling back to legacy DPI handling.");
-            }
-
-            try
-            {
-                if (!SetProcessDPIAware())
-                {
-                    AppLog.WarnOnce(
-                        "dpi-awareness-legacy-failed",
-                        "Legacy SetProcessDPIAware call did not succeed.");
-                }
-            }
-            catch (EntryPointNotFoundException)
-            {
-                AppLog.WarnOnce(
-                    "dpi-awareness-legacy-entrypoint",
-                    "Legacy DPI API is not available.");
-            }
-        }
-
-        public static int GetDesktopDpi()
-        {
-            using (Graphics graphics = Graphics.FromHwnd(IntPtr.Zero))
-            {
-                return NormalizeDpi((int)Math.Round(graphics.DpiX));
-            }
-        }
-
-        public static int GetWindowDpi(IntPtr handle)
-        {
-            if (handle != IntPtr.Zero)
-            {
-                try
-                {
-                    uint dpi = GetDpiForWindow(handle);
-                    if (dpi > 0U)
-                    {
-                        return NormalizeDpi((int)dpi);
-                    }
-                }
-                catch (EntryPointNotFoundException)
-                {
-                    AppLog.WarnOnce(
-                        "dpi-get-window-fallback",
-                        "GetDpiForWindow is not available; using desktop DPI fallback.");
-                }
-            }
-
-            return GetDesktopDpi();
-        }
-
-        public static int NormalizeDpi(int dpi)
-        {
-            return Math.Max(BaseDpi, dpi);
-        }
-
-        public static int Scale(int value, int dpi)
-        {
-            return Math.Max(
-                1,
-                (int)Math.Round(
-                    (value * NormalizeDpi(dpi)) / (double)BaseDpi,
-                    MidpointRounding.AwayFromZero));
-        }
-
-        public static float Scale(float value, int dpi)
-        {
-            return (float)(value * NormalizeDpi(dpi) / (double)BaseDpi);
-        }
-
-        public static int HiWord(IntPtr value)
-        {
-            long raw = value.ToInt64();
-            return (int)((raw >> 16) & 0xFFFF);
-        }
-    }
-}
-
-
-===== UiLanguage.cs =====
-using System;
-using System.Collections.Generic;
-using System.IO;
-
-namespace TrafficView
-{
-    internal sealed class LanguageOption
-    {
-        public LanguageOption(string code, string displayName)
-        {
-            this.Code = code;
-            this.DisplayName = displayName;
-        }
-
-        public string Code { get; private set; }
-
-        public string DisplayName { get; private set; }
-
-        public override string ToString()
-        {
-            return this.DisplayName;
-        }
-    }
-
-    internal static class UiLanguage
-    {
-        private static readonly LanguageOption[] SupportedLanguages = new LanguageOption[]
-        {
-            new LanguageOption("de", "Deutsch"),
-            new LanguageOption("en", "English"),
-            new LanguageOption("ru", "Русский"),
-            new LanguageOption("zh-Hans", "中文(简体)")
-        };
-
-        private static readonly Dictionary<string, Dictionary<string, string>> Translations =
-            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-
-        private static bool loaded;
-        private static string currentCode = "de";
-
-        public static string CurrentCode
-        {
-            get { return currentCode; }
-        }
-
-        public static LanguageOption[] GetSupportedLanguages()
-        {
-            return SupportedLanguages;
-        }
-
-        public static void Initialize(string languageCode)
-        {
-            if (!loaded)
-            {
-                LoadTranslations();
-                loaded = true;
-            }
-
-            SetLanguage(languageCode);
-        }
-
-        public static void SetLanguage(string languageCode)
-        {
-            currentCode = NormalizeLanguageCode(languageCode);
-        }
-
-        public static string NormalizeLanguageCode(string languageCode)
-        {
-            if (string.IsNullOrWhiteSpace(languageCode))
-            {
-                return "de";
-            }
-
-            string normalized = languageCode.Trim();
-            if (string.Equals(normalized, "zh", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(normalized, "zh-cn", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(normalized, "zh-hans", StringComparison.OrdinalIgnoreCase))
-            {
-                return "zh-Hans";
-            }
-
-            for (int i = 0; i < SupportedLanguages.Length; i++)
-            {
-                if (string.Equals(SupportedLanguages[i].Code, normalized, StringComparison.OrdinalIgnoreCase))
-                {
-                    return SupportedLanguages[i].Code;
-                }
-            }
-
-            return "de";
-        }
-
-        public static string Get(string key, string fallback)
-        {
-            Dictionary<string, string> languageEntries;
-            string value;
-
-            if (Translations.TryGetValue(currentCode, out languageEntries) &&
-                languageEntries.TryGetValue(key, out value) &&
-                !string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-
-            if (!string.Equals(currentCode, "de", StringComparison.OrdinalIgnoreCase) &&
-                Translations.TryGetValue("de", out languageEntries) &&
-                languageEntries.TryGetValue(key, out value) &&
-                !string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-
-            return fallback;
-        }
-
-        public static string Format(string key, string fallback, params object[] args)
-        {
-            string format = Get(key, fallback);
-
-            try
-            {
-                return string.Format(format, args);
-            }
-            catch (FormatException)
-            {
-                AppLog.WarnOnce(
-                    "translation-format-" + CurrentCode + "-" + (key ?? string.Empty),
-                    string.Format(
-                        "Translation format fallback used for key '{0}' in language '{1}'.",
-                        key ?? string.Empty,
-                        CurrentCode),
-                    null);
-
-                try
-                {
-                    return string.Format(fallback, args);
-                }
-                catch (FormatException)
-                {
-                    AppLog.WarnOnce(
-                        "translation-format-fallback-" + (key ?? string.Empty),
-                        string.Format(
-                            "Fallback translation format is also invalid for key '{0}'. Returning raw format string.",
-                            key ?? string.Empty),
-                        null);
-                    return format;
-                }
-            }
-        }
-
-        private static void LoadTranslations()
-        {
-            string languageFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TrafficView.languages.ini");
-            string[] lines;
-
-            try
-            {
-                if (!File.Exists(languageFilePath))
-                {
-                    return;
-                }
-
-                lines = File.ReadAllLines(languageFilePath);
-            }
-            catch (IOException)
-            {
-                AppLog.WarnOnce(
-                    "translations-load-io",
-                    string.Format("Translation file could not be read: {0}", languageFilePath));
-                return;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                AppLog.WarnOnce(
-                    "translations-load-access",
-                    string.Format("Translation file is not accessible: {0}", languageFilePath));
-                return;
-            }
-            catch (System.Security.SecurityException)
-            {
-                AppLog.WarnOnce(
-                    "translations-load-security",
-                    string.Format("Translation file access was denied by security policy: {0}", languageFilePath));
-                return;
-            }
-            catch (NotSupportedException)
-            {
-                AppLog.WarnOnce(
-                    "translations-load-path",
-                    string.Format("Translation file path is not supported: {0}", languageFilePath));
-                return;
-            }
-
-            Dictionary<string, Dictionary<string, string>> parsedTranslations =
-                new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
-            string currentSection = string.Empty;
-
-            for (int i = 0; i < lines.Length; i++)
-            {
-                string line = lines[i].Trim();
-                if (line.Length == 0 || line.StartsWith(";", StringComparison.Ordinal) || line.StartsWith("#", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (line.StartsWith("[", StringComparison.Ordinal) && line.EndsWith("]", StringComparison.Ordinal))
-                {
-                    currentSection = NormalizeLanguageCode(line.Substring(1, line.Length - 2));
-                    if (!parsedTranslations.ContainsKey(currentSection))
-                    {
-                        parsedTranslations[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    }
-
-                    continue;
-                }
-
-                int splitIndex = line.IndexOf('=');
-                if (splitIndex <= 0 || string.IsNullOrEmpty(currentSection))
-                {
-                    continue;
-                }
-
-                string key = line.Substring(0, splitIndex).Trim();
-                string value = line.Substring(splitIndex + 1);
-
-                if (!parsedTranslations.ContainsKey(currentSection))
-                {
-                    parsedTranslations[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                }
-
-                parsedTranslations[currentSection][key] = value;
-            }
-
-            Translations.Clear();
-            foreach (KeyValuePair<string, Dictionary<string, string>> entry in parsedTranslations)
-            {
-                Translations[entry.Key] = entry.Value;
-            }
-        }
-    }
-}
-
-
-===== MonitorSettings.cs =====
-using System;
-using System.Drawing;
-using System.IO;
-
-namespace TrafficView
-{
-    internal sealed class MonitorSettings
-    {
-        private const string SettingsFileName = "TrafficView.settings.ini";
-        private const string SettingsDirectoryName = "TrafficView";
-        private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
-
-        public MonitorSettings(
-            string adapterId,
-            string adapterName,
-            double calibrationPeakBytesPerSecond,
-            double calibrationDownloadPeakBytesPerSecond = 0D,
-            double calibrationUploadPeakBytesPerSecond = 0D,
-            bool initialCalibrationPromptHandled = false,
-            bool initialLanguagePromptHandled = false,
-            int transparencyPercent = 0,
-            string languageCode = "de",
-            bool hasSavedPopupLocation = false,
-            int popupLocationX = 0,
-            int popupLocationY = 0,
-            int popupScalePercent = 100)
-        {
-            this.AdapterId = adapterId ?? string.Empty;
-            this.AdapterName = adapterName ?? string.Empty;
-            this.CalibrationPeakBytesPerSecond = Math.Max(0D, calibrationPeakBytesPerSecond);
-            this.CalibrationDownloadPeakBytesPerSecond = Math.Max(0D, calibrationDownloadPeakBytesPerSecond);
-            this.CalibrationUploadPeakBytesPerSecond = Math.Max(0D, calibrationUploadPeakBytesPerSecond);
-            this.InitialCalibrationPromptHandled = initialCalibrationPromptHandled;
-            this.InitialLanguagePromptHandled = initialLanguagePromptHandled;
-            this.TransparencyPercent = ClampTransparencyPercent(transparencyPercent);
-            this.LanguageCode = UiLanguage.NormalizeLanguageCode(languageCode);
-            this.HasSavedPopupLocation = hasSavedPopupLocation;
-            this.PopupLocationX = popupLocationX;
-            this.PopupLocationY = popupLocationY;
-            this.PopupScalePercent = NormalizePopupScalePercent(popupScalePercent);
-        }
-
-        public string AdapterId { get; private set; }
-
-        public string AdapterName { get; private set; }
-
-        public double CalibrationPeakBytesPerSecond { get; private set; }
-
-        public double CalibrationDownloadPeakBytesPerSecond { get; private set; }
-
-        public double CalibrationUploadPeakBytesPerSecond { get; private set; }
-
-        public bool InitialCalibrationPromptHandled { get; private set; }
-
-        public bool InitialLanguagePromptHandled { get; private set; }
-
-        public int TransparencyPercent { get; private set; }
-
-        public string LanguageCode { get; private set; }
-
-        public bool HasSavedPopupLocation { get; private set; }
-
-        public int PopupLocationX { get; private set; }
-
-        public int PopupLocationY { get; private set; }
-
-        public Point PopupLocation
-        {
-            get
-            {
-                return new Point(this.PopupLocationX, this.PopupLocationY);
-            }
-        }
-
-        public int PopupScalePercent { get; private set; }
-
-        public MonitorSettings Clone()
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                this.InitialCalibrationPromptHandled,
-                this.InitialLanguagePromptHandled,
-                this.TransparencyPercent,
-                this.LanguageCode,
-                this.HasSavedPopupLocation,
-                this.PopupLocationX,
-                this.PopupLocationY,
-                this.PopupScalePercent);
-        }
-
-        public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                handled,
-                this.InitialLanguagePromptHandled,
-                this.TransparencyPercent,
-                this.LanguageCode,
-                this.HasSavedPopupLocation,
-                this.PopupLocationX,
-                this.PopupLocationY,
-                this.PopupScalePercent);
-        }
-
-        public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                this.InitialCalibrationPromptHandled,
-                handled,
-                this.TransparencyPercent,
-                this.LanguageCode,
-                this.HasSavedPopupLocation,
-                this.PopupLocationX,
-                this.PopupLocationY,
-                this.PopupScalePercent);
-        }
-
-        public MonitorSettings WithTransparencyPercent(int transparencyPercent)
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                this.InitialCalibrationPromptHandled,
-                this.InitialLanguagePromptHandled,
-                transparencyPercent,
-                this.LanguageCode,
-                this.HasSavedPopupLocation,
-                this.PopupLocationX,
-                this.PopupLocationY,
-                this.PopupScalePercent);
-        }
-
-        public MonitorSettings WithLanguageCode(string languageCode)
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                this.InitialCalibrationPromptHandled,
-                this.InitialLanguagePromptHandled,
-                this.TransparencyPercent,
-                languageCode,
-                this.HasSavedPopupLocation,
-                this.PopupLocationX,
-                this.PopupLocationY,
-                this.PopupScalePercent);
-        }
-
-        public MonitorSettings WithPopupLocation(Point popupLocation)
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                this.InitialCalibrationPromptHandled,
-                this.InitialLanguagePromptHandled,
-                this.TransparencyPercent,
-                this.LanguageCode,
-                true,
-                popupLocation.X,
-                popupLocation.Y,
-                this.PopupScalePercent);
-        }
-
-        public MonitorSettings WithPopupScalePercent(int popupScalePercent)
-        {
-            return new MonitorSettings(
-                this.AdapterId,
-                this.AdapterName,
-                this.CalibrationPeakBytesPerSecond,
-                this.CalibrationDownloadPeakBytesPerSecond,
-                this.CalibrationUploadPeakBytesPerSecond,
-                this.InitialCalibrationPromptHandled,
-                this.InitialLanguagePromptHandled,
-                this.TransparencyPercent,
-                this.LanguageCode,
-                this.HasSavedPopupLocation,
-                this.PopupLocationX,
-                this.PopupLocationY,
-                popupScalePercent);
-        }
-
-        public double GetDownloadVisualizationPeak()
-        {
-            if (this.CalibrationDownloadPeakBytesPerSecond > 0D)
-            {
-                return this.CalibrationDownloadPeakBytesPerSecond;
-            }
-
-            return this.CalibrationPeakBytesPerSecond;
-        }
-
-        public double GetUploadVisualizationPeak()
-        {
-            if (this.CalibrationUploadPeakBytesPerSecond > 0D)
-            {
-                return this.CalibrationUploadPeakBytesPerSecond;
-            }
-
-            return this.CalibrationPeakBytesPerSecond;
-        }
-
-        public string GetAdapterDisplayName()
-        {
-            if (string.IsNullOrEmpty(this.AdapterId))
-            {
-                return UiLanguage.Get("Common.Automatic", "Automatisch");
-            }
-
-            if (string.IsNullOrEmpty(this.AdapterName))
-            {
-                return UiLanguage.Get("Common.Adapter", "Adapter");
-            }
-
-            return this.AdapterName;
-        }
-
-        public bool HasAdapterSelection()
-        {
-            return !string.IsNullOrEmpty(this.AdapterId) || !string.IsNullOrEmpty(this.AdapterName);
-        }
-
-        public bool HasCalibrationData()
-        {
-            return this.CalibrationPeakBytesPerSecond > 0D ||
-                this.CalibrationDownloadPeakBytesPerSecond > 0D ||
-                this.CalibrationUploadPeakBytesPerSecond > 0D;
-        }
-
-        public void Save()
-        {
-            string settingsPath = GetSettingsPath();
-            if (!TryWriteSettingsFile(settingsPath, this.CreateSerializedLines()))
-            {
-                AppLog.WarnOnce(
-                    "settings-save-failed-" + settingsPath,
-                    string.Format("Settings save failed; current values could not be persisted to '{0}'.", settingsPath));
-            }
-        }
-
-        public static MonitorSettings Load()
-        {
-            MonitorSettings settings = new MonitorSettings(string.Empty, string.Empty, 0D);
-            string settingsPath = GetSettingsPath();
-            string[] lines;
-            bool primarySettingsFileExists = File.Exists(settingsPath);
-
-            if (TryReadSettingsLines(settingsPath, out lines))
-            {
-                return LoadFromLines(lines, settings);
-            }
-
-            string legacySettingsPath = GetLegacySettingsPath();
-            bool legacySettingsFileExists = !ArePathsEqual(settingsPath, legacySettingsPath) &&
-                File.Exists(legacySettingsPath);
-            if (!ArePathsEqual(settingsPath, legacySettingsPath) &&
-                !File.Exists(settingsPath) &&
-                TryReadSettingsLines(legacySettingsPath, out lines))
-            {
-                MonitorSettings migratedSettings = LoadFromLines(lines, settings);
-                AppLog.WarnOnce(
-                    "settings-legacy-migration-" + legacySettingsPath,
-                    string.Format(
-                        "Legacy settings path '{0}' was used and migration to '{1}' was attempted.",
-                        legacySettingsPath,
-                        settingsPath));
-                TryWriteSettingsFile(settingsPath, migratedSettings.CreateSerializedLines());
-                return migratedSettings;
-            }
-
-            if (primarySettingsFileExists || legacySettingsFileExists)
-            {
-                AppLog.WarnOnce(
-                    "settings-load-defaults",
-                    string.Format(
-                        "Settings could not be loaded from available path(s); defaults are being used. Primary='{0}', Legacy='{1}'.",
-                        settingsPath,
-                        legacySettingsPath));
-            }
-
-            return settings;
-        }
-
-        public static bool SettingsFileExists()
-        {
-            return File.Exists(GetSettingsPath()) || File.Exists(GetLegacySettingsPath());
-        }
-
-        private static MonitorSettings LoadFromLines(string[] lines, MonitorSettings defaults)
-        {
-            defaults = defaults ?? new MonitorSettings(string.Empty, string.Empty, 0D);
-
-            if (lines == null || lines.Length == 0)
-            {
-                return defaults;
-            }
-
-            string adapterId = defaults.AdapterId;
-            string adapterName = defaults.AdapterName;
-            double calibrationPeak = defaults.CalibrationPeakBytesPerSecond;
-            double calibrationDownloadPeak = defaults.CalibrationDownloadPeakBytesPerSecond;
-            double calibrationUploadPeak = defaults.CalibrationUploadPeakBytesPerSecond;
-            bool initialCalibrationPromptHandled = defaults.InitialCalibrationPromptHandled;
-            bool initialLanguagePromptHandled = defaults.InitialLanguagePromptHandled;
-            int transparencyPercent = defaults.TransparencyPercent;
-            string languageCode = defaults.LanguageCode;
-            bool hasSavedPopupLocation = defaults.HasSavedPopupLocation;
-            int popupLocationX = defaults.PopupLocationX;
-            int popupLocationY = defaults.PopupLocationY;
-            int popupScalePercent = defaults.PopupScalePercent;
-
-            foreach (string line in lines)
-            {
-                int splitIndex = line.IndexOf('=');
-                if (splitIndex <= 0)
-                {
-                    continue;
-                }
-
-                string key = line.Substring(0, splitIndex).Trim();
-                string value = line.Substring(splitIndex + 1).Trim();
-
-                if (string.Equals(key, "AdapterId", StringComparison.OrdinalIgnoreCase))
-                {
-                    adapterId = value;
-                    continue;
-                }
-
-                if (string.Equals(key, "AdapterName", StringComparison.OrdinalIgnoreCase))
-                {
-                    adapterName = value;
-                    continue;
-                }
-
-                if (string.Equals(key, "CalibrationPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
-                {
-                    double parsedValue;
-                    if (double.TryParse(
-                        value,
-                        System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out parsedValue))
-                    {
-                        calibrationPeak = parsedValue;
-                    }
-
-                    continue;
-                }
-
-                if (string.Equals(key, "CalibrationDownloadPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
-                {
-                    double parsedValue;
-                    if (double.TryParse(
-                        value,
-                        System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out parsedValue))
-                    {
-                        calibrationDownloadPeak = parsedValue;
-                    }
-
-                    continue;
-                }
-
-                if (string.Equals(key, "CalibrationUploadPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
-                {
-                    double parsedValue;
-                    if (double.TryParse(
-                        value,
-                        System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        out parsedValue))
-                    {
-                        calibrationUploadPeak = parsedValue;
-                    }
-
-                    continue;
-                }
-
-                if (string.Equals(key, "InitialCalibrationPromptHandled", StringComparison.OrdinalIgnoreCase))
-                {
-                    initialCalibrationPromptHandled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
-                    continue;
-                }
-
-                if (string.Equals(key, "InitialLanguagePromptHandled", StringComparison.OrdinalIgnoreCase))
-                {
-                    initialLanguagePromptHandled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
-                    continue;
-                }
-
-                if (string.Equals(key, "TransparencyPercent", StringComparison.OrdinalIgnoreCase))
-                {
-                    int parsedValue;
-                    if (int.TryParse(value, out parsedValue))
-                    {
-                        transparencyPercent = ClampTransparencyPercent(parsedValue);
-                    }
-
-                    continue;
-                }
-
-                if (string.Equals(key, "LanguageCode", StringComparison.OrdinalIgnoreCase))
-                {
-                    languageCode = UiLanguage.NormalizeLanguageCode(value);
-                    continue;
-                }
-
-                if (string.Equals(key, "HasSavedPopupLocation", StringComparison.OrdinalIgnoreCase))
-                {
-                    hasSavedPopupLocation = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
-                    continue;
-                }
-
-                if (string.Equals(key, "PopupLocationX", StringComparison.OrdinalIgnoreCase))
-                {
-                    int parsedValue;
-                    if (int.TryParse(value, out parsedValue))
-                    {
-                        popupLocationX = parsedValue;
-                    }
-
-                    continue;
-                }
-
-                if (string.Equals(key, "PopupLocationY", StringComparison.OrdinalIgnoreCase))
-                {
-                    int parsedValue;
-                    if (int.TryParse(value, out parsedValue))
-                    {
-                        popupLocationY = parsedValue;
-                    }
-
-                    continue;
-                }
-
-                if (string.Equals(key, "PopupScalePercent", StringComparison.OrdinalIgnoreCase))
-                {
-                    int parsedValue;
-                    if (int.TryParse(value, out parsedValue))
-                    {
-                        popupScalePercent = NormalizePopupScalePercent(parsedValue);
-                    }
-                }
-            }
-
-            return new MonitorSettings(
-                adapterId,
-                adapterName,
-                calibrationPeak,
-                calibrationDownloadPeak,
-                calibrationUploadPeak,
-                initialCalibrationPromptHandled,
-                initialLanguagePromptHandled,
-                transparencyPercent,
-                languageCode,
-                hasSavedPopupLocation,
-                popupLocationX,
-                popupLocationY,
-                popupScalePercent);
-        }
-
-        private string[] CreateSerializedLines()
-        {
-            return new string[]
-            {
-                string.Format("AdapterId={0}", this.AdapterId),
-                string.Format("AdapterName={0}", this.AdapterName),
-                string.Format(
-                    "CalibrationPeakBytesPerSecond={0}",
-                    this.CalibrationPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                string.Format(
-                    "CalibrationDownloadPeakBytesPerSecond={0}",
-                    this.CalibrationDownloadPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                string.Format(
-                    "CalibrationUploadPeakBytesPerSecond={0}",
-                    this.CalibrationUploadPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                string.Format("InitialCalibrationPromptHandled={0}", this.InitialCalibrationPromptHandled ? "1" : "0"),
-                string.Format("InitialLanguagePromptHandled={0}", this.InitialLanguagePromptHandled ? "1" : "0"),
-                string.Format("TransparencyPercent={0}", this.TransparencyPercent),
-                string.Format("LanguageCode={0}", this.LanguageCode),
-                string.Format("HasSavedPopupLocation={0}", this.HasSavedPopupLocation ? "1" : "0"),
-                string.Format("PopupLocationX={0}", this.PopupLocationX),
-                string.Format("PopupLocationY={0}", this.PopupLocationY),
-                string.Format("PopupScalePercent={0}", this.PopupScalePercent)
-            };
-        }
-
-        public static int[] GetSupportedPopupScalePercents()
-        {
-            return (int[])SupportedPopupScalePercents.Clone();
-        }
-
-        private static string GetSettingsPath()
-        {
-            return Path.Combine(GetSettingsDirectoryPath(), SettingsFileName);
-        }
-
-        private static string GetLegacySettingsPath()
-        {
-            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, SettingsFileName);
-        }
-
-        private static string GetSettingsDirectoryPath()
-        {
-            string localApplicationDataPath;
-
-            try
-            {
-                localApplicationDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            }
-            catch (System.Security.SecurityException)
-            {
-                AppLog.WarnOnce(
-                    "settings-directory-security",
-                    "LocalAppData is not accessible for settings storage; falling back to application directory.");
-                localApplicationDataPath = string.Empty;
-            }
-
-            if (string.IsNullOrWhiteSpace(localApplicationDataPath))
-            {
-                return AppDomain.CurrentDomain.BaseDirectory;
-            }
-
-            return Path.Combine(localApplicationDataPath, SettingsDirectoryName);
-        }
-
-        private static bool TryReadSettingsLines(string path, out string[] lines)
-        {
-            lines = null;
-
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return false;
-            }
-
-            try
-            {
-                if (!File.Exists(path))
-                {
-                    return false;
-                }
-
-                lines = File.ReadAllLines(path);
-                return true;
-            }
-            catch (IOException)
-            {
-                AppLog.WarnOnce(
-                    "settings-read-io-" + (path ?? string.Empty),
-                    string.Format("Settings file could not be read: {0}", path ?? string.Empty));
-                return false;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                AppLog.WarnOnce(
-                    "settings-read-access-" + (path ?? string.Empty),
-                    string.Format("Settings file is not accessible: {0}", path ?? string.Empty));
-                return false;
-            }
-            catch (System.Security.SecurityException)
-            {
-                AppLog.WarnOnce(
-                    "settings-read-security-" + (path ?? string.Empty),
-                    string.Format("Settings file access was denied by security policy: {0}", path ?? string.Empty));
-                return false;
-            }
-            catch (NotSupportedException)
-            {
-                AppLog.WarnOnce(
-                    "settings-read-path-" + (path ?? string.Empty),
-                    string.Format("Settings file path is not supported: {0}", path ?? string.Empty));
-                return false;
-            }
-        }
-
-        private static bool TryWriteSettingsFile(string path, string[] lines)
-        {
-            if (string.IsNullOrWhiteSpace(path) || lines == null)
-            {
-                return false;
-            }
-
-            string tempPath = null;
-
-            try
-            {
-                string directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrWhiteSpace(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-
-                tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                File.WriteAllLines(tempPath, lines);
-
-                if (File.Exists(path))
-                {
-                    File.Replace(tempPath, path, null, true);
-                }
-                else
-                {
-                    File.Move(tempPath, path);
-                }
-
-                return true;
-            }
-            catch (IOException)
-            {
-                AppLog.WarnOnce(
-                    "settings-write-io-" + (path ?? string.Empty),
-                    string.Format("Settings file could not be written: {0}", path ?? string.Empty));
-                return false;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                AppLog.WarnOnce(
-                    "settings-write-access-" + (path ?? string.Empty),
-                    string.Format("Settings file is not writable: {0}", path ?? string.Empty));
-                return false;
-            }
-            catch (System.Security.SecurityException)
-            {
-                AppLog.WarnOnce(
-                    "settings-write-security-" + (path ?? string.Empty),
-                    string.Format("Settings file write was denied by security policy: {0}", path ?? string.Empty));
-                return false;
-            }
-            catch (NotSupportedException)
-            {
-                AppLog.WarnOnce(
-                    "settings-write-path-" + (path ?? string.Empty),
-                    string.Format("Settings file path is not supported for writing: {0}", path ?? string.Empty));
-                return false;
-            }
-            finally
-            {
-                TryDeleteFile(tempPath);
-            }
-        }
-
-        private static void TryDeleteFile(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return;
-            }
-
-            try
-            {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
-            catch (IOException)
-            {
-                AppLog.WarnOnce(
-                    "settings-temp-delete-io-" + (path ?? string.Empty),
-                    string.Format("Temporary settings file could not be deleted: {0}", path ?? string.Empty));
-            }
-            catch (UnauthorizedAccessException)
-            {
-                AppLog.WarnOnce(
-                    "settings-temp-delete-access-" + (path ?? string.Empty),
-                    string.Format("Temporary settings file is not deletable: {0}", path ?? string.Empty));
-            }
-            catch (System.Security.SecurityException)
-            {
-                AppLog.WarnOnce(
-                    "settings-temp-delete-security-" + (path ?? string.Empty),
-                    string.Format("Temporary settings file deletion was denied by security policy: {0}", path ?? string.Empty));
-            }
-        }
-
-        private static bool ArePathsEqual(string left, string right)
-        {
-            string normalizedLeft = NormalizePathForComparison(left);
-            string normalizedRight = NormalizePathForComparison(right);
-
-            if (normalizedLeft == null || normalizedRight == null)
-            {
-                return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
-            }
-
-            return string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string NormalizePathForComparison(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return null;
-            }
-
-            try
-            {
-                return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-            catch (ArgumentException)
-            {
-                return null;
-            }
-            catch (NotSupportedException)
-            {
-                return null;
-            }
-            catch (PathTooLongException)
-            {
-                return null;
-            }
-        }
-
-        public static double ToOpacityValue(int transparencyPercent)
-        {
-            int clamped = ClampTransparencyPercent(transparencyPercent);
-            return Math.Max(0D, Math.Min(1D, 1D - (clamped / 100D)));
-        }
-
-        public static byte ToOpacityByte(int transparencyPercent)
-        {
-            return (byte)Math.Round(ToOpacityValue(transparencyPercent) * 255D);
-        }
-
-        private static int ClampTransparencyPercent(int transparencyPercent)
-        {
-            return Math.Max(0, Math.Min(100, transparencyPercent));
-        }
-
-        private static int NormalizePopupScalePercent(int popupScalePercent)
-        {
-            int normalized = SupportedPopupScalePercents[0];
-            int bestDistance = Math.Abs(popupScalePercent - normalized);
-
-            for (int i = 1; i < SupportedPopupScalePercents.Length; i++)
-            {
-                int candidate = SupportedPopupScalePercents[i];
-                int distance = Math.Abs(popupScalePercent - candidate);
-                if (distance < bestDistance)
-                {
-                    normalized = candidate;
-                    bestDistance = distance;
-                }
-            }
-
-            return normalized;
-        }
-    }
-}
-
-
-===== TrafficUsageLog.cs =====
+===== src\TrafficUsageLog.cs =====
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -7407,7 +7222,251 @@ namespace TrafficView
 }
 
 
-===== UsageSummaryForm.cs =====
+===== src\UiLanguage.cs =====
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace TrafficView
+{
+    internal sealed class LanguageOption
+    {
+        public LanguageOption(string code, string displayName)
+        {
+            this.Code = code;
+            this.DisplayName = displayName;
+        }
+
+        public string Code { get; private set; }
+
+        public string DisplayName { get; private set; }
+
+        public override string ToString()
+        {
+            return this.DisplayName;
+        }
+    }
+
+    internal static class UiLanguage
+    {
+        private static readonly LanguageOption[] SupportedLanguages = new LanguageOption[]
+        {
+            new LanguageOption("de", "Deutsch"),
+            new LanguageOption("en", "English"),
+            new LanguageOption("ru", "Русский"),
+            new LanguageOption("zh-Hans", "中文(简体)")
+        };
+
+        private static readonly Dictionary<string, Dictionary<string, string>> Translations =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        private static bool loaded;
+        private static string currentCode = "de";
+
+        public static string CurrentCode
+        {
+            get { return currentCode; }
+        }
+
+        public static LanguageOption[] GetSupportedLanguages()
+        {
+            return SupportedLanguages;
+        }
+
+        public static void Initialize(string languageCode)
+        {
+            if (!loaded)
+            {
+                LoadTranslations();
+                loaded = true;
+            }
+
+            SetLanguage(languageCode);
+        }
+
+        public static void SetLanguage(string languageCode)
+        {
+            currentCode = NormalizeLanguageCode(languageCode);
+        }
+
+        public static string NormalizeLanguageCode(string languageCode)
+        {
+            if (string.IsNullOrWhiteSpace(languageCode))
+            {
+                return "de";
+            }
+
+            string normalized = languageCode.Trim();
+            if (string.Equals(normalized, "zh", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "zh-cn", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "zh-hans", StringComparison.OrdinalIgnoreCase))
+            {
+                return "zh-Hans";
+            }
+
+            for (int i = 0; i < SupportedLanguages.Length; i++)
+            {
+                if (string.Equals(SupportedLanguages[i].Code, normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return SupportedLanguages[i].Code;
+                }
+            }
+
+            return "de";
+        }
+
+        public static string Get(string key, string fallback)
+        {
+            Dictionary<string, string> languageEntries;
+            string value;
+
+            if (Translations.TryGetValue(currentCode, out languageEntries) &&
+                languageEntries.TryGetValue(key, out value) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            if (!string.Equals(currentCode, "de", StringComparison.OrdinalIgnoreCase) &&
+                Translations.TryGetValue("de", out languageEntries) &&
+                languageEntries.TryGetValue(key, out value) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            return fallback;
+        }
+
+        public static string Format(string key, string fallback, params object[] args)
+        {
+            string format = Get(key, fallback);
+
+            try
+            {
+                return string.Format(format, args);
+            }
+            catch (FormatException)
+            {
+                AppLog.WarnOnce(
+                    "translation-format-" + CurrentCode + "-" + (key ?? string.Empty),
+                    string.Format(
+                        "Translation format fallback used for key '{0}' in language '{1}'.",
+                        key ?? string.Empty,
+                        CurrentCode),
+                    null);
+
+                try
+                {
+                    return string.Format(fallback, args);
+                }
+                catch (FormatException)
+                {
+                    AppLog.WarnOnce(
+                        "translation-format-fallback-" + (key ?? string.Empty),
+                        string.Format(
+                            "Fallback translation format is also invalid for key '{0}'. Returning raw format string.",
+                            key ?? string.Empty),
+                        null);
+                    return format;
+                }
+            }
+        }
+
+        private static void LoadTranslations()
+        {
+            string languageFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TrafficView.languages.ini");
+            string[] lines;
+
+            try
+            {
+                if (!File.Exists(languageFilePath))
+                {
+                    return;
+                }
+
+                lines = File.ReadAllLines(languageFilePath);
+            }
+            catch (IOException)
+            {
+                AppLog.WarnOnce(
+                    "translations-load-io",
+                    string.Format("Translation file could not be read: {0}", languageFilePath));
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                AppLog.WarnOnce(
+                    "translations-load-access",
+                    string.Format("Translation file is not accessible: {0}", languageFilePath));
+                return;
+            }
+            catch (System.Security.SecurityException)
+            {
+                AppLog.WarnOnce(
+                    "translations-load-security",
+                    string.Format("Translation file access was denied by security policy: {0}", languageFilePath));
+                return;
+            }
+            catch (NotSupportedException)
+            {
+                AppLog.WarnOnce(
+                    "translations-load-path",
+                    string.Format("Translation file path is not supported: {0}", languageFilePath));
+                return;
+            }
+
+            Dictionary<string, Dictionary<string, string>> parsedTranslations =
+                new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+            string currentSection = string.Empty;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line.StartsWith(";", StringComparison.Ordinal) || line.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("[", StringComparison.Ordinal) && line.EndsWith("]", StringComparison.Ordinal))
+                {
+                    currentSection = NormalizeLanguageCode(line.Substring(1, line.Length - 2));
+                    if (!parsedTranslations.ContainsKey(currentSection))
+                    {
+                        parsedTranslations[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    continue;
+                }
+
+                int splitIndex = line.IndexOf('=');
+                if (splitIndex <= 0 || string.IsNullOrEmpty(currentSection))
+                {
+                    continue;
+                }
+
+                string key = line.Substring(0, splitIndex).Trim();
+                string value = line.Substring(splitIndex + 1);
+
+                if (!parsedTranslations.ContainsKey(currentSection))
+                {
+                    parsedTranslations[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                parsedTranslations[currentSection][key] = value;
+            }
+
+            Translations.Clear();
+            foreach (KeyValuePair<string, Dictionary<string, string>> entry in parsedTranslations)
+            {
+                Translations[entry.Key] = entry.Value;
+            }
+        }
+    }
+}
+
+
+===== src\UsageSummaryForm.cs =====
 using System;
 using System.Drawing;
 using System.Windows.Forms;
@@ -7449,12 +7508,15 @@ namespace TrafficView
         private readonly Label uploadRowLabel;
         private readonly Label downloadRowLabel;
         private readonly Label adapterValueLabel;
+        private readonly Label adapterCaptionLabel;
         private readonly Label dailyUploadValueLabel;
         private readonly Label monthlyUploadValueLabel;
         private readonly Label weeklyUploadValueLabel;
         private readonly Label dailyDownloadValueLabel;
         private readonly Label monthlyDownloadValueLabel;
         private readonly Label weeklyDownloadValueLabel;
+        private readonly Button clearButton;
+        private readonly Button okButton;
 
         public UsageSummaryForm(
             Func<UsageWindowData> loadUsageWindowData,
@@ -7527,13 +7589,13 @@ namespace TrafficView
             adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
             adapterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            Label adapterCaptionLabel = new Label();
-            adapterCaptionLabel.Dock = DockStyle.Fill;
-            adapterCaptionLabel.AutoSize = false;
-            adapterCaptionLabel.Margin = new Padding(0);
-            adapterCaptionLabel.Text = UiLanguage.Get("UsageWindow.AdapterCaption", "Schnittstelle:");
-            adapterCaptionLabel.Font = interfaceFont;
-            adapterCaptionLabel.TextAlign = ContentAlignment.MiddleLeft;
+            this.adapterCaptionLabel = new Label();
+            this.adapterCaptionLabel.Dock = DockStyle.Fill;
+            this.adapterCaptionLabel.AutoSize = false;
+            this.adapterCaptionLabel.Margin = new Padding(0);
+            this.adapterCaptionLabel.Text = UiLanguage.Get("UsageWindow.AdapterCaption", "Schnittstelle:");
+            this.adapterCaptionLabel.Font = interfaceFont;
+            this.adapterCaptionLabel.TextAlign = ContentAlignment.MiddleLeft;
 
             this.adapterValueLabel = new Label();
             this.adapterValueLabel.Dock = DockStyle.Fill;
@@ -7542,7 +7604,7 @@ namespace TrafficView
             this.adapterValueLabel.Font = adapterValueFont;
             this.adapterValueLabel.TextAlign = ContentAlignment.MiddleCenter;
 
-            adapterLayout.Controls.Add(adapterCaptionLabel, 0, 0);
+            adapterLayout.Controls.Add(this.adapterCaptionLabel, 0, 0);
             adapterLayout.Controls.Add(this.adapterValueLabel, 1, 0);
             adapterLayout.Controls.Add(new Panel() { Dock = DockStyle.Fill, Margin = new Padding(0) }, 2, 0);
 
@@ -7586,55 +7648,55 @@ namespace TrafficView
             buttonPanel.Margin = new Padding(0, 12, 0, 0);
             buttonPanel.Padding = new Padding(0);
 
-            Button clearButton = new Button();
-            clearButton.Text = UiLanguage.Get("UsageWindow.ClearAll", "Datenverbrauch löschen");
-            clearButton.AutoSize = false;
-            clearButton.FlatStyle = FlatStyle.System;
+            this.clearButton = new Button();
+            this.clearButton.Text = UiLanguage.Get("UsageWindow.ClearAll", "Datenverbrauch löschen");
+            this.clearButton.AutoSize = false;
+            this.clearButton.FlatStyle = FlatStyle.System;
             Size clearButtonTextSize = TextRenderer.MeasureText(
-                clearButton.Text,
+                this.clearButton.Text,
                 this.Font,
                 new Size(int.MaxValue, int.MaxValue),
                 TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
             int clearButtonWidth = Math.Max(260, clearButtonTextSize.Width + 28);
-            clearButton.Size = new Size(clearButtonWidth, 36);
-            clearButton.MinimumSize = new Size(clearButtonWidth, 36);
-            clearButton.Anchor = AnchorStyles.Left;
-            clearButton.Location = new Point(0, 2);
-            clearButton.Click += this.ClearButton_Click;
+            this.clearButton.Size = new Size(clearButtonWidth, 36);
+            this.clearButton.MinimumSize = new Size(clearButtonWidth, 36);
+            this.clearButton.Anchor = AnchorStyles.Left;
+            this.clearButton.Location = new Point(0, 2);
+            this.clearButton.Click += this.ClearButton_Click;
 
-            Button okButton = new Button();
-            okButton.Text = UiLanguage.Get("Common.Ok", "OK");
-            okButton.DialogResult = DialogResult.OK;
-            okButton.Font = this.Font;
-            okButton.AutoSize = false;
-            okButton.FlatStyle = FlatStyle.System;
-            okButton.Size = new Size(92, 32);
-            okButton.MinimumSize = new Size(92, 32);
-            okButton.UseVisualStyleBackColor = true;
-            okButton.TextAlign = ContentAlignment.MiddleCenter;
-            okButton.Padding = Padding.Empty;
-            okButton.Margin = Padding.Empty;
-            okButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            okButton.Location = new Point(buttonPanel.Width - okButton.Width, 2);
+            this.okButton = new Button();
+            this.okButton.Text = UiLanguage.Get("Common.Ok", "OK");
+            this.okButton.DialogResult = DialogResult.OK;
+            this.okButton.Font = this.Font;
+            this.okButton.AutoSize = false;
+            this.okButton.FlatStyle = FlatStyle.System;
+            this.okButton.Size = new Size(92, 32);
+            this.okButton.MinimumSize = new Size(92, 32);
+            this.okButton.UseVisualStyleBackColor = true;
+            this.okButton.TextAlign = ContentAlignment.MiddleCenter;
+            this.okButton.Padding = Padding.Empty;
+            this.okButton.Margin = Padding.Empty;
+            this.okButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            this.okButton.Location = new Point(buttonPanel.Width - this.okButton.Width, 2);
 
-            buttonPanel.Controls.Add(clearButton);
-            buttonPanel.Controls.Add(okButton);
+            buttonPanel.Controls.Add(this.clearButton);
+            buttonPanel.Controls.Add(this.okButton);
             buttonPanel.Resize += delegate
             {
-                clearButton.Location = new Point(
+                this.clearButton.Location = new Point(
                     0,
-                    Math.Max(0, (buttonPanel.ClientSize.Height - clearButton.Height) / 2));
-                okButton.Location = new Point(
-                    Math.Max(0, buttonPanel.ClientSize.Width - okButton.Width),
-                    Math.Max(0, (buttonPanel.ClientSize.Height - okButton.Height) / 2));
+                    Math.Max(0, (buttonPanel.ClientSize.Height - this.clearButton.Height) / 2));
+                this.okButton.Location = new Point(
+                    Math.Max(0, buttonPanel.ClientSize.Width - this.okButton.Width),
+                    Math.Max(0, (buttonPanel.ClientSize.Height - this.okButton.Height) / 2));
             };
 
             rootLayout.Controls.Add(adapterLayout, 0, 0);
             rootLayout.Controls.Add(this.usageGrid, 0, 1);
             rootLayout.Controls.Add(buttonPanel, 0, 2);
 
-            this.AcceptButton = okButton;
-            this.CancelButton = okButton;
+            this.AcceptButton = this.okButton;
+            this.CancelButton = this.okButton;
             this.Controls.Add(rootLayout);
             this.ApplyUsageData(usageWindowData);
         }
@@ -7681,6 +7743,9 @@ namespace TrafficView
                     MeasureTextWidth(this.uploadRowLabel),
                     MeasureTextWidth(this.downloadRowLabel)) + 24);
 
+            int adapterCaptionWidth = MeasureTextWidth(this.adapterCaptionLabel) + 8;
+            int adapterValueWidth = MeasureTextWidth(this.adapterValueLabel) + 16;
+
             int dailyColumnWidth = Math.Max(
                 MeasureTextWidth(this.dailyHeaderLabel),
                 Math.Max(MeasureTextWidth(this.dailyUploadValueLabel), MeasureTextWidth(this.dailyDownloadValueLabel))) + 24;
@@ -7724,7 +7789,9 @@ namespace TrafficView
             this.usageGrid.Height = headerRowHeight + uploadRowHeight + downloadRowHeight + 4;
             this.usageGrid.ResumeLayout();
 
-            int minimumClientWidth = this.usageGrid.Width + 40;
+            int adapterMinimumWidth = adapterCaptionWidth + Math.Max(adapterValueWidth, 140) + 150;
+            int buttonsMinimumWidth = this.clearButton.Width + this.okButton.Width + 56;
+            int minimumClientWidth = Math.Max(this.usageGrid.Width + 40, Math.Max(adapterMinimumWidth, buttonsMinimumWidth));
             int minimumClientHeight = this.usageGrid.Height + 177;
             this.ClientSize = new Size(
                 Math.Max(570, minimumClientWidth),

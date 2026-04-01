@@ -4,11 +4,12 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sourceDir = Join-Path $root "src"
 $outputDir = Join-Path $root "dist"
 $outputFile = Join-Path $outputDir "TrafficView.exe"
+$settingsOutputFile = Join-Path $outputDir "TrafficView.settings.ini"
+$usageOutputFile = Join-Path $outputDir "Verbrauch.txt"
 $manifestFile = Join-Path $root "TrafficView.manifest"
 $iconFile = Join-Path $root "TrafficView.ico"
 $configSourceFile = Join-Path $root "TrafficView.exe.config"
 $configOutputFile = Join-Path $outputDir "TrafficView.exe.config"
-$settingsOutputFile = Join-Path $outputDir "TrafficView.settings.ini"
 $languageSourceFile = Join-Path $root "TrafficView.languages.ini"
 $languageOutputFile = Join-Path $outputDir "TrafficView.languages.ini"
 $panelAssetFiles = @(
@@ -24,6 +25,14 @@ $menuAssetFiles = @(
 $sourceFiles = Get-ChildItem -Path $sourceDir -Filter *.cs | Sort-Object Name | ForEach-Object { $_.FullName }
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
+if (Test-Path $settingsOutputFile) {
+    Remove-Item -LiteralPath $settingsOutputFile -Force
+}
+
+if (Test-Path $usageOutputFile) {
+    Remove-Item -LiteralPath $usageOutputFile -Force
+}
 
 $compilerCandidates = @(
     (Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"),
@@ -96,21 +105,6 @@ foreach ($menuAssetFile in $menuAssetFiles) {
         Copy-Item $menuAssetSourceFile $menuAssetOutputFile -Force
     }
 }
-
-$defaultSettings = @(
-    "AdapterId=",
-    "AdapterName=",
-    "CalibrationPeakBytesPerSecond=0",
-    "CalibrationDownloadPeakBytesPerSecond=0",
-    "CalibrationUploadPeakBytesPerSecond=0",
-    "InitialCalibrationPromptHandled=0",
-    "InitialLanguagePromptHandled=0",
-    "TransparencyPercent=0",
-    "LanguageCode=de",
-    "PopupScalePercent=100"
-)
-
-Set-Content -Path $settingsOutputFile -Value $defaultSettings -Encoding ASCII
 
 Write-Host ""
 Write-Host "Fertig:" $outputFile
