@@ -7,7 +7,6 @@ namespace TrafficView
     internal sealed class MonitorSettings
     {
         private const string SettingsFileName = "TrafficView.settings.ini";
-        private const string SettingsDirectoryName = "TrafficView";
         private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
 
         public MonitorSettings(
@@ -524,31 +523,12 @@ namespace TrafficView
 
         private static string GetLegacySettingsPath()
         {
-            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, SettingsFileName);
+            return Path.Combine(AppStorage.BaseDirectory, SettingsFileName);
         }
 
         private static string GetSettingsDirectoryPath()
         {
-            string localApplicationDataPath;
-
-            try
-            {
-                localApplicationDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            }
-            catch (System.Security.SecurityException)
-            {
-                AppLog.WarnOnce(
-                    "settings-directory-security",
-                    "LocalAppData is not accessible for settings storage; falling back to application directory.");
-                localApplicationDataPath = string.Empty;
-            }
-
-            if (string.IsNullOrWhiteSpace(localApplicationDataPath))
-            {
-                return AppDomain.CurrentDomain.BaseDirectory;
-            }
-
-            return Path.Combine(localApplicationDataPath, SettingsDirectoryName);
+            return AppStorage.GetSettingsDirectoryPath();
         }
 
         private static bool TryReadSettingsLines(string path, out string[] lines)

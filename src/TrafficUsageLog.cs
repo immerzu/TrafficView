@@ -223,7 +223,7 @@ namespace TrafficView
 
         public static string GetUsageFilePath()
         {
-            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, UsageFileName);
+            return Path.Combine(AppStorage.BaseDirectory, UsageFileName);
         }
 
         public static string GetAdapterKey(MonitorSettings settings)
