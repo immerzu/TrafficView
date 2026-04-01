@@ -58,12 +58,28 @@
     <Content Include="TrafficView.panel.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="TrafficView.panel.90.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="TrafficView.panel.110.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="TrafficView.panel.125.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="TrafficView.panel.150.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <Target Name="CopySupportFiles" AfterTargets="Build">
     <Copy SourceFiles="TrafficView.exe.config" DestinationFiles="$(TargetDir)TrafficView.exe.config" SkipUnchangedFiles="true" />
     <Copy SourceFiles="TrafficView.languages.ini" DestinationFiles="$(TargetDir)TrafficView.languages.ini" SkipUnchangedFiles="true" />
     <Copy SourceFiles="TrafficView.panel.png" DestinationFiles="$(TargetDir)TrafficView.panel.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.png')" />
+    <Copy SourceFiles="TrafficView.panel.90.png" DestinationFiles="$(TargetDir)TrafficView.panel.90.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.90.png')" />
+    <Copy SourceFiles="TrafficView.panel.110.png" DestinationFiles="$(TargetDir)TrafficView.panel.110.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.110.png')" />
+    <Copy SourceFiles="TrafficView.panel.125.png" DestinationFiles="$(TargetDir)TrafficView.panel.125.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.125.png')" />
+    <Copy SourceFiles="TrafficView.panel.150.png" DestinationFiles="$(TargetDir)TrafficView.panel.150.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.150.png')" />
 
     <ItemGroup>
       <DefaultSettingsLines Include="AdapterId=" />
@@ -75,6 +91,7 @@
       <DefaultSettingsLines Include="InitialLanguagePromptHandled=0" />
       <DefaultSettingsLines Include="TransparencyPercent=0" />
       <DefaultSettingsLines Include="LanguageCode=de" />
+      <DefaultSettingsLines Include="PopupScalePercent=100" />
     </ItemGroup>
 
     <WriteLinesToFile File="$(TargetDir)TrafficView.settings.ini" Lines="@(DefaultSettingsLines)" Overwrite="true" Encoding="ASCII" />

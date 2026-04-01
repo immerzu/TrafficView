@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.IO;
 
 namespace TrafficView
@@ -7,6 +8,7 @@ namespace TrafficView
     {
         private const string SettingsFileName = "TrafficView.settings.ini";
         private const string SettingsDirectoryName = "TrafficView";
+        private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
 
         public MonitorSettings(
             string adapterId,
@@ -17,7 +19,11 @@ namespace TrafficView
             bool initialCalibrationPromptHandled = false,
             bool initialLanguagePromptHandled = false,
             int transparencyPercent = 0,
-            string languageCode = "de")
+            string languageCode = "de",
+            bool hasSavedPopupLocation = false,
+            int popupLocationX = 0,
+            int popupLocationY = 0,
+            int popupScalePercent = 100)
         {
             this.AdapterId = adapterId ?? string.Empty;
             this.AdapterName = adapterName ?? string.Empty;
@@ -28,6 +34,10 @@ namespace TrafficView
             this.InitialLanguagePromptHandled = initialLanguagePromptHandled;
             this.TransparencyPercent = ClampTransparencyPercent(transparencyPercent);
             this.LanguageCode = UiLanguage.NormalizeLanguageCode(languageCode);
+            this.HasSavedPopupLocation = hasSavedPopupLocation;
+            this.PopupLocationX = popupLocationX;
+            this.PopupLocationY = popupLocationY;
+            this.PopupScalePercent = NormalizePopupScalePercent(popupScalePercent);
         }
 
         public string AdapterId { get; private set; }
@@ -48,6 +58,22 @@ namespace TrafficView
 
         public string LanguageCode { get; private set; }
 
+        public bool HasSavedPopupLocation { get; private set; }
+
+        public int PopupLocationX { get; private set; }
+
+        public int PopupLocationY { get; private set; }
+
+        public Point PopupLocation
+        {
+            get
+            {
+                return new Point(this.PopupLocationX, this.PopupLocationY);
+            }
+        }
+
+        public int PopupScalePercent { get; private set; }
+
         public MonitorSettings Clone()
         {
             return new MonitorSettings(
@@ -59,7 +85,11 @@ namespace TrafficView
                 this.InitialCalibrationPromptHandled,
                 this.InitialLanguagePromptHandled,
                 this.TransparencyPercent,
-                this.LanguageCode);
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
         }
 
         public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
@@ -73,7 +103,11 @@ namespace TrafficView
                 handled,
                 this.InitialLanguagePromptHandled,
                 this.TransparencyPercent,
-                this.LanguageCode);
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
         }
 
         public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
@@ -87,7 +121,11 @@ namespace TrafficView
                 this.InitialCalibrationPromptHandled,
                 handled,
                 this.TransparencyPercent,
-                this.LanguageCode);
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
         }
 
         public MonitorSettings WithTransparencyPercent(int transparencyPercent)
@@ -101,7 +139,11 @@ namespace TrafficView
                 this.InitialCalibrationPromptHandled,
                 this.InitialLanguagePromptHandled,
                 transparencyPercent,
-                this.LanguageCode);
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
         }
 
         public MonitorSettings WithLanguageCode(string languageCode)
@@ -115,7 +157,47 @@ namespace TrafficView
                 this.InitialCalibrationPromptHandled,
                 this.InitialLanguagePromptHandled,
                 this.TransparencyPercent,
-                languageCode);
+                languageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithPopupLocation(Point popupLocation)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                true,
+                popupLocation.X,
+                popupLocation.Y,
+                this.PopupScalePercent);
+        }
+
+        public MonitorSettings WithPopupScalePercent(int popupScalePercent)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                popupScalePercent);
         }
 
         public double GetDownloadVisualizationPeak()
@@ -242,6 +324,10 @@ namespace TrafficView
             bool initialLanguagePromptHandled = defaults.InitialLanguagePromptHandled;
             int transparencyPercent = defaults.TransparencyPercent;
             string languageCode = defaults.LanguageCode;
+            bool hasSavedPopupLocation = defaults.HasSavedPopupLocation;
+            int popupLocationX = defaults.PopupLocationX;
+            int popupLocationY = defaults.PopupLocationY;
+            int popupScalePercent = defaults.PopupScalePercent;
 
             foreach (string line in lines)
             {
@@ -341,6 +427,46 @@ namespace TrafficView
                 if (string.Equals(key, "LanguageCode", StringComparison.OrdinalIgnoreCase))
                 {
                     languageCode = UiLanguage.NormalizeLanguageCode(value);
+                    continue;
+                }
+
+                if (string.Equals(key, "HasSavedPopupLocation", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasSavedPopupLocation = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupLocationX", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        popupLocationX = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupLocationY", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        popupLocationY = parsedValue;
+                    }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupScalePercent", StringComparison.OrdinalIgnoreCase))
+                {
+                    int parsedValue;
+                    if (int.TryParse(value, out parsedValue))
+                    {
+                        popupScalePercent = NormalizePopupScalePercent(parsedValue);
+                    }
                 }
             }
 
@@ -353,7 +479,11 @@ namespace TrafficView
                 initialCalibrationPromptHandled,
                 initialLanguagePromptHandled,
                 transparencyPercent,
-                languageCode);
+                languageCode,
+                hasSavedPopupLocation,
+                popupLocationX,
+                popupLocationY,
+                popupScalePercent);
         }
 
         private string[] CreateSerializedLines()
@@ -374,8 +504,17 @@ namespace TrafficView
                 string.Format("InitialCalibrationPromptHandled={0}", this.InitialCalibrationPromptHandled ? "1" : "0"),
                 string.Format("InitialLanguagePromptHandled={0}", this.InitialLanguagePromptHandled ? "1" : "0"),
                 string.Format("TransparencyPercent={0}", this.TransparencyPercent),
-                string.Format("LanguageCode={0}", this.LanguageCode)
+                string.Format("LanguageCode={0}", this.LanguageCode),
+                string.Format("HasSavedPopupLocation={0}", this.HasSavedPopupLocation ? "1" : "0"),
+                string.Format("PopupLocationX={0}", this.PopupLocationX),
+                string.Format("PopupLocationY={0}", this.PopupLocationY),
+                string.Format("PopupScalePercent={0}", this.PopupScalePercent)
             };
+        }
+
+        public static int[] GetSupportedPopupScalePercents()
+        {
+            return (int[])SupportedPopupScalePercents.Clone();
         }
 
         private static string GetSettingsPath()
@@ -612,6 +751,25 @@ namespace TrafficView
         private static int ClampTransparencyPercent(int transparencyPercent)
         {
             return Math.Max(0, Math.Min(100, transparencyPercent));
+        }
+
+        private static int NormalizePopupScalePercent(int popupScalePercent)
+        {
+            int normalized = SupportedPopupScalePercents[0];
+            int bestDistance = Math.Abs(popupScalePercent - normalized);
+
+            for (int i = 1; i < SupportedPopupScalePercents.Length; i++)
+            {
+                int candidate = SupportedPopupScalePercents[i];
+                int distance = Math.Abs(popupScalePercent - candidate);
+                if (distance < bestDistance)
+                {
+                    normalized = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            return normalized;
         }
     }
 }

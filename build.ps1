@@ -11,8 +11,13 @@ $configOutputFile = Join-Path $outputDir "TrafficView.exe.config"
 $settingsOutputFile = Join-Path $outputDir "TrafficView.settings.ini"
 $languageSourceFile = Join-Path $root "TrafficView.languages.ini"
 $languageOutputFile = Join-Path $outputDir "TrafficView.languages.ini"
-$panelAssetSourceFile = Join-Path $root "TrafficView.panel.png"
-$panelAssetOutputFile = Join-Path $outputDir "TrafficView.panel.png"
+$panelAssetFiles = @(
+    "TrafficView.panel.png",
+    "TrafficView.panel.90.png",
+    "TrafficView.panel.110.png",
+    "TrafficView.panel.125.png",
+    "TrafficView.panel.150.png"
+)
 $sourceFiles = Get-ChildItem -Path $sourceDir -Filter *.cs | Sort-Object Name | ForEach-Object { $_.FullName }
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
@@ -44,8 +49,8 @@ if (-not (Test-Path $languageSourceFile)) {
     throw "Sprachdatei nicht gefunden: $languageSourceFile"
 }
 
-if (-not (Test-Path $panelAssetSourceFile)) {
-    Write-Warning "Panel-Asset nicht gefunden: $panelAssetSourceFile. Die Anwendung nutzt dann den prozeduralen Fallback."
+if (-not (Test-Path (Join-Path $root "TrafficView.panel.png"))) {
+    Write-Warning "Panel-Basis-Asset nicht gefunden: $(Join-Path $root 'TrafficView.panel.png'). Die Anwendung nutzt dann den prozeduralen Fallback."
 }
 
 if (-not $sourceFiles -or $sourceFiles.Count -eq 0) {
@@ -73,8 +78,12 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item $configSourceFile $configOutputFile -Force
 Copy-Item $languageSourceFile $languageOutputFile -Force
 
-if (Test-Path $panelAssetSourceFile) {
-    Copy-Item $panelAssetSourceFile $panelAssetOutputFile -Force
+foreach ($panelAssetFile in $panelAssetFiles) {
+    $panelAssetSourceFile = Join-Path $root $panelAssetFile
+    $panelAssetOutputFile = Join-Path $outputDir $panelAssetFile
+    if (Test-Path $panelAssetSourceFile) {
+        Copy-Item $panelAssetSourceFile $panelAssetOutputFile -Force
+    }
 }
 
 $defaultSettings = @(
@@ -86,7 +95,8 @@ $defaultSettings = @(
     "InitialCalibrationPromptHandled=0",
     "InitialLanguagePromptHandled=0",
     "TransparencyPercent=0",
-    "LanguageCode=de"
+    "LanguageCode=de",
+    "PopupScalePercent=100"
 )
 
 Set-Content -Path $settingsOutputFile -Value $defaultSettings -Encoding ASCII

@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.3.18.0")]
-[assembly: AssemblyFileVersion("1.3.18.0")]
+[assembly: AssemblyVersion("1.4.2.0")]
+[assembly: AssemblyFileVersion("1.4.2.0")]
 
 namespace TrafficView
 {
@@ -110,11 +110,13 @@ namespace TrafficView
         private readonly ToolStripMenuItem calibrationStatusItem;
         private readonly ToolStripMenuItem calibrationItem;
         private readonly ToolStripMenuItem transparencyItem;
+        private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem languageItem;
         private readonly ToolStripMenuItem exitItem;
         private readonly ContextMenuStrip sharedMenu;
         private readonly Icon notifyIconHandle;
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
+        private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
         private MonitorSettings settings;
 
@@ -125,7 +127,9 @@ namespace TrafficView
             this.popupForm = new TrafficPopupForm(this.settings);
             this.popupForm.RatesUpdated += this.PopupForm_RatesUpdated;
             this.popupForm.OverlayMenuRequested += this.PopupForm_OverlayMenuRequested;
+            this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
+            this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
 
             this.sharedMenu = new ContextMenuStrip();
             this.sharedMenu.RenderMode = ToolStripRenderMode.System;
@@ -140,6 +144,7 @@ namespace TrafficView
             this.calibrationStatusItem.Enabled = false;
             this.calibrationItem = new ToolStripMenuItem(string.Empty, null, this.CalibrationItem_Click);
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
+            this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.languageItem = new ToolStripMenuItem(string.Empty);
             this.exitItem = new ToolStripMenuItem(string.Empty, null, this.ExitItem_Click);
 
@@ -152,10 +157,20 @@ namespace TrafficView
                 this.languageItem.DropDownItems.Add(item);
             }
 
+            int[] popupScalePercents = MonitorSettings.GetSupportedPopupScalePercents();
+            for (int i = 0; i < popupScalePercents.Length; i++)
+            {
+                ToolStripMenuItem item = new ToolStripMenuItem(string.Empty, null, this.PopupScaleMenuItem_Click);
+                item.Tag = popupScalePercents[i];
+                this.popupScaleMenuItems[popupScalePercents[i]] = item;
+                this.sizeItem.DropDownItems.Add(item);
+            }
+
             this.sharedMenu.Items.Add(this.toggleItem);
             this.sharedMenu.Items.Add(this.calibrationStatusItem);
             this.sharedMenu.Items.Add(this.calibrationItem);
             this.sharedMenu.Items.Add(this.transparencyItem);
+            this.sharedMenu.Items.Add(this.sizeItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
             this.sharedMenu.Items.Add(this.exitItem);
@@ -267,6 +282,43 @@ namespace TrafficView
             this.UpdateMenuState();
         }
 
+        private void PopupScaleMenuItem_Click(object sender, EventArgs e)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            if (item == null || item.Tag == null)
+            {
+                return;
+            }
+
+            int popupScalePercent;
+            if (!int.TryParse(item.Tag.ToString(), out popupScalePercent))
+            {
+                return;
+            }
+
+            this.ApplyPopupScalePercent(popupScalePercent);
+        }
+
+        private void ApplyPopupScalePercent(int popupScalePercent)
+        {
+            if (this.settings.PopupScalePercent == popupScalePercent)
+            {
+                return;
+            }
+
+            this.settings = this.settings.WithPopupScalePercent(popupScalePercent);
+            this.popupForm.ApplySettings(this.settings);
+
+            if (this.popupForm.Visible)
+            {
+                this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                this.popupForm.BringToFrontOnly();
+            }
+
+            this.settings.Save();
+            this.UpdateMenuState();
+        }
+
         private void LanguageMenuItem_Click(object sender, EventArgs e)
         {
             ToolStripMenuItem item = sender as ToolStripMenuItem;
@@ -306,6 +358,19 @@ namespace TrafficView
             this.ShowSharedMenuFromOverlayLeftClick();
         }
 
+        private void PopupForm_OverlayLocationCommitted(object sender, EventArgs e)
+        {
+            Point popupLocation = this.popupForm.Location;
+            if (this.settings.HasSavedPopupLocation &&
+                this.settings.PopupLocation == popupLocation)
+            {
+                return;
+            }
+
+            this.settings = this.settings.WithPopupLocation(popupLocation);
+            this.settings.Save();
+        }
+
         private void ShowSharedMenuFromOverlayLeftClick()
         {
             if (this.sharedMenu == null || this.sharedMenu.Visible)
@@ -341,7 +406,7 @@ namespace TrafficView
                 this.popupForm.SuppressMenuTemporarily(350);
             }
 
-            this.popupForm.ShowNearTray();
+            this.ShowPopupAtPreferredOrSavedLocation(null, true);
         }
 
         private void ShowCalibrationDialog(bool keepPopupVisible = false)
@@ -397,14 +462,7 @@ namespace TrafficView
 
         private void BringPopupToFront(Point? restoreLocation = null)
         {
-            if (restoreLocation.HasValue)
-            {
-                this.popupForm.ShowAtLocation(restoreLocation.Value, false);
-            }
-            else
-            {
-                this.popupForm.ShowNearTray(false);
-            }
+            this.ShowPopupAtPreferredOrSavedLocation(restoreLocation, false);
 
             this.popupForm.BeginInvoke(new Action(this.popupForm.BringToFrontOnly));
             this.SchedulePopupFrontRefresh(180, restoreLocation);
@@ -427,17 +485,28 @@ namespace TrafficView
                     return;
                 }
 
-                if (restoreLocation.HasValue)
-                {
-                    this.popupForm.ShowAtLocation(restoreLocation.Value, false);
-                }
-                else
-                {
-                    this.popupForm.ShowNearTray(false);
-                }
+                this.ShowPopupAtPreferredOrSavedLocation(restoreLocation, false);
             };
             timer.Tick += tickHandler;
             timer.Start();
+        }
+
+        private void ShowPopupAtPreferredOrSavedLocation(Point? restoreLocation, bool activateWindow)
+        {
+            Point? effectiveLocation = restoreLocation;
+            if (!effectiveLocation.HasValue &&
+                this.settings.HasSavedPopupLocation)
+            {
+                effectiveLocation = this.settings.PopupLocation;
+            }
+
+            if (effectiveLocation.HasValue)
+            {
+                this.popupForm.ShowAtLocation(effectiveLocation.Value, activateWindow);
+                return;
+            }
+
+            this.popupForm.ShowNearTray(activateWindow);
         }
 
         private void PromptInitialCalibrationOnFirstStart()
@@ -497,12 +566,22 @@ namespace TrafficView
                 "Menu.TransparencyFormat",
                 "Transparenz ({0} %)",
                 this.settings.TransparencyPercent);
+            this.sizeItem.Text = UiLanguage.Format(
+                "Menu.SizeFormat",
+                "Groesse ({0} %)",
+                this.settings.PopupScalePercent);
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
 
             foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.languageMenuItems)
             {
                 pair.Value.Checked = string.Equals(pair.Key, this.settings.LanguageCode, StringComparison.OrdinalIgnoreCase);
+            }
+
+            foreach (KeyValuePair<int, ToolStripMenuItem> pair in this.popupScaleMenuItems)
+            {
+                pair.Value.Text = string.Format("{0} %", pair.Key);
+                pair.Value.Checked = pair.Key == this.settings.PopupScalePercent;
             }
 
             if (this.settings.HasCalibrationData())
@@ -635,9 +714,11 @@ namespace TrafficView
         private const int TrafficHistorySampleCount = 60;
         private const int OverlaySparklinePointCount = 24;
         private const string PanelBackgroundAssetFileName = "TrafficView.panel.png";
+        private const string PanelBackgroundScaledAssetFileNameFormat = "TrafficView.panel.{0}.png";
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
         private static readonly object PanelBackgroundAssetSync = new object();
-        private static Bitmap cachedPanelBackgroundAsset;
+        private static readonly int[] PanelBackgroundPreparedScalePercents = new int[] { 90, 100, 110, 125, 150 };
+        private static Dictionary<string, Bitmap> cachedPanelBackgroundAssets;
         private static bool panelBackgroundAssetLoadAttempted;
 
         private readonly Timer refreshTimer;
@@ -687,6 +768,7 @@ namespace TrafficView
         private DateTime suppressMenuUntilUtc = DateTime.MinValue;
         
         public event EventHandler OverlayMenuRequested;
+        public event EventHandler OverlayLocationCommitted;
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -1057,7 +1139,7 @@ namespace TrafficView
 
         private bool TryDrawPanelBackgroundAsset(Graphics graphics, byte backgroundAlpha)
         {
-            Bitmap panelBackgroundAsset = GetPanelBackgroundAsset();
+            Bitmap panelBackgroundAsset = GetPanelBackgroundAsset(this.ClientSize);
             if (panelBackgroundAsset == null)
             {
                 return false;
@@ -1072,15 +1154,31 @@ namespace TrafficView
 
                 using (ImageAttributes imageAttributes = CreateAlphaImageAttributes(backgroundAlpha))
                 {
-                    graphics.DrawImage(
-                        panelBackgroundAsset,
-                        new Rectangle(0, 0, this.ClientSize.Width, this.ClientSize.Height),
-                        0,
-                        0,
-                        panelBackgroundAsset.Width,
-                        panelBackgroundAsset.Height,
-                        GraphicsUnit.Pixel,
-                        imageAttributes);
+                    if (panelBackgroundAsset.Width == this.ClientSize.Width &&
+                        panelBackgroundAsset.Height == this.ClientSize.Height)
+                    {
+                        graphics.DrawImage(
+                            panelBackgroundAsset,
+                            new Rectangle(0, 0, panelBackgroundAsset.Width, panelBackgroundAsset.Height),
+                            0,
+                            0,
+                            panelBackgroundAsset.Width,
+                            panelBackgroundAsset.Height,
+                            GraphicsUnit.Pixel,
+                            imageAttributes);
+                    }
+                    else
+                    {
+                        graphics.DrawImage(
+                            panelBackgroundAsset,
+                            new Rectangle(0, 0, this.ClientSize.Width, this.ClientSize.Height),
+                            0,
+                            0,
+                            panelBackgroundAsset.Width,
+                            panelBackgroundAsset.Height,
+                            GraphicsUnit.Pixel,
+                            imageAttributes);
+                    }
                 }
 
                 return true;
@@ -1185,7 +1283,20 @@ namespace TrafficView
 
         public void ApplySettings(MonitorSettings newSettings)
         {
+            bool popupScaleChanged = this.settings.PopupScalePercent != newSettings.PopupScalePercent;
+            Point previousLocation = this.Location;
             this.settings = newSettings.Clone();
+
+            if (popupScaleChanged)
+            {
+                this.ApplyDpiLayout(this.currentDpi);
+                this.Location = this.GetVisiblePopupLocation(
+                    previousLocation,
+                    null,
+                    "popup-scale-clamped",
+                    "Popup-Position wurde nach einer Groessenaenderung auf einen sichtbaren Arbeitsbereich begrenzt.");
+            }
+
             this.staticSurfaceDirty = true;
             this.ApplyWindowTransparency();
             this.lastSampleUtc = DateTime.MinValue;
@@ -2302,48 +2413,106 @@ namespace TrafficView
             }
         }
 
-        private static Bitmap GetPanelBackgroundAsset()
+        private static Bitmap GetPanelBackgroundAsset(Size targetSize)
         {
             lock (PanelBackgroundAssetSync)
             {
                 if (panelBackgroundAssetLoadAttempted)
                 {
-                    return cachedPanelBackgroundAsset;
+                    return SelectBestPanelBackgroundAsset(targetSize);
                 }
 
                 panelBackgroundAssetLoadAttempted = true;
-                string assetPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PanelBackgroundAssetFileName);
+                cachedPanelBackgroundAssets = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
 
-                if (!File.Exists(assetPath))
+                string[] assetPaths = GetPanelBackgroundAssetPaths();
+                for (int i = 0; i < assetPaths.Length; i++)
+                {
+                    string assetPath = assetPaths[i];
+                    if (!File.Exists(assetPath))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        using (Image image = Image.FromFile(assetPath))
+                        {
+                            cachedPanelBackgroundAssets[assetPath] = new Bitmap(image);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.WarnOnce(
+                            "panel-background-asset-load-failed-" + assetPath,
+                            string.Format(
+                                "The panel background asset could not be loaded from '{0}'. Procedural panel rendering will be used for missing sizes.",
+                                assetPath),
+                            ex);
+                    }
+                }
+
+                if (cachedPanelBackgroundAssets.Count == 0)
                 {
                     AppLog.WarnOnce(
                         "panel-background-asset-missing",
                         string.Format(
-                            "The panel background asset was not found at '{0}'. Procedural panel rendering will be used.",
-                            assetPath));
+                            "No panel background assets were found in '{0}'. Procedural panel rendering will be used.",
+                            AppDomain.CurrentDomain.BaseDirectory));
                     return null;
                 }
 
-                try
-                {
-                    using (Image image = Image.FromFile(assetPath))
-                    {
-                        cachedPanelBackgroundAsset = new Bitmap(image);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    cachedPanelBackgroundAsset = null;
-                    AppLog.WarnOnce(
-                        "panel-background-asset-load-failed",
-                        string.Format(
-                            "The panel background asset could not be loaded from '{0}'. Procedural panel rendering will be used.",
-                            assetPath),
-                        ex);
-                }
-
-                return cachedPanelBackgroundAsset;
+                return SelectBestPanelBackgroundAsset(targetSize);
             }
+        }
+
+        private static string[] GetPanelBackgroundAssetPaths()
+        {
+            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            List<string> assetPaths = new List<string>();
+
+            for (int i = 0; i < PanelBackgroundPreparedScalePercents.Length; i++)
+            {
+                int scalePercent = PanelBackgroundPreparedScalePercents[i];
+                string fileName = scalePercent == 100
+                    ? PanelBackgroundAssetFileName
+                    : string.Format(PanelBackgroundScaledAssetFileNameFormat, scalePercent);
+                assetPaths.Add(Path.Combine(baseDirectory, fileName));
+            }
+
+            return assetPaths.ToArray();
+        }
+
+        private static Bitmap SelectBestPanelBackgroundAsset(Size targetSize)
+        {
+            if (cachedPanelBackgroundAssets == null || cachedPanelBackgroundAssets.Count == 0)
+            {
+                return null;
+            }
+
+            Bitmap bestAsset = null;
+            long bestScore = long.MaxValue;
+
+            foreach (KeyValuePair<string, Bitmap> pair in cachedPanelBackgroundAssets)
+            {
+                Bitmap candidate = pair.Value;
+                long score = GetPanelBackgroundAssetMatchScore(candidate.Size, targetSize);
+                if (score < bestScore)
+                {
+                    bestAsset = candidate;
+                    bestScore = score;
+                }
+            }
+
+            return bestAsset;
+        }
+
+        private static long GetPanelBackgroundAssetMatchScore(Size assetSize, Size targetSize)
+        {
+            long widthDelta = Math.Abs(assetSize.Width - targetSize.Width);
+            long heightDelta = Math.Abs(assetSize.Height - targetSize.Height);
+            long areaDelta = Math.Abs((assetSize.Width * assetSize.Height) - (targetSize.Width * targetSize.Height));
+            return (widthDelta * widthDelta) + (heightDelta * heightDelta) + areaDelta;
         }
 
         private void DrawMeterCenterDepth(Graphics graphics, RectangleF centerBounds)
@@ -3377,9 +3546,9 @@ namespace TrafficView
             dpi = DpiHelper.NormalizeDpi(dpi);
             this.currentDpi = dpi;
 
-            Font newFormFont = new Font("Segoe UI", DpiHelper.Scale(BaseFormFontSize, dpi), FontStyle.Regular, GraphicsUnit.Pixel);
-            Font newCaptionFont = new Font("Segoe UI", DpiHelper.Scale(BaseCaptionFontSize, dpi), FontStyle.Bold, GraphicsUnit.Pixel);
-            Font newValueFont = new Font("Segoe UI Semibold", DpiHelper.Scale(BaseValueFontSize, dpi), FontStyle.Bold, GraphicsUnit.Pixel);
+            Font newFormFont = new Font("Segoe UI", this.ScaleFloat(BaseFormFontSize), FontStyle.Regular, GraphicsUnit.Pixel);
+            Font newCaptionFont = new Font("Segoe UI", this.ScaleFloat(BaseCaptionFontSize), FontStyle.Bold, GraphicsUnit.Pixel);
+            Font newValueFont = new Font("Segoe UI Semibold", this.ScaleFloat(BaseValueFontSize), FontStyle.Bold, GraphicsUnit.Pixel);
 
             Font previousFormFont = this.formFont;
             Font previousCaptionFont = this.captionFont;
@@ -3429,12 +3598,21 @@ namespace TrafficView
 
         private int ScaleValue(int value)
         {
-            return DpiHelper.Scale(value, this.currentDpi);
+            return Math.Max(
+                1,
+                (int)Math.Round(
+                    DpiHelper.Scale(value, this.currentDpi) * this.GetPopupScaleFactor(),
+                    MidpointRounding.AwayFromZero));
         }
 
         private float ScaleFloat(float value)
         {
-            return DpiHelper.Scale(value, this.currentDpi);
+            return DpiHelper.Scale(value, this.currentDpi) * (float)this.GetPopupScaleFactor();
+        }
+
+        private double GetPopupScaleFactor()
+        {
+            return Math.Max(0.5D, this.settings.PopupScalePercent / 100D);
         }
 
         private void UpdateWindowRegion()
@@ -3589,13 +3767,28 @@ namespace TrafficView
 
             if (e.Button == GetOverlayDragMouseButton())
             {
+                bool shouldCommitLocation = this.dragMoved;
                 this.ResetOverlayDragState();
+
+                if (shouldCommitLocation)
+                {
+                    this.OnOverlayLocationCommitted();
+                }
             }
         }
 
         private void OnOverlayMenuRequested()
         {
             EventHandler handler = this.OverlayMenuRequested;
+            if (handler != null)
+            {
+                handler(this, EventArgs.Empty);
+            }
+        }
+
+        private void OnOverlayLocationCommitted()
+        {
+            EventHandler handler = this.OverlayLocationCommitted;
             if (handler != null)
             {
                 handler(this, EventArgs.Empty);
