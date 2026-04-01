@@ -39,11 +39,13 @@ namespace TrafficView
         private readonly TableLayoutPanel usageGrid;
         private readonly Panel adapterRightSpacerPanel;
         private readonly Panel buttonPanel;
+        private readonly Control cornerHeaderControl;
         private readonly Label dailyHeaderLabel;
         private readonly Label weeklyHeaderLabel;
         private readonly Label monthlyHeaderLabel;
         private readonly Label uploadRowLabel;
         private readonly Label downloadRowLabel;
+        private readonly Label totalRowLabel;
         private readonly Label adapterValueLabel;
         private readonly Label adapterCaptionLabel;
         private readonly Label dailyUploadValueLabel;
@@ -52,6 +54,9 @@ namespace TrafficView
         private readonly Label dailyDownloadValueLabel;
         private readonly Label weeklyDownloadValueLabel;
         private readonly Label monthlyDownloadValueLabel;
+        private readonly Label dailyTotalValueLabel;
+        private readonly Label weeklyTotalValueLabel;
+        private readonly Label monthlyTotalValueLabel;
         private readonly Button exportButton;
         private readonly Button clearButton;
         private readonly Button okButton;
@@ -163,9 +168,9 @@ namespace TrafficView
             this.usageGrid.Dock = DockStyle.Top;
             this.usageGrid.AutoSize = false;
             this.usageGrid.ColumnCount = 4;
-            this.usageGrid.RowCount = 3;
+            this.usageGrid.RowCount = 4;
             this.usageGrid.Width = 530;
-            this.usageGrid.Height = 118;
+            this.usageGrid.Height = 159;
             this.usageGrid.Margin = new Padding(0, 0, 8, 12);
             this.usageGrid.Padding = new Padding(0);
             this.usageGrid.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
@@ -178,8 +183,10 @@ namespace TrafficView
             this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
             this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            this.usageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
 
-            AddCell(this.usageGrid, 0, 0, string.Empty, headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.cornerHeaderControl = CreateCornerLogoControl();
+            this.usageGrid.Controls.Add(this.cornerHeaderControl, 0, 0);
             this.dailyHeaderLabel = AddCell(this.usageGrid, 1, 0, UiLanguage.Get("UsageWindow.ColumnDaily", "Täglich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
             this.weeklyHeaderLabel = AddCell(this.usageGrid, 2, 0, UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
             this.monthlyHeaderLabel = AddCell(this.usageGrid, 3, 0, UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
@@ -193,6 +200,11 @@ namespace TrafficView
             this.dailyDownloadValueLabel = AddCell(this.usageGrid, 1, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
             this.weeklyDownloadValueLabel = AddCell(this.usageGrid, 2, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
             this.monthlyDownloadValueLabel = AddCell(this.usageGrid, 3, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+
+            this.totalRowLabel = AddCell(this.usageGrid, 0, 3, UiLanguage.Get("UsageWindow.RowTotal", "Gesamt"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
+            this.dailyTotalValueLabel = AddCell(this.usageGrid, 1, 3, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyTotalValueLabel = AddCell(this.usageGrid, 2, 3, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyTotalValueLabel = AddCell(this.usageGrid, 3, 3, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
 
             this.buttonPanel = new Panel();
             this.buttonPanel.Dock = DockStyle.Fill;
@@ -347,6 +359,9 @@ namespace TrafficView
             this.dailyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.DownloadBytes);
             this.weeklyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.DownloadBytes);
             this.monthlyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.DownloadBytes);
+            this.dailyTotalValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.TotalBytes);
+            this.weeklyTotalValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.TotalBytes);
+            this.monthlyTotalValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.TotalBytes);
             this.UpdateDynamicLayout();
         }
 
@@ -396,20 +411,28 @@ namespace TrafficView
                 150,
                 Math.Max(
                     MeasureTextWidth(this.uploadRowLabel),
-                    MeasureTextWidth(this.downloadRowLabel)) + 24);
+                    Math.Max(
+                        MeasureTextWidth(this.downloadRowLabel),
+                        MeasureTextWidth(this.totalRowLabel))) + 24);
 
             int adapterCaptionWidth = MeasureTextWidth(this.adapterCaptionLabel) + 8;
             int adapterValueWidth = MeasureTextWidth(this.adapterValueLabel) + 16;
 
             int dailyColumnWidth = Math.Max(
                 MeasureTextWidth(this.dailyHeaderLabel),
-                Math.Max(MeasureTextWidth(this.dailyUploadValueLabel), MeasureTextWidth(this.dailyDownloadValueLabel))) + 24;
+                Math.Max(
+                    MeasureTextWidth(this.dailyUploadValueLabel),
+                    Math.Max(MeasureTextWidth(this.dailyDownloadValueLabel), MeasureTextWidth(this.dailyTotalValueLabel)))) + 24;
             int weeklyColumnWidth = Math.Max(
                 MeasureTextWidth(this.weeklyHeaderLabel),
-                Math.Max(MeasureTextWidth(this.weeklyUploadValueLabel), MeasureTextWidth(this.weeklyDownloadValueLabel))) + 52;
+                Math.Max(
+                    MeasureTextWidth(this.weeklyUploadValueLabel),
+                    Math.Max(MeasureTextWidth(this.weeklyDownloadValueLabel), MeasureTextWidth(this.weeklyTotalValueLabel)))) + 52;
             int monthlyColumnWidth = Math.Max(
                 MeasureTextWidth(this.monthlyHeaderLabel),
-                Math.Max(MeasureTextWidth(this.monthlyUploadValueLabel), MeasureTextWidth(this.monthlyDownloadValueLabel))) + 28;
+                Math.Max(
+                    MeasureTextWidth(this.monthlyUploadValueLabel),
+                    Math.Max(MeasureTextWidth(this.monthlyDownloadValueLabel), MeasureTextWidth(this.monthlyTotalValueLabel)))) + 28;
 
             dailyColumnWidth = Math.Max(130, dailyColumnWidth);
             weeklyColumnWidth = Math.Max(164, weeklyColumnWidth);
@@ -428,9 +451,15 @@ namespace TrafficView
                 Math.Max(
                     MeasureTextHeight(this.dailyDownloadValueLabel),
                     Math.Max(MeasureTextHeight(this.monthlyDownloadValueLabel), MeasureTextHeight(this.weeklyDownloadValueLabel)))) + 14;
+            int totalRowHeight = Math.Max(
+                MeasureTextHeight(this.totalRowLabel),
+                Math.Max(
+                    MeasureTextHeight(this.dailyTotalValueLabel),
+                    Math.Max(MeasureTextHeight(this.monthlyTotalValueLabel), MeasureTextHeight(this.weeklyTotalValueLabel)))) + 14;
 
             uploadRowHeight = Math.Max(40, uploadRowHeight);
             downloadRowHeight = Math.Max(40, downloadRowHeight);
+            totalRowHeight = Math.Max(40, totalRowHeight);
 
             int minimumGridWidth = rowLabelWidth + dailyColumnWidth + weeklyColumnWidth + monthlyColumnWidth + 10;
 
@@ -445,7 +474,7 @@ namespace TrafficView
             int minimumClientHeight = contentPaddingHeight +
                 this.adapterLayout.Height +
                 headerSpacing +
-                (headerRowHeight + uploadRowHeight + downloadRowHeight + 4) +
+                (headerRowHeight + uploadRowHeight + downloadRowHeight + totalRowHeight + 5) +
                 buttonSpacing +
                 buttonRowHeight;
 
@@ -476,8 +505,9 @@ namespace TrafficView
             this.usageGrid.RowStyles[0].Height = headerRowHeight;
             this.usageGrid.RowStyles[1].Height = uploadRowHeight;
             this.usageGrid.RowStyles[2].Height = downloadRowHeight;
+            this.usageGrid.RowStyles[3].Height = totalRowHeight;
             this.usageGrid.Width = availableGridWidth;
-            this.usageGrid.Height = headerRowHeight + uploadRowHeight + downloadRowHeight + 4;
+            this.usageGrid.Height = headerRowHeight + uploadRowHeight + downloadRowHeight + totalRowHeight + 5;
             this.usageGrid.ResumeLayout();
 
             this.buttonPanel.PerformLayout();
@@ -531,6 +561,56 @@ namespace TrafficView
 
             grid.Controls.Add(label, column, row);
             return label;
+        }
+
+        private static Control CreateCornerLogoControl()
+        {
+            Panel panel = new Panel();
+            panel.Dock = DockStyle.Fill;
+            panel.Margin = new Padding(0);
+            panel.Padding = new Padding(6, 2, 6, 2);
+
+            Image logoImage = TryLoadCornerLogo();
+            if (logoImage == null)
+            {
+                return panel;
+            }
+
+            PictureBox pictureBox = new PictureBox();
+            pictureBox.Dock = DockStyle.Fill;
+            pictureBox.Margin = new Padding(0);
+            pictureBox.BackColor = Color.Transparent;
+            pictureBox.Image = logoImage;
+            pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
+            panel.Controls.Add(pictureBox);
+            panel.Disposed += delegate
+            {
+                pictureBox.Image.Dispose();
+            };
+
+            return panel;
+        }
+
+        private static Image TryLoadCornerLogo()
+        {
+            try
+            {
+                string logoPath = Path.Combine(AppStorage.BaseDirectory, "LOLO-SOFT_00_SW.png");
+                if (!File.Exists(logoPath))
+                {
+                    return null;
+                }
+
+                using (FileStream stream = new FileStream(logoPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (Image original = Image.FromStream(stream))
+                {
+                    return new Bitmap(original);
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private string GetDefaultExportFileName()
