@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.3.0")]
-[assembly: AssemblyFileVersion("1.4.3.0")]
+[assembly: AssemblyVersion("1.4.6.0")]
+[assembly: AssemblyFileVersion("1.4.6.0")]
 
 namespace TrafficView
 {
@@ -110,6 +110,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem calibrationStatusItem;
         private readonly ToolStripMenuItem calibrationItem;
+        private readonly ToolStripMenuItem dataUsageItem;
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem languageItem;
@@ -120,13 +121,17 @@ namespace TrafficView
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
         private MonitorSettings settings;
+        private readonly TrafficUsageLog trafficUsageLog;
+        private DateTime lastTrafficUsageFlushUtc = DateTime.MinValue;
 
         public TrafficViewContext()
         {
             this.settings = MonitorSettings.Load();
+            this.trafficUsageLog = new TrafficUsageLog();
             UiLanguage.Initialize(this.settings.LanguageCode);
             this.popupForm = new TrafficPopupForm(this.settings);
             this.popupForm.RatesUpdated += this.PopupForm_RatesUpdated;
+            this.popupForm.TrafficUsageMeasured += this.PopupForm_TrafficUsageMeasured;
             this.popupForm.OverlayMenuRequested += this.PopupForm_OverlayMenuRequested;
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
@@ -144,6 +149,7 @@ namespace TrafficView
             this.calibrationStatusItem = new ToolStripMenuItem(string.Empty);
             this.calibrationStatusItem.Enabled = false;
             this.calibrationItem = new ToolStripMenuItem(string.Empty, null, this.CalibrationItem_Click);
+            this.dataUsageItem = new ToolStripMenuItem(string.Empty, null, this.DataUsageItem_Click);
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.languageItem = new ToolStripMenuItem(string.Empty);
@@ -170,6 +176,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.toggleItem);
             this.sharedMenu.Items.Add(this.calibrationStatusItem);
             this.sharedMenu.Items.Add(this.calibrationItem);
+            this.sharedMenu.Items.Add(this.dataUsageItem);
             this.sharedMenu.Items.Add(this.transparencyItem);
             this.sharedMenu.Items.Add(this.sizeItem);
             this.sharedMenu.Items.Add(this.languageItem);
@@ -208,6 +215,7 @@ namespace TrafficView
 
         protected override void ExitThreadCore()
         {
+            this.trafficUsageLog.FlushPending();
             this.notifyIcon.Visible = false;
             this.notifyIcon.Dispose();
             this.sharedMenu.Dispose();
@@ -242,6 +250,11 @@ namespace TrafficView
         private void CalibrationItem_Click(object sender, EventArgs e)
         {
             this.ShowCalibrationDialog(this.popupForm.Visible);
+        }
+
+        private void DataUsageItem_Click(object sender, EventArgs e)
+        {
+            this.ShowUsageWindow();
         }
 
         private void TransparencyItem_Click(object sender, EventArgs e)
@@ -370,6 +383,22 @@ namespace TrafficView
 
             this.settings = this.settings.WithPopupLocation(popupLocation);
             this.settings.Save();
+        }
+
+        private void PopupForm_TrafficUsageMeasured(object sender, TrafficUsageMeasuredEventArgs e)
+        {
+            if (!this.trafficUsageLog.QueueUsage(this.settings, e.DownloadBytes, e.UploadBytes))
+            {
+                return;
+            }
+
+            if (this.trafficUsageLog.PendingRecordCount >= 8 ||
+                this.lastTrafficUsageFlushUtc == DateTime.MinValue ||
+                (DateTime.UtcNow - this.lastTrafficUsageFlushUtc).TotalSeconds >= 15D)
+            {
+                this.trafficUsageLog.FlushPending();
+                this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            }
         }
 
         private void ShowSharedMenuFromOverlayLeftClick()
@@ -563,6 +592,7 @@ namespace TrafficView
                 ? UiLanguage.Get("Menu.Hide", "Ausblenden")
                 : UiLanguage.Get("Menu.Show", "Anzeigen");
             this.calibrationItem.Text = UiLanguage.Get("Menu.Calibration", "Kalibration (30 s)...");
+            this.dataUsageItem.Text = UiLanguage.Get("Menu.DataUsage", "Datenverbrauch");
             this.transparencyItem.Text = UiLanguage.Format(
                 "Menu.TransparencyFormat",
                 "Transparenz ({0} %)",
@@ -604,6 +634,80 @@ namespace TrafficView
             this.calibrationStatusItem.Text = UiLanguage.Get(
                 "Menu.CalibrationStatusOpen",
                 "Kalibrationsstatus: offen");
+        }
+
+        private UsageWindowData CreateUsageWindowData()
+        {
+            this.trafficUsageLog.FlushPending();
+            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+
+            return new UsageWindowData(
+                this.settings.GetAdapterDisplayName(),
+                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Daily),
+                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Monthly),
+                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Weekly));
+        }
+
+        private bool ClearUsageData()
+        {
+            bool cleared = this.trafficUsageLog.ClearAll();
+            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            return cleared;
+        }
+
+        private void ShowUsageWindow()
+        {
+            bool pausePopupTopMost = this.popupForm.Visible;
+            if (pausePopupTopMost)
+            {
+                this.popupForm.SuspendTopMostEnforcement();
+            }
+
+            try
+            {
+                using (UsageSummaryForm usageSummaryForm = new UsageSummaryForm(
+                    new Func<UsageWindowData>(this.CreateUsageWindowData),
+                    new Func<bool>(this.ClearUsageData),
+                    new Func<long, string>(FormatUsageAmount)))
+                {
+                    if (this.popupForm.Visible)
+                    {
+                        usageSummaryForm.ShowDialog(this.popupForm);
+                    }
+                    else
+                    {
+                        usageSummaryForm.ShowDialog();
+                    }
+                }
+            }
+            finally
+            {
+                if (pausePopupTopMost)
+                {
+                    this.popupForm.ResumeTopMostEnforcement(false);
+                }
+            }
+        }
+
+        private static string FormatUsageAmount(long bytes)
+        {
+            string[] units = new string[] { "B", "KB", "MB", "GB", "TB" };
+            double value = Math.Max(0L, bytes);
+            int unitIndex = 0;
+
+            while (value >= 1024D && unitIndex < units.Length - 1)
+            {
+                value /= 1024D;
+                unitIndex++;
+            }
+
+            if (unitIndex == 0)
+            {
+                return string.Format("{0:0} {1}", value, units[unitIndex]);
+            }
+
+            string format = value >= 100D ? "0" : (value >= 10D ? "0.#" : "0.0");
+            return string.Format("{0:" + format + "} {1}", value, units[unitIndex]);
         }
     }
 
@@ -770,6 +874,7 @@ namespace TrafficView
         
         public event EventHandler OverlayMenuRequested;
         public event EventHandler OverlayLocationCommitted;
+        public event EventHandler<TrafficUsageMeasuredEventArgs> TrafficUsageMeasured;
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -1755,16 +1860,20 @@ namespace TrafficView
             DateTime nowUtc = DateTime.UtcNow;
             double downloadBytesPerSecond = 0D;
             double uploadBytesPerSecond = 0D;
+            long measuredDownloadBytes = 0L;
+            long measuredUploadBytes = 0L;
 
             if (this.lastSampleUtc != DateTime.MinValue)
             {
+                long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
+                long sentDiff = snapshot.BytesSent - this.lastSentBytes;
+                measuredDownloadBytes = Math.Max(0L, receivedDiff);
+                measuredUploadBytes = Math.Max(0L, sentDiff);
                 double elapsedSeconds = (nowUtc - this.lastSampleUtc).TotalSeconds;
                 if (elapsedSeconds > 0.1D)
                 {
-                    long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
-                    long sentDiff = snapshot.BytesSent - this.lastSentBytes;
-                    downloadBytesPerSecond = Math.Max(0L, receivedDiff) / elapsedSeconds;
-                    uploadBytesPerSecond = Math.Max(0L, sentDiff) / elapsedSeconds;
+                    downloadBytesPerSecond = measuredDownloadBytes / elapsedSeconds;
+                    uploadBytesPerSecond = measuredUploadBytes / elapsedSeconds;
                 }
             }
 
@@ -1798,6 +1907,7 @@ namespace TrafficView
             }
 
             this.OnRatesUpdated(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
+            this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
         }
 
         private void ResetDisplayedRateSmoothing()
@@ -1906,6 +2016,15 @@ namespace TrafficView
             if (handler != null)
             {
                 handler(this, new RatesUpdatedEventArgs(downloadBytesPerSecond, uploadBytesPerSecond));
+            }
+        }
+
+        private void OnTrafficUsageMeasured(long downloadBytes, long uploadBytes)
+        {
+            EventHandler<TrafficUsageMeasuredEventArgs> handler = this.TrafficUsageMeasured;
+            if (handler != null && (downloadBytes > 0L || uploadBytes > 0L))
+            {
+                handler(this, new TrafficUsageMeasuredEventArgs(downloadBytes, uploadBytes));
             }
         }
 
@@ -4483,6 +4602,19 @@ namespace TrafficView
         public double UploadBytesPerSecond { get; private set; }
     }
 
+    internal sealed class TrafficUsageMeasuredEventArgs : EventArgs
+    {
+        public TrafficUsageMeasuredEventArgs(long downloadBytes, long uploadBytes)
+        {
+            this.DownloadBytes = Math.Max(0L, downloadBytes);
+            this.UploadBytes = Math.Max(0L, uploadBytes);
+        }
+
+        public long DownloadBytes { get; private set; }
+
+        public long UploadBytes { get; private set; }
+    }
+
     internal struct TrafficHistorySample
     {
         public readonly DateTime TimestampUtc;
@@ -6708,6 +6840,637 @@ namespace TrafficView
             }
 
             return normalized;
+        }
+    }
+}
+
+
+===== TrafficUsageLog.cs =====
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+
+namespace TrafficView
+{
+    internal enum TrafficUsagePeriod
+    {
+        Daily,
+        Weekly,
+        Monthly
+    }
+
+    internal sealed class TrafficUsageSummary
+    {
+        public long DownloadBytes { get; set; }
+
+        public long UploadBytes { get; set; }
+
+        public long TotalBytes
+        {
+            get { return SafeAdd(this.DownloadBytes, this.UploadBytes); }
+        }
+
+        private static long SafeAdd(long left, long right)
+        {
+            if (left > long.MaxValue - right)
+            {
+                return long.MaxValue;
+            }
+
+            return Math.Max(0L, left) + Math.Max(0L, right);
+        }
+    }
+
+    internal sealed class TrafficUsageLog
+    {
+        private const string UsageFileName = "Verbrauch.txt";
+        private readonly object syncRoot = new object();
+        private readonly List<string> pendingLines = new List<string>();
+
+        public int PendingRecordCount
+        {
+            get
+            {
+                lock (this.syncRoot)
+                {
+                    return this.pendingLines.Count;
+                }
+            }
+        }
+
+        public bool QueueUsage(MonitorSettings settings, long downloadBytes, long uploadBytes)
+        {
+            if (settings == null)
+            {
+                return false;
+            }
+
+            long safeDownloadBytes = Math.Max(0L, downloadBytes);
+            long safeUploadBytes = Math.Max(0L, uploadBytes);
+            if (safeDownloadBytes <= 0L && safeUploadBytes <= 0L)
+            {
+                return false;
+            }
+
+            string adapterKey = GetAdapterKey(settings);
+            string line = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}|{1}|{2}|{3}",
+                DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+                adapterKey,
+                safeDownloadBytes,
+                safeUploadBytes);
+
+            lock (this.syncRoot)
+            {
+                this.pendingLines.Add(line);
+            }
+
+            return true;
+        }
+
+        public void FlushPending()
+        {
+            string[] linesToWrite;
+            lock (this.syncRoot)
+            {
+                if (this.pendingLines.Count == 0)
+                {
+                    return;
+                }
+
+                linesToWrite = this.pendingLines.ToArray();
+            }
+
+            string path = GetUsageFilePath();
+
+            try
+            {
+                File.AppendAllLines(path, linesToWrite);
+
+                lock (this.syncRoot)
+                {
+                    if (this.pendingLines.Count >= linesToWrite.Length)
+                    {
+                        this.pendingLines.RemoveRange(0, linesToWrite.Length);
+                    }
+                    else
+                    {
+                        this.pendingLines.Clear();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-flush-failed",
+                    string.Format("Verbrauchsdaten konnten nicht nach '{0}' geschrieben werden.", path),
+                    ex);
+            }
+        }
+
+        public bool ClearAll()
+        {
+            lock (this.syncRoot)
+            {
+                this.pendingLines.Clear();
+            }
+
+            string path = GetUsageFilePath();
+            if (!File.Exists(path))
+            {
+                return true;
+            }
+
+            try
+            {
+                File.Delete(path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-clear-failed",
+                    string.Format("Verbrauchsdaten konnten nicht aus '{0}' geloescht werden.", path),
+                    ex);
+                return false;
+            }
+        }
+
+        public TrafficUsageSummary GetSummary(MonitorSettings settings, TrafficUsagePeriod period)
+        {
+            string adapterKey = GetAdapterKey(settings);
+            TrafficUsageSummary summary = new TrafficUsageSummary();
+            DateTime nowLocal = DateTime.Now;
+            DateTime currentWeekStart = GetStartOfWeek(nowLocal);
+
+            try
+            {
+                string path = GetUsageFilePath();
+                if (File.Exists(path))
+                {
+                    foreach (string line in File.ReadLines(path))
+                    {
+                        TrafficUsageRecord record;
+                        if (!TryParseRecord(line, out record))
+                        {
+                            continue;
+                        }
+
+                        if (!string.Equals(record.AdapterKey, adapterKey, StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        if (!MatchesPeriod(record.TimestampUtc, period, nowLocal, currentWeekStart))
+                        {
+                            continue;
+                        }
+
+                        summary.DownloadBytes = SafeAdd(summary.DownloadBytes, record.DownloadBytes);
+                        summary.UploadBytes = SafeAdd(summary.UploadBytes, record.UploadBytes);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-read-failed",
+                    "Verbrauch.txt konnte nicht gelesen werden; Verbrauchssummen werden eventuell unvollstaendig angezeigt.",
+                    ex);
+            }
+
+            lock (this.syncRoot)
+            {
+                for (int i = 0; i < this.pendingLines.Count; i++)
+                {
+                    TrafficUsageRecord record;
+                    if (!TryParseRecord(this.pendingLines[i], out record))
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(record.AdapterKey, adapterKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!MatchesPeriod(record.TimestampUtc, period, nowLocal, currentWeekStart))
+                    {
+                        continue;
+                    }
+
+                    summary.DownloadBytes = SafeAdd(summary.DownloadBytes, record.DownloadBytes);
+                    summary.UploadBytes = SafeAdd(summary.UploadBytes, record.UploadBytes);
+                }
+            }
+
+            return summary;
+        }
+
+        public static string GetUsageFilePath()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, UsageFileName);
+        }
+
+        public static string GetAdapterKey(MonitorSettings settings)
+        {
+            if (settings == null || string.IsNullOrWhiteSpace(settings.AdapterId))
+            {
+                return "automatic";
+            }
+
+            return settings.AdapterId.Trim();
+        }
+
+        private static bool TryParseRecord(string line, out TrafficUsageRecord record)
+        {
+            record = default(TrafficUsageRecord);
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            string[] parts = line.Split('|');
+            if (parts.Length != 4)
+            {
+                return false;
+            }
+
+            DateTime timestampUtc;
+            if (!DateTime.TryParse(
+                parts[0].Trim(),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out timestampUtc))
+            {
+                return false;
+            }
+
+            long downloadBytes;
+            if (!long.TryParse(parts[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out downloadBytes))
+            {
+                return false;
+            }
+
+            long uploadBytes;
+            if (!long.TryParse(parts[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out uploadBytes))
+            {
+                return false;
+            }
+
+            record = new TrafficUsageRecord(
+                timestampUtc,
+                parts[1].Trim(),
+                Math.Max(0L, downloadBytes),
+                Math.Max(0L, uploadBytes));
+            return true;
+        }
+
+        private static bool MatchesPeriod(
+            DateTime timestampUtc,
+            TrafficUsagePeriod period,
+            DateTime nowLocal,
+            DateTime currentWeekStart)
+        {
+            DateTime localTimestamp = timestampUtc.ToLocalTime();
+
+            switch (period)
+            {
+                case TrafficUsagePeriod.Daily:
+                    return localTimestamp.Date == nowLocal.Date;
+                case TrafficUsagePeriod.Weekly:
+                    return GetStartOfWeek(localTimestamp) == currentWeekStart;
+                case TrafficUsagePeriod.Monthly:
+                    return localTimestamp.Year == nowLocal.Year &&
+                        localTimestamp.Month == nowLocal.Month;
+                default:
+                    return false;
+            }
+        }
+
+        private static DateTime GetStartOfWeek(DateTime dateTime)
+        {
+            DayOfWeek firstDayOfWeek = CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int offset = (7 + (dateTime.DayOfWeek - firstDayOfWeek)) % 7;
+            return dateTime.Date.AddDays(-offset);
+        }
+
+        private static long SafeAdd(long left, long right)
+        {
+            if (left > long.MaxValue - right)
+            {
+                return long.MaxValue;
+            }
+
+            return Math.Max(0L, left) + Math.Max(0L, right);
+        }
+
+        private struct TrafficUsageRecord
+        {
+            public readonly DateTime TimestampUtc;
+            public readonly string AdapterKey;
+            public readonly long DownloadBytes;
+            public readonly long UploadBytes;
+
+            public TrafficUsageRecord(DateTime timestampUtc, string adapterKey, long downloadBytes, long uploadBytes)
+            {
+                this.TimestampUtc = timestampUtc;
+                this.AdapterKey = adapterKey ?? string.Empty;
+                this.DownloadBytes = downloadBytes;
+                this.UploadBytes = uploadBytes;
+            }
+        }
+    }
+}
+
+
+===== UsageSummaryForm.cs =====
+using System;
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace TrafficView
+{
+    internal sealed class UsageWindowData
+    {
+        public UsageWindowData(
+            string adapterDisplayName,
+            TrafficUsageSummary dailySummary,
+            TrafficUsageSummary monthlySummary,
+            TrafficUsageSummary weeklySummary)
+        {
+            this.AdapterDisplayName = adapterDisplayName ?? string.Empty;
+            this.DailySummary = dailySummary ?? new TrafficUsageSummary();
+            this.MonthlySummary = monthlySummary ?? new TrafficUsageSummary();
+            this.WeeklySummary = weeklySummary ?? new TrafficUsageSummary();
+        }
+
+        public string AdapterDisplayName { get; private set; }
+
+        public TrafficUsageSummary DailySummary { get; private set; }
+
+        public TrafficUsageSummary MonthlySummary { get; private set; }
+
+        public TrafficUsageSummary WeeklySummary { get; private set; }
+    }
+
+    internal sealed class UsageSummaryForm : Form
+    {
+        private readonly Func<UsageWindowData> loadUsageWindowData;
+        private readonly Func<bool> clearUsageData;
+        private readonly Func<long, string> formatUsageAmount;
+        private readonly Label adapterValueLabel;
+        private readonly Label dailyUploadValueLabel;
+        private readonly Label monthlyUploadValueLabel;
+        private readonly Label weeklyUploadValueLabel;
+        private readonly Label dailyDownloadValueLabel;
+        private readonly Label monthlyDownloadValueLabel;
+        private readonly Label weeklyDownloadValueLabel;
+
+        public UsageSummaryForm(
+            Func<UsageWindowData> loadUsageWindowData,
+            Func<bool> clearUsageData,
+            Func<long, string> formatUsageAmount)
+        {
+            if (loadUsageWindowData == null)
+            {
+                throw new ArgumentNullException("loadUsageWindowData");
+            }
+
+            if (clearUsageData == null)
+            {
+                throw new ArgumentNullException("clearUsageData");
+            }
+
+            if (formatUsageAmount == null)
+            {
+                throw new ArgumentNullException("formatUsageAmount");
+            }
+
+            this.loadUsageWindowData = loadUsageWindowData;
+            this.clearUsageData = clearUsageData;
+            this.formatUsageAmount = formatUsageAmount;
+
+            UsageWindowData usageWindowData = this.loadUsageWindowData();
+            if (usageWindowData == null)
+            {
+                throw new InvalidOperationException("loadUsageWindowData returned null.");
+            }
+
+            this.Text = UiLanguage.Get("UsageWindow.Title", "Datenverbrauch");
+            Font baseFont = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+            Font interfaceFont = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+            Font adapterValueFont = new Font("Segoe UI", 10F, FontStyle.Bold, GraphicsUnit.Point);
+            Font headerFont = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point);
+            Font rowFont = new Font("Segoe UI", 10F, FontStyle.Bold, GraphicsUnit.Point);
+            Font valueFont = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
+
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.ShowInTaskbar = false;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.AutoScaleMode = AutoScaleMode.Dpi;
+            this.Font = baseFont;
+            this.TopMost = true;
+            this.ClientSize = new Size(570, 295);
+
+            TableLayoutPanel rootLayout = new TableLayoutPanel();
+            rootLayout.Dock = DockStyle.Fill;
+            rootLayout.Padding = new Padding(10);
+            rootLayout.ColumnCount = 1;
+            rootLayout.RowCount = 3;
+            rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+
+            TableLayoutPanel adapterLayout = new TableLayoutPanel();
+            adapterLayout.Dock = DockStyle.Top;
+            adapterLayout.AutoSize = false;
+            adapterLayout.Height = 32;
+            adapterLayout.Margin = new Padding(0, 0, 0, 8);
+            adapterLayout.Padding = new Padding(0);
+            adapterLayout.ColumnCount = 3;
+            adapterLayout.RowCount = 1;
+            adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+            adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+            adapterLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            Label adapterCaptionLabel = new Label();
+            adapterCaptionLabel.Dock = DockStyle.Fill;
+            adapterCaptionLabel.AutoSize = false;
+            adapterCaptionLabel.Margin = new Padding(0);
+            adapterCaptionLabel.Text = UiLanguage.Get("UsageWindow.AdapterCaption", "Schnittstelle:");
+            adapterCaptionLabel.Font = interfaceFont;
+            adapterCaptionLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+            this.adapterValueLabel = new Label();
+            this.adapterValueLabel.Dock = DockStyle.Fill;
+            this.adapterValueLabel.AutoSize = false;
+            this.adapterValueLabel.Margin = new Padding(0);
+            this.adapterValueLabel.Font = adapterValueFont;
+            this.adapterValueLabel.TextAlign = ContentAlignment.MiddleCenter;
+
+            adapterLayout.Controls.Add(adapterCaptionLabel, 0, 0);
+            adapterLayout.Controls.Add(this.adapterValueLabel, 1, 0);
+            adapterLayout.Controls.Add(new Panel() { Dock = DockStyle.Fill, Margin = new Padding(0) }, 2, 0);
+
+            TableLayoutPanel grid = new TableLayoutPanel();
+            grid.Dock = DockStyle.Top;
+            grid.AutoSize = false;
+            grid.ColumnCount = 4;
+            grid.RowCount = 3;
+            grid.Width = 525;
+            grid.Height = 116;
+            grid.Margin = new Padding(0, 0, 0, 12);
+            grid.Padding = new Padding(0);
+            grid.CellBorderStyle = TableLayoutPanelCellBorderStyle.Single;
+            grid.ColumnStyles.Clear();
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150F));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            grid.RowStyles.Clear();
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+
+            AddCell(grid, 0, 0, string.Empty, headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            AddCell(grid, 1, 0, UiLanguage.Get("UsageWindow.ColumnDaily", "Täglich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            AddCell(grid, 2, 0, UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+            AddCell(grid, 3, 0, UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich"), headerFont, ContentAlignment.MiddleCenter, new Padding(0));
+
+            AddCell(grid, 0, 1, UiLanguage.Get("UsageWindow.RowUpload", "Upload"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
+            this.dailyUploadValueLabel = AddCell(grid, 1, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyUploadValueLabel = AddCell(grid, 2, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyUploadValueLabel = AddCell(grid, 3, 1, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+
+            AddCell(grid, 0, 2, UiLanguage.Get("UsageWindow.RowDownload", "Download"), rowFont, ContentAlignment.MiddleLeft, new Padding(8, 0, 0, 0));
+            this.dailyDownloadValueLabel = AddCell(grid, 1, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.monthlyDownloadValueLabel = AddCell(grid, 2, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+            this.weeklyDownloadValueLabel = AddCell(grid, 3, 2, string.Empty, valueFont, ContentAlignment.MiddleCenter, new Padding(0));
+
+            Panel buttonPanel = new Panel();
+            buttonPanel.Dock = DockStyle.Fill;
+            buttonPanel.Margin = new Padding(0, 12, 0, 0);
+            buttonPanel.Padding = new Padding(0);
+
+            Button clearButton = new Button();
+            clearButton.Text = UiLanguage.Get("UsageWindow.ClearAll", "Datenverbrauch löschen");
+            clearButton.AutoSize = false;
+            clearButton.FlatStyle = FlatStyle.System;
+            Size clearButtonTextSize = TextRenderer.MeasureText(
+                clearButton.Text,
+                this.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            int clearButtonWidth = Math.Max(260, clearButtonTextSize.Width + 28);
+            clearButton.Size = new Size(clearButtonWidth, 36);
+            clearButton.MinimumSize = new Size(clearButtonWidth, 36);
+            clearButton.Anchor = AnchorStyles.Left;
+            clearButton.Location = new Point(0, 2);
+            clearButton.Click += this.ClearButton_Click;
+
+            Button okButton = new Button();
+            okButton.Text = UiLanguage.Get("Common.Ok", "OK");
+            okButton.DialogResult = DialogResult.OK;
+            okButton.Font = this.Font;
+            okButton.AutoSize = false;
+            okButton.FlatStyle = FlatStyle.System;
+            okButton.Size = new Size(92, 32);
+            okButton.MinimumSize = new Size(92, 32);
+            okButton.UseVisualStyleBackColor = true;
+            okButton.TextAlign = ContentAlignment.MiddleCenter;
+            okButton.Padding = Padding.Empty;
+            okButton.Margin = Padding.Empty;
+            okButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            okButton.Location = new Point(buttonPanel.Width - okButton.Width, 2);
+
+            buttonPanel.Controls.Add(clearButton);
+            buttonPanel.Controls.Add(okButton);
+            buttonPanel.Resize += delegate
+            {
+                clearButton.Location = new Point(
+                    0,
+                    Math.Max(0, (buttonPanel.ClientSize.Height - clearButton.Height) / 2));
+                okButton.Location = new Point(
+                    Math.Max(0, buttonPanel.ClientSize.Width - okButton.Width),
+                    Math.Max(0, (buttonPanel.ClientSize.Height - okButton.Height) / 2));
+            };
+
+            rootLayout.Controls.Add(adapterLayout, 0, 0);
+            rootLayout.Controls.Add(grid, 0, 1);
+            rootLayout.Controls.Add(buttonPanel, 0, 2);
+
+            this.AcceptButton = okButton;
+            this.CancelButton = okButton;
+            this.Controls.Add(rootLayout);
+            this.ApplyUsageData(usageWindowData);
+        }
+
+        private void ClearButton_Click(object sender, EventArgs e)
+        {
+            if (!this.clearUsageData())
+            {
+                MessageBox.Show(
+                    this,
+                    UiLanguage.Get(
+                        "UsageWindow.ClearFailed",
+                        "Die aufgezeichneten Verbrauchsdaten konnten nicht gelöscht werden."),
+                    this.Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            UsageWindowData usageWindowData = this.loadUsageWindowData();
+            if (usageWindowData != null)
+            {
+                this.ApplyUsageData(usageWindowData);
+            }
+        }
+
+        private void ApplyUsageData(UsageWindowData usageWindowData)
+        {
+            this.adapterValueLabel.Text = usageWindowData.AdapterDisplayName ?? string.Empty;
+            this.dailyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.UploadBytes);
+            this.monthlyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.UploadBytes);
+            this.weeklyUploadValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.UploadBytes);
+            this.dailyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.DailySummary.DownloadBytes);
+            this.monthlyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.MonthlySummary.DownloadBytes);
+            this.weeklyDownloadValueLabel.Text = this.formatUsageAmount(usageWindowData.WeeklySummary.DownloadBytes);
+        }
+
+        private static Label AddCell(
+            TableLayoutPanel grid,
+            int column,
+            int row,
+            string text,
+            Font font,
+            ContentAlignment textAlign,
+            Padding padding)
+        {
+            Label label = new Label();
+            label.Dock = DockStyle.Fill;
+            label.AutoSize = false;
+            label.AutoEllipsis = false;
+            label.MinimumSize = new Size(0, 34);
+            label.Margin = new Padding(0);
+            label.Padding = padding;
+            label.Text = text ?? string.Empty;
+            label.TextAlign = textAlign;
+            if (font != null)
+            {
+                label.Font = font;
+            }
+
+            grid.Controls.Add(label, column, row);
+            return label;
         }
     }
 }

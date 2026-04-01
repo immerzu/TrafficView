@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.3.0")]
-[assembly: AssemblyFileVersion("1.4.3.0")]
+[assembly: AssemblyVersion("1.4.6.0")]
+[assembly: AssemblyFileVersion("1.4.6.0")]
 
 namespace TrafficView
 {
@@ -109,6 +109,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem toggleItem;
         private readonly ToolStripMenuItem calibrationStatusItem;
         private readonly ToolStripMenuItem calibrationItem;
+        private readonly ToolStripMenuItem dataUsageItem;
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem languageItem;
@@ -119,13 +120,17 @@ namespace TrafficView
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
         private MonitorSettings settings;
+        private readonly TrafficUsageLog trafficUsageLog;
+        private DateTime lastTrafficUsageFlushUtc = DateTime.MinValue;
 
         public TrafficViewContext()
         {
             this.settings = MonitorSettings.Load();
+            this.trafficUsageLog = new TrafficUsageLog();
             UiLanguage.Initialize(this.settings.LanguageCode);
             this.popupForm = new TrafficPopupForm(this.settings);
             this.popupForm.RatesUpdated += this.PopupForm_RatesUpdated;
+            this.popupForm.TrafficUsageMeasured += this.PopupForm_TrafficUsageMeasured;
             this.popupForm.OverlayMenuRequested += this.PopupForm_OverlayMenuRequested;
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
@@ -143,6 +148,7 @@ namespace TrafficView
             this.calibrationStatusItem = new ToolStripMenuItem(string.Empty);
             this.calibrationStatusItem.Enabled = false;
             this.calibrationItem = new ToolStripMenuItem(string.Empty, null, this.CalibrationItem_Click);
+            this.dataUsageItem = new ToolStripMenuItem(string.Empty, null, this.DataUsageItem_Click);
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.languageItem = new ToolStripMenuItem(string.Empty);
@@ -169,6 +175,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.toggleItem);
             this.sharedMenu.Items.Add(this.calibrationStatusItem);
             this.sharedMenu.Items.Add(this.calibrationItem);
+            this.sharedMenu.Items.Add(this.dataUsageItem);
             this.sharedMenu.Items.Add(this.transparencyItem);
             this.sharedMenu.Items.Add(this.sizeItem);
             this.sharedMenu.Items.Add(this.languageItem);
@@ -207,6 +214,7 @@ namespace TrafficView
 
         protected override void ExitThreadCore()
         {
+            this.trafficUsageLog.FlushPending();
             this.notifyIcon.Visible = false;
             this.notifyIcon.Dispose();
             this.sharedMenu.Dispose();
@@ -241,6 +249,11 @@ namespace TrafficView
         private void CalibrationItem_Click(object sender, EventArgs e)
         {
             this.ShowCalibrationDialog(this.popupForm.Visible);
+        }
+
+        private void DataUsageItem_Click(object sender, EventArgs e)
+        {
+            this.ShowUsageWindow();
         }
 
         private void TransparencyItem_Click(object sender, EventArgs e)
@@ -369,6 +382,22 @@ namespace TrafficView
 
             this.settings = this.settings.WithPopupLocation(popupLocation);
             this.settings.Save();
+        }
+
+        private void PopupForm_TrafficUsageMeasured(object sender, TrafficUsageMeasuredEventArgs e)
+        {
+            if (!this.trafficUsageLog.QueueUsage(this.settings, e.DownloadBytes, e.UploadBytes))
+            {
+                return;
+            }
+
+            if (this.trafficUsageLog.PendingRecordCount >= 8 ||
+                this.lastTrafficUsageFlushUtc == DateTime.MinValue ||
+                (DateTime.UtcNow - this.lastTrafficUsageFlushUtc).TotalSeconds >= 15D)
+            {
+                this.trafficUsageLog.FlushPending();
+                this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            }
         }
 
         private void ShowSharedMenuFromOverlayLeftClick()
@@ -562,6 +591,7 @@ namespace TrafficView
                 ? UiLanguage.Get("Menu.Hide", "Ausblenden")
                 : UiLanguage.Get("Menu.Show", "Anzeigen");
             this.calibrationItem.Text = UiLanguage.Get("Menu.Calibration", "Kalibration (30 s)...");
+            this.dataUsageItem.Text = UiLanguage.Get("Menu.DataUsage", "Datenverbrauch");
             this.transparencyItem.Text = UiLanguage.Format(
                 "Menu.TransparencyFormat",
                 "Transparenz ({0} %)",
@@ -603,6 +633,80 @@ namespace TrafficView
             this.calibrationStatusItem.Text = UiLanguage.Get(
                 "Menu.CalibrationStatusOpen",
                 "Kalibrationsstatus: offen");
+        }
+
+        private UsageWindowData CreateUsageWindowData()
+        {
+            this.trafficUsageLog.FlushPending();
+            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+
+            return new UsageWindowData(
+                this.settings.GetAdapterDisplayName(),
+                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Daily),
+                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Monthly),
+                this.trafficUsageLog.GetSummary(this.settings, TrafficUsagePeriod.Weekly));
+        }
+
+        private bool ClearUsageData()
+        {
+            bool cleared = this.trafficUsageLog.ClearAll();
+            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            return cleared;
+        }
+
+        private void ShowUsageWindow()
+        {
+            bool pausePopupTopMost = this.popupForm.Visible;
+            if (pausePopupTopMost)
+            {
+                this.popupForm.SuspendTopMostEnforcement();
+            }
+
+            try
+            {
+                using (UsageSummaryForm usageSummaryForm = new UsageSummaryForm(
+                    new Func<UsageWindowData>(this.CreateUsageWindowData),
+                    new Func<bool>(this.ClearUsageData),
+                    new Func<long, string>(FormatUsageAmount)))
+                {
+                    if (this.popupForm.Visible)
+                    {
+                        usageSummaryForm.ShowDialog(this.popupForm);
+                    }
+                    else
+                    {
+                        usageSummaryForm.ShowDialog();
+                    }
+                }
+            }
+            finally
+            {
+                if (pausePopupTopMost)
+                {
+                    this.popupForm.ResumeTopMostEnforcement(false);
+                }
+            }
+        }
+
+        private static string FormatUsageAmount(long bytes)
+        {
+            string[] units = new string[] { "B", "KB", "MB", "GB", "TB" };
+            double value = Math.Max(0L, bytes);
+            int unitIndex = 0;
+
+            while (value >= 1024D && unitIndex < units.Length - 1)
+            {
+                value /= 1024D;
+                unitIndex++;
+            }
+
+            if (unitIndex == 0)
+            {
+                return string.Format("{0:0} {1}", value, units[unitIndex]);
+            }
+
+            string format = value >= 100D ? "0" : (value >= 10D ? "0.#" : "0.0");
+            return string.Format("{0:" + format + "} {1}", value, units[unitIndex]);
         }
     }
 
@@ -769,6 +873,7 @@ namespace TrafficView
         
         public event EventHandler OverlayMenuRequested;
         public event EventHandler OverlayLocationCommitted;
+        public event EventHandler<TrafficUsageMeasuredEventArgs> TrafficUsageMeasured;
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -1754,16 +1859,20 @@ namespace TrafficView
             DateTime nowUtc = DateTime.UtcNow;
             double downloadBytesPerSecond = 0D;
             double uploadBytesPerSecond = 0D;
+            long measuredDownloadBytes = 0L;
+            long measuredUploadBytes = 0L;
 
             if (this.lastSampleUtc != DateTime.MinValue)
             {
+                long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
+                long sentDiff = snapshot.BytesSent - this.lastSentBytes;
+                measuredDownloadBytes = Math.Max(0L, receivedDiff);
+                measuredUploadBytes = Math.Max(0L, sentDiff);
                 double elapsedSeconds = (nowUtc - this.lastSampleUtc).TotalSeconds;
                 if (elapsedSeconds > 0.1D)
                 {
-                    long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
-                    long sentDiff = snapshot.BytesSent - this.lastSentBytes;
-                    downloadBytesPerSecond = Math.Max(0L, receivedDiff) / elapsedSeconds;
-                    uploadBytesPerSecond = Math.Max(0L, sentDiff) / elapsedSeconds;
+                    downloadBytesPerSecond = measuredDownloadBytes / elapsedSeconds;
+                    uploadBytesPerSecond = measuredUploadBytes / elapsedSeconds;
                 }
             }
 
@@ -1797,6 +1906,7 @@ namespace TrafficView
             }
 
             this.OnRatesUpdated(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
+            this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
         }
 
         private void ResetDisplayedRateSmoothing()
@@ -1905,6 +2015,15 @@ namespace TrafficView
             if (handler != null)
             {
                 handler(this, new RatesUpdatedEventArgs(downloadBytesPerSecond, uploadBytesPerSecond));
+            }
+        }
+
+        private void OnTrafficUsageMeasured(long downloadBytes, long uploadBytes)
+        {
+            EventHandler<TrafficUsageMeasuredEventArgs> handler = this.TrafficUsageMeasured;
+            if (handler != null && (downloadBytes > 0L || uploadBytes > 0L))
+            {
+                handler(this, new TrafficUsageMeasuredEventArgs(downloadBytes, uploadBytes));
             }
         }
 
@@ -4480,6 +4599,19 @@ namespace TrafficView
         public double DownloadBytesPerSecond { get; private set; }
 
         public double UploadBytesPerSecond { get; private set; }
+    }
+
+    internal sealed class TrafficUsageMeasuredEventArgs : EventArgs
+    {
+        public TrafficUsageMeasuredEventArgs(long downloadBytes, long uploadBytes)
+        {
+            this.DownloadBytes = Math.Max(0L, downloadBytes);
+            this.UploadBytes = Math.Max(0L, uploadBytes);
+        }
+
+        public long DownloadBytes { get; private set; }
+
+        public long UploadBytes { get; private set; }
     }
 
     internal struct TrafficHistorySample

@@ -51,6 +51,8 @@
     <Compile Include="src\DpiHelper.cs" />
     <Compile Include="src\UiLanguage.cs" />
     <Compile Include="src\MonitorSettings.cs" />
+    <Compile Include="src\TrafficUsageLog.cs" />
+    <Compile Include="src\UsageSummaryForm.cs" />
     <None Include="TrafficView.exe.config" />
     <None Include="TrafficView.languages.ini" />
     <None Include="TrafficView.manifest" />
