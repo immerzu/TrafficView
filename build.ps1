@@ -6,13 +6,16 @@ $outputDir = Join-Path $root "dist"
 $outputFile = Join-Path $outputDir "TrafficView.exe"
 $settingsOutputFile = Join-Path $outputDir "TrafficView.settings.ini"
 $usageOutputFile = Join-Path $outputDir "Verbrauch.txt"
+$usageArchiveOutputFile = Join-Path $outputDir "Verbrauch.archiv.txt"
 $manifestFile = Join-Path $root "TrafficView.manifest"
 $iconFile = Join-Path $root "TrafficView.ico"
 $configSourceFile = Join-Path $root "TrafficView.exe.config"
 $configOutputFile = Join-Path $outputDir "TrafficView.exe.config"
 $languageSourceFile = Join-Path $root "TrafficView.languages.ini"
 $languageOutputFile = Join-Path $outputDir "TrafficView.languages.ini"
-$panelAssetFiles = @(
+$skinsSourceDirectory = Join-Path $root "Skins"
+$skinsOutputDirectory = Join-Path $outputDir "Skins"
+$legacyPanelAssetFiles = @(
     "TrafficView.panel.png",
     "TrafficView.panel.90.png",
     "TrafficView.panel.110.png",
@@ -32,6 +35,21 @@ if (Test-Path $settingsOutputFile) {
 
 if (Test-Path $usageOutputFile) {
     Remove-Item -LiteralPath $usageOutputFile -Force
+}
+
+if (Test-Path $usageArchiveOutputFile) {
+    Remove-Item -LiteralPath $usageArchiveOutputFile -Force
+}
+
+if (Test-Path $skinsOutputDirectory) {
+    Remove-Item -LiteralPath $skinsOutputDirectory -Recurse -Force
+}
+
+foreach ($legacyPanelAssetFile in $legacyPanelAssetFiles) {
+    $legacyPanelAssetOutputFile = Join-Path $outputDir $legacyPanelAssetFile
+    if (Test-Path $legacyPanelAssetOutputFile) {
+        Remove-Item -LiteralPath $legacyPanelAssetOutputFile -Force
+    }
 }
 
 $compilerCandidates = @(
@@ -61,8 +79,8 @@ if (-not (Test-Path $languageSourceFile)) {
     throw "Sprachdatei nicht gefunden: $languageSourceFile"
 }
 
-if (-not (Test-Path (Join-Path $root "TrafficView.panel.png"))) {
-    Write-Warning "Panel-Basis-Asset nicht gefunden: $(Join-Path $root 'TrafficView.panel.png'). Die Anwendung nutzt dann den prozeduralen Fallback."
+if (-not (Test-Path $skinsSourceDirectory)) {
+    throw "Skin-Ordner nicht gefunden: $skinsSourceDirectory"
 }
 
 if (-not $sourceFiles -or $sourceFiles.Count -eq 0) {
@@ -89,14 +107,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item $configSourceFile $configOutputFile -Force
 Copy-Item $languageSourceFile $languageOutputFile -Force
-
-foreach ($panelAssetFile in $panelAssetFiles) {
-    $panelAssetSourceFile = Join-Path $root $panelAssetFile
-    $panelAssetOutputFile = Join-Path $outputDir $panelAssetFile
-    if (Test-Path $panelAssetSourceFile) {
-        Copy-Item $panelAssetSourceFile $panelAssetOutputFile -Force
-    }
-}
+Copy-Item $skinsSourceDirectory $skinsOutputDirectory -Recurse -Force
 
 foreach ($menuAssetFile in $menuAssetFiles) {
     $menuAssetSourceFile = Join-Path $root $menuAssetFile

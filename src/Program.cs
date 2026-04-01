@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.8.0")]
-[assembly: AssemblyFileVersion("1.4.8.0")]
+[assembly: AssemblyVersion("1.4.10.0")]
+[assembly: AssemblyFileVersion("1.4.10.0")]
 
 namespace TrafficView
 {
@@ -122,6 +122,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem dataUsageItem;
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
+        private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem languageItem;
         private readonly ToolStripMenuItem exitItem;
         private readonly ContextMenuStrip sharedMenu;
@@ -132,6 +133,7 @@ namespace TrafficView
         private Label menuVersionLabel;
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
+        private readonly Dictionary<string, ToolStripMenuItem> panelSkinMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
         private MonitorSettings settings;
         private readonly TrafficUsageLog trafficUsageLog;
@@ -149,6 +151,7 @@ namespace TrafficView
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
+            this.panelSkinMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.menuVersionNumber = GetMenuVersionNumber();
 
             this.sharedMenu = new ContextMenuStrip();
@@ -169,6 +172,7 @@ namespace TrafficView
             this.dataUsageItem = new ToolStripMenuItem(string.Empty, null, this.DataUsageItem_Click);
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
+            this.skinItem = new ToolStripMenuItem(string.Empty);
             this.languageItem = new ToolStripMenuItem(string.Empty);
             this.exitItem = new ToolStripMenuItem(string.Empty, null, this.ExitItem_Click);
 
@@ -190,6 +194,15 @@ namespace TrafficView
                 this.sizeItem.DropDownItems.Add(item);
             }
 
+            string[] panelSkinIds = MonitorSettings.GetSupportedPanelSkinIds();
+            for (int i = 0; i < panelSkinIds.Length; i++)
+            {
+                ToolStripMenuItem item = new ToolStripMenuItem(string.Empty, null, this.PanelSkinMenuItem_Click);
+                item.Tag = panelSkinIds[i];
+                this.panelSkinMenuItems[panelSkinIds[i]] = item;
+                this.skinItem.DropDownItems.Add(item);
+            }
+
             if (this.companyLogoHost != null)
             {
                 this.sharedMenu.Items.Add(this.companyLogoHost);
@@ -202,6 +215,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.dataUsageItem);
             this.sharedMenu.Items.Add(this.transparencyItem);
             this.sharedMenu.Items.Add(this.sizeItem);
+            this.sharedMenu.Items.Add(this.skinItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
             this.sharedMenu.Items.Add(this.exitItem);
@@ -630,6 +644,32 @@ namespace TrafficView
             this.UpdateMenuState();
         }
 
+        private void PanelSkinMenuItem_Click(object sender, EventArgs e)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            string panelSkinId = item != null ? item.Tag as string : null;
+            if (string.IsNullOrEmpty(panelSkinId))
+            {
+                return;
+            }
+
+            this.ApplyPanelSkin(panelSkinId);
+        }
+
+        private void ApplyPanelSkin(string panelSkinId)
+        {
+            string normalizedPanelSkinId = PanelSkinCatalog.NormalizeSkinId(panelSkinId);
+            if (string.Equals(this.settings.PanelSkinId, normalizedPanelSkinId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            this.settings = this.settings.WithPanelSkinId(normalizedPanelSkinId);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            this.UpdateMenuState();
+        }
+
         private void ExitItem_Click(object sender, EventArgs e)
         {
             this.ExitThread();
@@ -883,6 +923,10 @@ namespace TrafficView
                 "Menu.SizeFormat",
                 "Groesse ({0} %)",
                 this.settings.PopupScalePercent);
+            this.skinItem.Text = UiLanguage.Get(
+                "Menu.Skins",
+                "Skins");
+            this.skinItem.Enabled = this.panelSkinMenuItems.Count > 0;
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
             if (this.menuVersionLabel != null)
@@ -899,6 +943,12 @@ namespace TrafficView
             {
                 pair.Value.Text = string.Format("{0} %", pair.Key);
                 pair.Value.Checked = pair.Key == this.settings.PopupScalePercent;
+            }
+
+            foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.panelSkinMenuItems)
+            {
+                pair.Value.Text = this.GetPanelSkinDisplayName(pair.Key);
+                pair.Value.Checked = string.Equals(pair.Key, this.settings.PanelSkinId, StringComparison.OrdinalIgnoreCase);
             }
 
             AdapterAvailabilityState adapterAvailabilityState = GetAdapterAvailabilityState(this.settings);
@@ -944,6 +994,26 @@ namespace TrafficView
             this.calibrationStatusItem.Text = UiLanguage.Get(
                 "Menu.CalibrationStatusOpen",
                 "Kalibrationsstatus: offen");
+        }
+
+        private string GetPanelSkinDisplayName(string panelSkinId)
+        {
+            PanelSkinDefinition definition = PanelSkinCatalog.GetSkinById(panelSkinId);
+            if (definition == null)
+            {
+                return UiLanguage.Get("Menu.Skins", "Skins");
+            }
+
+            if (string.IsNullOrWhiteSpace(definition.DisplayNameKey))
+            {
+                return string.IsNullOrWhiteSpace(definition.DisplayNameFallback)
+                    ? definition.Id
+                    : definition.DisplayNameFallback;
+            }
+
+            return UiLanguage.Get(
+                definition.DisplayNameKey,
+                string.IsNullOrWhiteSpace(definition.DisplayNameFallback) ? definition.Id : definition.DisplayNameFallback);
         }
 
         private UsageWindowData CreateUsageWindowData()
@@ -1152,8 +1222,10 @@ namespace TrafficView
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
         private static readonly object PanelBackgroundAssetSync = new object();
         private static readonly int[] PanelBackgroundPreparedScalePercents = new int[] { 90, 100, 110, 125, 150 };
-        private static Dictionary<string, Bitmap> cachedPanelBackgroundAssets;
-        private static bool panelBackgroundAssetLoadAttempted;
+        private static readonly Dictionary<string, Dictionary<string, Bitmap>> CachedPanelBackgroundAssetsByDirectory =
+            new Dictionary<string, Dictionary<string, Bitmap>>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, bool> PanelBackgroundAssetLoadAttemptedByDirectory =
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
         private readonly Timer refreshTimer;
         private readonly Timer animationTimer;
@@ -1545,6 +1617,15 @@ namespace TrafficView
                     }
                 }
 
+                if (this.IsGlassPanelSkinEnabled())
+                {
+                    this.DrawPanelGlassSurface(
+                        graphics,
+                        innerBounds,
+                        Math.Max(2F, cornerRadius - outerInset),
+                        backgroundAlpha);
+                }
+
                 this.DrawPanelSeparator(
                     graphics,
                     separatorInset,
@@ -1572,9 +1653,15 @@ namespace TrafficView
             }
         }
 
+        private bool IsGlassPanelSkinEnabled()
+        {
+            PanelSkinDefinition definition = PanelSkinCatalog.GetSkinById(this.settings.PanelSkinId);
+            return definition != null && definition.HasGlassSurfaceEffect;
+        }
+
         private bool TryDrawPanelBackgroundAsset(Graphics graphics, byte backgroundAlpha)
         {
-            Bitmap panelBackgroundAsset = GetPanelBackgroundAsset(this.ClientSize);
+            Bitmap panelBackgroundAsset = GetPanelBackgroundAsset(this.settings.PanelSkinId, this.ClientSize);
             if (panelBackgroundAsset == null)
             {
                 return false;
@@ -2870,62 +2957,136 @@ namespace TrafficView
             }
         }
 
-        private static Bitmap GetPanelBackgroundAsset(Size targetSize)
+        private void DrawPanelGlassSurface(
+            Graphics graphics,
+            RectangleF innerBounds,
+            float innerCornerRadius,
+            byte backgroundAlpha)
         {
-            lock (PanelBackgroundAssetSync)
+            GraphicsState state = graphics.Save();
+
+            try
             {
-                if (panelBackgroundAssetLoadAttempted)
+                using (GraphicsPath clipPath = CreateRoundedPath(innerBounds, innerCornerRadius))
                 {
-                    return SelectBestPanelBackgroundAsset(targetSize);
-                }
+                    graphics.SetClip(clipPath, CombineMode.Intersect);
 
-                panelBackgroundAssetLoadAttempted = true;
-                cachedPanelBackgroundAssets = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
+                    float inset = Math.Max(1F, this.ScaleFloat(1.1F));
+                    RectangleF surfaceBounds = InflateRectangle(innerBounds, -inset);
 
-                string[] assetPaths = GetPanelBackgroundAssetPaths();
-                for (int i = 0; i < assetPaths.Length; i++)
-                {
-                    string assetPath = assetPaths[i];
-                    if (!File.Exists(assetPath))
+                    using (LinearGradientBrush surfaceBrush = new LinearGradientBrush(
+                        new PointF(surfaceBounds.Left, surfaceBounds.Top),
+                        new PointF(surfaceBounds.Left, surfaceBounds.Bottom),
+                        ApplyAlpha(Color.FromArgb(22, 236, 242, 250), backgroundAlpha),
+                        Color.FromArgb(0, 236, 242, 250)))
                     {
-                        continue;
-                    }
-
-                    try
-                    {
-                        using (Image image = Image.FromFile(assetPath))
+                        ColorBlend blend = new ColorBlend();
+                        blend.Positions = new float[] { 0F, 0.26F, 0.72F, 1F };
+                        blend.Colors = new Color[]
                         {
-                            cachedPanelBackgroundAssets[assetPath] = new Bitmap(image);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLog.WarnOnce(
-                            "panel-background-asset-load-failed-" + assetPath,
-                            string.Format(
-                                "The panel background asset could not be loaded from '{0}'. Procedural panel rendering will be used for missing sizes.",
-                                assetPath),
-                            ex);
+                            ApplyAlpha(Color.FromArgb(24, 240, 246, 252), backgroundAlpha),
+                            ApplyAlpha(Color.FromArgb(12, 224, 232, 244), backgroundAlpha),
+                            Color.FromArgb(0, 224, 232, 244),
+                            ApplyAlpha(Color.FromArgb(8, 10, 18, 28), backgroundAlpha)
+                        };
+                        surfaceBrush.InterpolationColors = blend;
+                        graphics.FillRectangle(surfaceBrush, surfaceBounds);
                     }
                 }
-
-                if (cachedPanelBackgroundAssets.Count == 0)
-                {
-                    AppLog.WarnOnce(
-                        "panel-background-asset-missing",
-                        string.Format(
-                            "No panel background assets were found in '{0}'. Procedural panel rendering will be used.",
-                            AppDomain.CurrentDomain.BaseDirectory));
-                    return null;
-                }
-
-                return SelectBestPanelBackgroundAsset(targetSize);
+            }
+            finally
+            {
+                graphics.Restore(state);
             }
         }
 
-        private static string[] GetPanelBackgroundAssetPaths()
+        private static Bitmap GetPanelBackgroundAsset(string panelSkinId, Size targetSize)
         {
-            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+            PanelSkinDefinition definition = PanelSkinCatalog.GetSkinById(panelSkinId);
+            if (definition == null || string.IsNullOrWhiteSpace(definition.DirectoryPath))
+            {
+                return null;
+            }
+
+            return GetPanelBackgroundAssetFromDirectory(definition.DirectoryPath, targetSize);
+        }
+
+        private static Bitmap GetPanelBackgroundAssetFromDirectory(string assetDirectoryPath, Size targetSize)
+        {
+            string normalizedDirectoryPath = string.IsNullOrWhiteSpace(assetDirectoryPath)
+                ? AppStorage.BaseDirectory
+                : assetDirectoryPath;
+
+            lock (PanelBackgroundAssetSync)
+            {
+                bool loadAttempted;
+                if (!PanelBackgroundAssetLoadAttemptedByDirectory.TryGetValue(normalizedDirectoryPath, out loadAttempted) || !loadAttempted)
+                {
+                    Dictionary<string, Bitmap> assets = LoadPanelBackgroundAssets(normalizedDirectoryPath);
+                    CachedPanelBackgroundAssetsByDirectory[normalizedDirectoryPath] = assets;
+                    PanelBackgroundAssetLoadAttemptedByDirectory[normalizedDirectoryPath] = true;
+                }
+
+                Dictionary<string, Bitmap> cachedAssets;
+                if (!CachedPanelBackgroundAssetsByDirectory.TryGetValue(normalizedDirectoryPath, out cachedAssets) ||
+                    cachedAssets == null ||
+                    cachedAssets.Count == 0)
+                {
+                    return null;
+                }
+
+                return SelectBestPanelBackgroundAsset(cachedAssets, targetSize);
+            }
+        }
+
+        private static Dictionary<string, Bitmap> LoadPanelBackgroundAssets(string assetDirectoryPath)
+        {
+            Dictionary<string, Bitmap> loadedAssets = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
+            string[] assetPaths = GetPanelBackgroundAssetPaths(assetDirectoryPath);
+
+            for (int i = 0; i < assetPaths.Length; i++)
+            {
+                string assetPath = assetPaths[i];
+                if (!File.Exists(assetPath))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    using (Image image = Image.FromFile(assetPath))
+                    {
+                        loadedAssets[assetPath] = new Bitmap(image);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce(
+                        "panel-background-asset-load-failed-" + assetPath,
+                        string.Format(
+                            "The panel background asset could not be loaded from '{0}'. Procedural panel rendering will be used for missing sizes.",
+                            assetPath),
+                        ex);
+                }
+            }
+
+            if (loadedAssets.Count == 0)
+            {
+                AppLog.WarnOnce(
+                    "panel-background-asset-missing-" + assetDirectoryPath,
+                    string.Format(
+                        "No panel background assets were found in '{0}'. Procedural panel rendering will be used.",
+                        assetDirectoryPath));
+            }
+
+            return loadedAssets;
+        }
+
+        private static string[] GetPanelBackgroundAssetPaths(string assetDirectoryPath)
+        {
+            string normalizedDirectoryPath = string.IsNullOrWhiteSpace(assetDirectoryPath)
+                ? AppStorage.BaseDirectory
+                : assetDirectoryPath;
             List<string> assetPaths = new List<string>();
 
             for (int i = 0; i < PanelBackgroundPreparedScalePercents.Length; i++)
@@ -2934,15 +3095,15 @@ namespace TrafficView
                 string fileName = scalePercent == 100
                     ? PanelBackgroundAssetFileName
                     : string.Format(PanelBackgroundScaledAssetFileNameFormat, scalePercent);
-                assetPaths.Add(Path.Combine(baseDirectory, fileName));
+                assetPaths.Add(Path.Combine(normalizedDirectoryPath, fileName));
             }
 
             return assetPaths.ToArray();
         }
 
-        private static Bitmap SelectBestPanelBackgroundAsset(Size targetSize)
+        private static Bitmap SelectBestPanelBackgroundAsset(Dictionary<string, Bitmap> assets, Size targetSize)
         {
-            if (cachedPanelBackgroundAssets == null || cachedPanelBackgroundAssets.Count == 0)
+            if (assets == null || assets.Count == 0)
             {
                 return null;
             }
@@ -2950,7 +3111,7 @@ namespace TrafficView
             Bitmap bestAsset = null;
             long bestScore = long.MaxValue;
 
-            foreach (KeyValuePair<string, Bitmap> pair in cachedPanelBackgroundAssets)
+            foreach (KeyValuePair<string, Bitmap> pair in assets)
             {
                 Bitmap candidate = pair.Value;
                 long score = GetPanelBackgroundAssetMatchScore(candidate.Size, targetSize);
@@ -4596,7 +4757,12 @@ namespace TrafficView
                 this.currentSettings.InitialCalibrationPromptHandled,
                 this.currentSettings.InitialLanguagePromptHandled,
                 this.currentSettings.TransparencyPercent,
-                this.currentSettings.LanguageCode);
+                this.currentSettings.LanguageCode,
+                this.currentSettings.HasSavedPopupLocation,
+                this.currentSettings.PopupLocationX,
+                this.currentSettings.PopupLocationY,
+                this.currentSettings.PopupScalePercent,
+                this.currentSettings.PanelSkinId);
 
             this.lastSnapshot = NetworkSnapshot.Capture(this.activeSettings);
             if (!this.lastSnapshot.HasAdapters)
@@ -4800,7 +4966,12 @@ namespace TrafficView
                 this.currentSettings.InitialCalibrationPromptHandled,
                 this.currentSettings.InitialLanguagePromptHandled,
                 this.currentSettings.TransparencyPercent,
-                this.currentSettings.LanguageCode);
+                this.currentSettings.LanguageCode,
+                this.currentSettings.HasSavedPopupLocation,
+                this.currentSettings.PopupLocationX,
+                this.currentSettings.PopupLocationY,
+                this.currentSettings.PopupScalePercent,
+                this.currentSettings.PanelSkinId);
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.CompletedStatus",
                 "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' uebernehmen.",
@@ -4903,7 +5074,12 @@ namespace TrafficView
                 this.currentSettings.InitialCalibrationPromptHandled,
                 this.currentSettings.InitialLanguagePromptHandled,
                 this.currentSettings.TransparencyPercent,
-                this.currentSettings.LanguageCode);
+                this.currentSettings.LanguageCode,
+                this.currentSettings.HasSavedPopupLocation,
+                this.currentSettings.PopupLocationX,
+                this.currentSettings.PopupLocationY,
+                this.currentSettings.PopupScalePercent,
+                this.currentSettings.PanelSkinId);
         }
 
         private void LoadAdapterItems()

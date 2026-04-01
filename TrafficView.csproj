@@ -51,25 +51,14 @@
     <Compile Include="src\DpiHelper.cs" />
     <Compile Include="src\UiLanguage.cs" />
     <Compile Include="src\MonitorSettings.cs" />
+    <Compile Include="src\PanelSkinCatalog.cs" />
     <Compile Include="src\TrafficUsageLog.cs" />
     <Compile Include="src\UsageSummaryForm.cs" />
     <None Include="TrafficView.exe.config" />
     <None Include="TrafficView.languages.ini" />
     <None Include="TrafficView.manifest" />
     <Content Include="TrafficView.ico" />
-    <Content Include="TrafficView.panel.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="TrafficView.panel.90.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="TrafficView.panel.110.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="TrafficView.panel.125.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="TrafficView.panel.150.png">
+    <Content Include="Skins\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="LOLO-SOFT_00_SW.png">
@@ -80,11 +69,6 @@
   <Target Name="CopySupportFiles" AfterTargets="Build">
     <Copy SourceFiles="TrafficView.exe.config" DestinationFiles="$(TargetDir)TrafficView.exe.config" SkipUnchangedFiles="true" />
     <Copy SourceFiles="TrafficView.languages.ini" DestinationFiles="$(TargetDir)TrafficView.languages.ini" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="TrafficView.panel.png" DestinationFiles="$(TargetDir)TrafficView.panel.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.png')" />
-    <Copy SourceFiles="TrafficView.panel.90.png" DestinationFiles="$(TargetDir)TrafficView.panel.90.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.90.png')" />
-    <Copy SourceFiles="TrafficView.panel.110.png" DestinationFiles="$(TargetDir)TrafficView.panel.110.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.110.png')" />
-    <Copy SourceFiles="TrafficView.panel.125.png" DestinationFiles="$(TargetDir)TrafficView.panel.125.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.125.png')" />
-    <Copy SourceFiles="TrafficView.panel.150.png" DestinationFiles="$(TargetDir)TrafficView.panel.150.png" SkipUnchangedFiles="true" Condition="Exists('TrafficView.panel.150.png')" />
     <Copy SourceFiles="LOLO-SOFT_00_SW.png" DestinationFiles="$(TargetDir)LOLO-SOFT_00_SW.png" SkipUnchangedFiles="true" Condition="Exists('LOLO-SOFT_00_SW.png')" />
 
   </Target>

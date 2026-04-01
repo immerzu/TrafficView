@@ -8,7 +8,6 @@ namespace TrafficView
     {
         private const string SettingsFileName = "TrafficView.settings.ini";
         private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
-
         public MonitorSettings(
             string adapterId,
             string adapterName,
@@ -22,7 +21,8 @@ namespace TrafficView
             bool hasSavedPopupLocation = false,
             int popupLocationX = 0,
             int popupLocationY = 0,
-            int popupScalePercent = 100)
+            int popupScalePercent = 100,
+            string panelSkinId = "08")
         {
             this.AdapterId = adapterId ?? string.Empty;
             this.AdapterName = adapterName ?? string.Empty;
@@ -37,6 +37,7 @@ namespace TrafficView
             this.PopupLocationX = popupLocationX;
             this.PopupLocationY = popupLocationY;
             this.PopupScalePercent = NormalizePopupScalePercent(popupScalePercent);
+            this.PanelSkinId = NormalizePanelSkinId(panelSkinId);
         }
 
         public string AdapterId { get; private set; }
@@ -73,6 +74,8 @@ namespace TrafficView
 
         public int PopupScalePercent { get; private set; }
 
+        public string PanelSkinId { get; private set; }
+
         public MonitorSettings Clone()
         {
             return new MonitorSettings(
@@ -88,7 +91,8 @@ namespace TrafficView
                 this.HasSavedPopupLocation,
                 this.PopupLocationX,
                 this.PopupLocationY,
-                this.PopupScalePercent);
+                this.PopupScalePercent,
+                this.PanelSkinId);
         }
 
         public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
@@ -106,7 +110,8 @@ namespace TrafficView
                 this.HasSavedPopupLocation,
                 this.PopupLocationX,
                 this.PopupLocationY,
-                this.PopupScalePercent);
+                this.PopupScalePercent,
+                this.PanelSkinId);
         }
 
         public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
@@ -124,7 +129,8 @@ namespace TrafficView
                 this.HasSavedPopupLocation,
                 this.PopupLocationX,
                 this.PopupLocationY,
-                this.PopupScalePercent);
+                this.PopupScalePercent,
+                this.PanelSkinId);
         }
 
         public MonitorSettings WithTransparencyPercent(int transparencyPercent)
@@ -142,7 +148,8 @@ namespace TrafficView
                 this.HasSavedPopupLocation,
                 this.PopupLocationX,
                 this.PopupLocationY,
-                this.PopupScalePercent);
+                this.PopupScalePercent,
+                this.PanelSkinId);
         }
 
         public MonitorSettings WithLanguageCode(string languageCode)
@@ -160,7 +167,8 @@ namespace TrafficView
                 this.HasSavedPopupLocation,
                 this.PopupLocationX,
                 this.PopupLocationY,
-                this.PopupScalePercent);
+                this.PopupScalePercent,
+                this.PanelSkinId);
         }
 
         public MonitorSettings WithPopupLocation(Point popupLocation)
@@ -178,7 +186,8 @@ namespace TrafficView
                 true,
                 popupLocation.X,
                 popupLocation.Y,
-                this.PopupScalePercent);
+                this.PopupScalePercent,
+                this.PanelSkinId);
         }
 
         public MonitorSettings WithPopupScalePercent(int popupScalePercent)
@@ -196,7 +205,27 @@ namespace TrafficView
                 this.HasSavedPopupLocation,
                 this.PopupLocationX,
                 this.PopupLocationY,
-                popupScalePercent);
+                popupScalePercent,
+                this.PanelSkinId);
+        }
+
+        public MonitorSettings WithPanelSkinId(string panelSkinId)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent,
+                panelSkinId);
         }
 
         public double GetDownloadVisualizationPeak()
@@ -327,6 +356,7 @@ namespace TrafficView
             int popupLocationX = defaults.PopupLocationX;
             int popupLocationY = defaults.PopupLocationY;
             int popupScalePercent = defaults.PopupScalePercent;
+            string panelSkinId = defaults.PanelSkinId;
 
             foreach (string line in lines)
             {
@@ -466,6 +496,13 @@ namespace TrafficView
                     {
                         popupScalePercent = NormalizePopupScalePercent(parsedValue);
                     }
+
+                    continue;
+                }
+
+                if (string.Equals(key, "PanelSkinId", StringComparison.OrdinalIgnoreCase))
+                {
+                    panelSkinId = NormalizePanelSkinId(value);
                 }
             }
 
@@ -482,7 +519,8 @@ namespace TrafficView
                 hasSavedPopupLocation,
                 popupLocationX,
                 popupLocationY,
-                popupScalePercent);
+                popupScalePercent,
+                panelSkinId);
         }
 
         private string[] CreateSerializedLines()
@@ -507,13 +545,19 @@ namespace TrafficView
                 string.Format("HasSavedPopupLocation={0}", this.HasSavedPopupLocation ? "1" : "0"),
                 string.Format("PopupLocationX={0}", this.PopupLocationX),
                 string.Format("PopupLocationY={0}", this.PopupLocationY),
-                string.Format("PopupScalePercent={0}", this.PopupScalePercent)
+                string.Format("PopupScalePercent={0}", this.PopupScalePercent),
+                string.Format("PanelSkinId={0}", this.PanelSkinId)
             };
         }
 
         public static int[] GetSupportedPopupScalePercents()
         {
             return (int[])SupportedPopupScalePercents.Clone();
+        }
+
+        public static string[] GetSupportedPanelSkinIds()
+        {
+            return PanelSkinCatalog.GetSupportedSkinIds();
         }
 
         private static string GetSettingsPath()
@@ -750,6 +794,11 @@ namespace TrafficView
             }
 
             return normalized;
+        }
+
+        private static string NormalizePanelSkinId(string panelSkinId)
+        {
+            return PanelSkinCatalog.NormalizeSkinId(panelSkinId);
         }
     }
 }

@@ -28,6 +28,11 @@ namespace TrafficView
             get { return AppDomain.CurrentDomain.BaseDirectory; }
         }
 
+        public static string GetSkinsDirectoryPath()
+        {
+            return Path.Combine(BaseDirectory, "Skins");
+        }
+
         public static string GetSettingsDirectoryPath()
         {
             if (IsPortableMode)
