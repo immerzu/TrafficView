@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.10.0")]
-[assembly: AssemblyFileVersion("1.4.10.0")]
+[assembly: AssemblyVersion("1.4.11.0")]
+[assembly: AssemblyFileVersion("1.4.11.0")]
 
 namespace TrafficView
 {
@@ -123,6 +123,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem skinItem;
+        private readonly ToolStripMenuItem deleteSkinItem;
         private readonly ToolStripMenuItem languageItem;
         private readonly ToolStripMenuItem exitItem;
         private readonly ContextMenuStrip sharedMenu;
@@ -173,6 +174,7 @@ namespace TrafficView
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.skinItem = new ToolStripMenuItem(string.Empty);
+            this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
             this.languageItem = new ToolStripMenuItem(string.Empty);
             this.exitItem = new ToolStripMenuItem(string.Empty, null, this.ExitItem_Click);
 
@@ -194,14 +196,7 @@ namespace TrafficView
                 this.sizeItem.DropDownItems.Add(item);
             }
 
-            string[] panelSkinIds = MonitorSettings.GetSupportedPanelSkinIds();
-            for (int i = 0; i < panelSkinIds.Length; i++)
-            {
-                ToolStripMenuItem item = new ToolStripMenuItem(string.Empty, null, this.PanelSkinMenuItem_Click);
-                item.Tag = panelSkinIds[i];
-                this.panelSkinMenuItems[panelSkinIds[i]] = item;
-                this.skinItem.DropDownItems.Add(item);
-            }
+            this.RebuildPanelSkinMenuItems();
 
             if (this.companyLogoHost != null)
             {
@@ -656,6 +651,146 @@ namespace TrafficView
             this.ApplyPanelSkin(panelSkinId);
         }
 
+        private void DeleteSkinItem_Click(object sender, EventArgs e)
+        {
+            if (this.popupForm != null && this.popupForm.IsHandleCreated && !this.popupForm.IsDisposed)
+            {
+                this.popupForm.BeginInvoke(new Action(this.ConfirmAndDeleteCurrentSkin));
+                return;
+            }
+
+            this.ConfirmAndDeleteCurrentSkin();
+        }
+
+        private void ConfirmAndDeleteCurrentSkin()
+        {
+            PanelSkinDefinition currentSkin = PanelSkinCatalog.GetSkinById(this.settings.PanelSkinId);
+            if (currentSkin == null)
+            {
+                return;
+            }
+
+            bool pausePopupTopMost = this.popupForm.Visible;
+            if (pausePopupTopMost)
+            {
+                this.popupForm.SuspendTopMostEnforcement();
+            }
+
+            try
+            {
+                this.ConfirmAndDeleteCurrentSkinCore(currentSkin);
+            }
+            finally
+            {
+                if (pausePopupTopMost)
+                {
+                    this.popupForm.ResumeTopMostEnforcement(false);
+                }
+            }
+        }
+
+        private void ConfirmAndDeleteCurrentSkinCore(PanelSkinDefinition currentSkin)
+        {
+            IWin32Window owner = this.popupForm.Visible && !this.popupForm.IsDisposed
+                ? (IWin32Window)this.popupForm
+                : null;
+
+            if (PanelSkinCatalog.IsProtectedSkinId(currentSkin.Id))
+            {
+                ShowMessageBox(
+                    owner,
+                    UiLanguage.Get(
+                        "Menu.DeleteSkinProtected",
+                        "Der Standardskin 'Normal' kann nicht geloescht werden."),
+                    UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                this.RebuildPanelSkinMenuItems();
+                this.UpdateMenuState();
+                return;
+            }
+
+            PanelSkinDefinition[] availableSkins = PanelSkinCatalog.GetAvailableSkins();
+            if (availableSkins.Length <= 1)
+            {
+                ShowMessageBox(
+                    owner,
+                    UiLanguage.Get(
+                        "Menu.DeleteSkinLastBlocked",
+                        "Der letzte verbliebene Skin kann nicht geloescht werden."),
+                    UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            string currentSkinName = this.GetPanelSkinDisplayName(currentSkin.Id);
+            DialogResult confirmation = ShowMessageBox(
+                owner,
+                UiLanguage.Format(
+                    "Menu.DeleteSkinConfirm",
+                    "Soll der aktuelle Skin '{0}' wirklich geloescht werden?",
+                    currentSkinName),
+                UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
+
+            if (confirmation != DialogResult.Yes)
+            {
+                return;
+            }
+
+            string fallbackSkinId = PanelSkinCatalog.GetDefaultOrFirstSkinId();
+            if (!string.Equals(this.settings.PanelSkinId, fallbackSkinId, StringComparison.OrdinalIgnoreCase))
+            {
+                this.settings = this.settings.WithPanelSkinId(fallbackSkinId);
+                this.settings.Save();
+                this.popupForm.ApplySettings(this.settings);
+                this.UpdateMenuState();
+                Application.DoEvents();
+            }
+
+            TrafficPopupForm.ReleasePanelBackgroundAssetCache(currentSkin.DirectoryPath);
+            string errorMessage;
+            if (!PanelSkinCatalog.TryDeleteSkin(currentSkin.Id, out errorMessage))
+            {
+                ShowMessageBox(
+                    owner,
+                    string.IsNullOrWhiteSpace(errorMessage)
+                        ? UiLanguage.Get("Menu.DeleteSkinFailed", "Der Skin konnte nicht geloescht werden.")
+                        : errorMessage,
+                    UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                this.settings = this.settings.WithPanelSkinId(fallbackSkinId);
+                this.settings.Save();
+                this.popupForm.ApplySettings(this.settings);
+                this.RebuildPanelSkinMenuItems();
+                this.UpdateMenuState();
+                return;
+            }
+
+            this.settings = this.settings.WithPanelSkinId(fallbackSkinId);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            this.RebuildPanelSkinMenuItems();
+            this.UpdateMenuState();
+        }
+
+        private static DialogResult ShowMessageBox(
+            IWin32Window owner,
+            string text,
+            string caption,
+            MessageBoxButtons buttons,
+            MessageBoxIcon icon,
+            MessageBoxDefaultButton defaultButton = MessageBoxDefaultButton.Button1)
+        {
+            return owner == null
+                ? MessageBox.Show(text, caption, buttons, icon, defaultButton)
+                : MessageBox.Show(owner, text, caption, buttons, icon, defaultButton);
+        }
+
         private void ApplyPanelSkin(string panelSkinId)
         {
             string normalizedPanelSkinId = PanelSkinCatalog.NormalizeSkinId(panelSkinId);
@@ -927,6 +1062,11 @@ namespace TrafficView
                 "Menu.Skins",
                 "Skins");
             this.skinItem.Enabled = this.panelSkinMenuItems.Count > 0;
+            this.deleteSkinItem.Text = UiLanguage.Get(
+                "Menu.DeleteSkin",
+                "Skin löschen");
+            this.deleteSkinItem.Enabled = this.panelSkinMenuItems.Count > 1 &&
+                !PanelSkinCatalog.IsProtectedSkinId(this.settings.PanelSkinId);
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
             if (this.menuVersionLabel != null)
@@ -1011,9 +1151,55 @@ namespace TrafficView
                     : definition.DisplayNameFallback;
             }
 
-            return UiLanguage.Get(
+            string displayName = UiLanguage.Get(
                 definition.DisplayNameKey,
                 string.IsNullOrWhiteSpace(definition.DisplayNameFallback) ? definition.Id : definition.DisplayNameFallback);
+
+            if (PanelSkinCatalog.IsProtectedSkinId(definition.Id))
+            {
+                displayName += UiLanguage.Get(
+                    "Menu.SkinProtectedSuffix",
+                    " (nicht loeschbar)");
+            }
+
+            return displayName;
+        }
+
+        private void RebuildPanelSkinMenuItems()
+        {
+            this.skinItem.DropDownItems.Clear();
+            this.panelSkinMenuItems.Clear();
+
+            string[] panelSkinIds = MonitorSettings.GetSupportedPanelSkinIds();
+            for (int i = 0; i < panelSkinIds.Length; i++)
+            {
+                ToolStripMenuItem item = new ToolStripMenuItem(string.Empty, null, this.PanelSkinMenuItem_Click);
+                item.Tag = panelSkinIds[i];
+                this.panelSkinMenuItems[panelSkinIds[i]] = item;
+                this.skinItem.DropDownItems.Add(item);
+            }
+
+            if (this.panelSkinMenuItems.Count > 0)
+            {
+                this.skinItem.DropDownItems.Add(new ToolStripSeparator());
+            }
+
+            this.skinItem.DropDownItems.Add(this.deleteSkinItem);
+        }
+
+        private string GetFallbackSkinId(string deletedSkinId)
+        {
+            PanelSkinDefinition[] definitions = PanelSkinCatalog.GetAvailableSkins();
+
+            for (int i = 0; i < definitions.Length; i++)
+            {
+                if (!string.Equals(definitions[i].Id, deletedSkinId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return definitions[i].Id;
+                }
+            }
+
+            return "08";
         }
 
         private UsageWindowData CreateUsageWindowData()
@@ -1659,6 +1845,12 @@ namespace TrafficView
             return definition != null && definition.HasGlassSurfaceEffect;
         }
 
+        private bool IsReadableInfoPanelSkinEnabled()
+        {
+            PanelSkinDefinition definition = PanelSkinCatalog.GetSkinById(this.settings.PanelSkinId);
+            return definition != null && definition.HasReadableInfoPlateEffect;
+        }
+
         private bool TryDrawPanelBackgroundAsset(Graphics graphics, byte backgroundAlpha)
         {
             Bitmap panelBackgroundAsset = GetPanelBackgroundAsset(this.settings.PanelSkinId, this.ClientSize);
@@ -1747,6 +1939,11 @@ namespace TrafficView
                 UploadRingLowColor,
                 UploadRingHighColor,
                 SmoothStep(visualUploadFillRatio));
+
+            if (this.IsReadableInfoPanelSkinEnabled())
+            {
+                this.DrawReadableTrafficInfoPanel(graphics, meterBounds);
+            }
 
             this.DrawMeterValueBalanceSupport(graphics, meterBounds);
             this.DrawTrafficTexts(graphics);
@@ -2494,7 +2691,9 @@ namespace TrafficView
 
         private Rectangle GetDownloadMeterBounds()
         {
-            int diameter = this.ScaleValue(BaseMeterDiameter);
+            int diameter = this.ScaleValue(this.IsReadableInfoPanelSkinEnabled()
+                ? BaseMeterDiameter - 3
+                : BaseMeterDiameter);
             int rightInset = this.ScaleValue(BaseMeterRightInset);
             int x = this.ClientSize.Width - diameter - rightInset;
             int y = Math.Max(this.ScaleValue(6), (this.ClientSize.Height - diameter) / 2);
@@ -3039,6 +3238,32 @@ namespace TrafficView
             }
         }
 
+        internal static void ReleasePanelBackgroundAssetCache(string assetDirectoryPath)
+        {
+            string normalizedDirectoryPath = string.IsNullOrWhiteSpace(assetDirectoryPath)
+                ? AppStorage.BaseDirectory
+                : assetDirectoryPath;
+
+            lock (PanelBackgroundAssetSync)
+            {
+                Dictionary<string, Bitmap> cachedAssets;
+                if (CachedPanelBackgroundAssetsByDirectory.TryGetValue(normalizedDirectoryPath, out cachedAssets) &&
+                    cachedAssets != null)
+                {
+                    foreach (KeyValuePair<string, Bitmap> asset in cachedAssets)
+                    {
+                        if (asset.Value != null)
+                        {
+                            asset.Value.Dispose();
+                        }
+                    }
+                }
+
+                CachedPanelBackgroundAssetsByDirectory.Remove(normalizedDirectoryPath);
+                PanelBackgroundAssetLoadAttemptedByDirectory.Remove(normalizedDirectoryPath);
+            }
+        }
+
         private static Dictionary<string, Bitmap> LoadPanelBackgroundAssets(string assetDirectoryPath)
         {
             Dictionary<string, Bitmap> loadedAssets = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
@@ -3397,6 +3622,60 @@ namespace TrafficView
 
         private void DrawTrafficTexts(Graphics graphics)
         {
+            if (this.IsReadableInfoPanelSkinEnabled())
+            {
+                Color downloadCaptionColor = GetInterpolatedColor(
+                    DownloadCaptionColor,
+                    Color.FromArgb(255, 244, 208, 136),
+                    0.28D);
+                Color downloadValueColor = GetInterpolatedColor(
+                    DownloadValueColor,
+                    Color.FromArgb(255, 255, 214, 96),
+                    0.22D);
+                Color uploadCaptionColor = GetInterpolatedColor(
+                    UploadCaptionColor,
+                    Color.FromArgb(255, 198, 255, 194),
+                    0.24D);
+                Color uploadValueColor = GetInterpolatedColor(
+                    UploadValueColor,
+                    Color.FromArgb(255, 132, 255, 148),
+                    0.18D);
+
+                DrawReadableTrafficText(
+                    graphics,
+                    this.downloadCaptionLabel.Text,
+                    this.captionFont,
+                    downloadCaptionColor,
+                    this.downloadCaptionLabel.Bounds,
+                    false,
+                    false);
+                DrawReadableTrafficText(
+                    graphics,
+                    this.downloadValueLabel.Text,
+                    this.valueFont,
+                    downloadValueColor,
+                    this.downloadValueLabel.Bounds,
+                    true,
+                    true);
+                DrawReadableTrafficText(
+                    graphics,
+                    this.uploadCaptionLabel.Text,
+                    this.captionFont,
+                    uploadCaptionColor,
+                    this.uploadCaptionLabel.Bounds,
+                    false,
+                    false);
+                DrawReadableTrafficText(
+                    graphics,
+                    this.uploadValueLabel.Text,
+                    this.valueFont,
+                    uploadValueColor,
+                    this.uploadValueLabel.Bounds,
+                    true,
+                    true);
+                return;
+            }
+
             DrawTrafficText(
                 graphics,
                 this.downloadCaptionLabel.Text,
@@ -3429,6 +3708,118 @@ namespace TrafficView
                 this.uploadValueLabel.Bounds,
                 true,
                 true);
+        }
+
+        private void DrawReadableTrafficInfoPanel(Graphics graphics, Rectangle meterBounds)
+        {
+            int left = this.ScaleValue(3);
+            int right = Math.Max(left + this.ScaleValue(44), meterBounds.Left - this.ScaleValue(5));
+            int top = this.ScaleValue(4);
+            int bottom = Math.Min(
+                this.ClientSize.Height - this.ScaleValue(7),
+                this.uploadValueLabel.Bounds.Bottom + this.ScaleValue(5));
+            if (right - left < this.ScaleValue(16) || bottom - top < this.ScaleValue(18))
+            {
+                return;
+            }
+
+            RectangleF bounds = new RectangleF(
+                AlignToHalfPixel(left),
+                AlignToHalfPixel(top),
+                Math.Max(1F, right - left),
+                Math.Max(1F, bottom - top));
+            float radius = Math.Max(this.ScaleFloat(6F), Math.Min(bounds.Width, bounds.Height) * 0.18F);
+            GraphicsState state = graphics.Save();
+
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+
+                using (GraphicsPath platePath = CreateRoundedPath(bounds, radius))
+                using (GraphicsPath innerPath = CreateRoundedPath(
+                    InflateRectangle(bounds, -this.ScaleFloat(1.5F)),
+                    Math.Max(2F, radius - this.ScaleFloat(1.5F))))
+                using (SolidBrush fillBrush = new SolidBrush(Color.FromArgb(118, 5, 14, 34)))
+                using (Pen borderPen = new Pen(Color.FromArgb(48, 164, 215, 255), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                using (Pen innerPen = new Pen(Color.FromArgb(28, 255, 255, 255), Math.Max(0.6F, this.ScaleFloat(0.6F))))
+                using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
+                    new PointF(bounds.Left, bounds.Top),
+                    new PointF(bounds.Left, bounds.Bottom),
+                    Color.Transparent,
+                    Color.Transparent))
+                {
+                    ColorBlend blend = new ColorBlend();
+                    blend.Positions = new float[] { 0F, 0.12F, 0.34F, 1F };
+                    blend.Colors = new Color[]
+                    {
+                        Color.FromArgb(66, 220, 238, 255),
+                        Color.FromArgb(28, 188, 220, 255),
+                        Color.FromArgb(10, 96, 140, 196),
+                        Color.Transparent
+                    };
+                    highlightBrush.InterpolationColors = blend;
+
+                    graphics.FillPath(fillBrush, platePath);
+                    graphics.FillPath(highlightBrush, platePath);
+                    graphics.DrawPath(borderPen, platePath);
+                    graphics.DrawPath(innerPen, innerPath);
+                }
+
+                float separatorLeft = bounds.Left + this.ScaleFloat(10F);
+                float separatorRight = bounds.Right - this.ScaleFloat(12F);
+                float separatorTop = this.downloadValueLabel.Bounds.Bottom + this.ScaleFloat(2F);
+                float separatorBottom = this.uploadCaptionLabel.Bounds.Top - this.ScaleFloat(1F);
+                float separatorY = (separatorTop + separatorBottom) / 2F;
+                using (Pen separatorPen = new Pen(Color.FromArgb(28, 150, 196, 255), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                {
+                    graphics.DrawLine(
+                        separatorPen,
+                        AlignToHalfPixel(separatorLeft),
+                        AlignToHalfPixel(separatorY),
+                        AlignToHalfPixel(separatorRight),
+                        AlignToHalfPixel(separatorY));
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
+        private static void DrawReadableTrafficText(
+            Graphics graphics,
+            string text,
+            Font font,
+            Color color,
+            Rectangle bounds,
+            bool allowEllipsis,
+            bool isPrimaryValue)
+        {
+            GraphicsState state = graphics.Save();
+            RectangleF stableBounds = GetStableTextBounds(bounds);
+            StringFormat format = allowEllipsis
+                ? TrafficEllipsisTextFormat
+                : TrafficTextStringFormat;
+
+            using (SolidBrush glowBrush = new SolidBrush(Color.FromArgb(isPrimaryValue ? 28 : 16, color)))
+            using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(isPrimaryValue ? 112 : 92, 4, 10, 24)))
+            using (SolidBrush outlineBrush = new SolidBrush(Color.FromArgb(isPrimaryValue ? 92 : 72, 6, 14, 30)))
+            using (SolidBrush textBrush = new SolidBrush(color))
+            {
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                graphics.DrawString(text, font, glowBrush, OffsetRectangle(stableBounds, 0F, 0.8F), format);
+                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, -0.8F, 0F), format);
+                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, 0.8F, 0F), format);
+                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, 0F, -0.8F), format);
+                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, 0F, 0.8F), format);
+                graphics.DrawString(text, font, shadowBrush, OffsetRectangle(stableBounds, 0.35F, 1.15F), format);
+                graphics.DrawString(text, font, textBrush, stableBounds, format);
+            }
+
+            graphics.Restore(state);
         }
 
         private void DrawMeterValueBalanceSupport(Graphics graphics, Rectangle meterBounds)

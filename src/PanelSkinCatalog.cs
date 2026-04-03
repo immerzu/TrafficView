@@ -34,13 +34,23 @@ namespace TrafficView
         {
             get
             {
-                return string.Equals(this.SurfaceEffect, "glass", StringComparison.OrdinalIgnoreCase);
+                return string.Equals(this.SurfaceEffect, "glass", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(this.SurfaceEffect, "glass-readable", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        public bool HasReadableInfoPlateEffect
+        {
+            get
+            {
+                return string.Equals(this.SurfaceEffect, "glass-readable", StringComparison.OrdinalIgnoreCase);
             }
         }
     }
 
     internal static class PanelSkinCatalog
     {
+        public const string DefaultSkinId = "08";
         private const string SkinSettingsFileName = "skin.ini";
         private static readonly object SyncRoot = new object();
         private static PanelSkinDefinition[] cachedDefinitions;
@@ -62,6 +72,14 @@ namespace TrafficView
                 PanelSkinDefinition[] clone = new PanelSkinDefinition[cachedDefinitions.Length];
                 Array.Copy(cachedDefinitions, clone, cachedDefinitions.Length);
                 return clone;
+            }
+        }
+
+        public static void Reload()
+        {
+            lock (SyncRoot)
+            {
+                cachedDefinitions = null;
             }
         }
 
@@ -113,6 +131,105 @@ namespace TrafficView
             }
 
             return definitions.Length > 0 ? definitions[0].Id : "08";
+        }
+
+        public static string GetDefaultOrFirstSkinId()
+        {
+            PanelSkinDefinition[] definitions = GetAvailableSkins();
+
+            for (int i = 0; i < definitions.Length; i++)
+            {
+                if (string.Equals(definitions[i].Id, DefaultSkinId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return definitions[i].Id;
+                }
+            }
+
+            return definitions.Length > 0 ? definitions[0].Id : DefaultSkinId;
+        }
+
+        public static bool IsProtectedSkinId(string panelSkinId)
+        {
+            return string.Equals(
+                NormalizeSkinId(panelSkinId),
+                GetDefaultOrFirstSkinId(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool TryDeleteSkin(string panelSkinId, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+            string normalizedId = NormalizeSkinId(panelSkinId);
+            PanelSkinDefinition definition = GetSkinById(normalizedId);
+
+            if (definition == null || string.IsNullOrWhiteSpace(definition.DirectoryPath))
+            {
+                errorMessage = "Der ausgewaehlte Skin konnte nicht gefunden werden.";
+                return false;
+            }
+
+            PanelSkinDefinition[] definitions = GetAvailableSkins();
+            if (definitions.Length <= 1)
+            {
+                errorMessage = "Mindestens ein Skin muss erhalten bleiben.";
+                return false;
+            }
+
+            if (IsProtectedSkinId(normalizedId))
+            {
+                errorMessage = "Der Standardskin kann nicht geloescht werden.";
+                return false;
+            }
+
+            string skinsDirectoryPath = GetSkinsDirectoryPath();
+            string fullSkinsDirectoryPath;
+            string fullSkinDirectoryPath;
+
+            try
+            {
+                fullSkinsDirectoryPath = Path.GetFullPath(skinsDirectoryPath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                fullSkinDirectoryPath = Path.GetFullPath(definition.DirectoryPath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "skin-delete-path-normalize-failed-" + normalizedId,
+                    string.Format("Skin-Pfad konnte nicht normalisiert werden: '{0}'.", definition.DirectoryPath),
+                    ex);
+                errorMessage = "Der Skin-Pfad konnte nicht verarbeitet werden.";
+                return false;
+            }
+
+            string comparisonPrefix = fullSkinsDirectoryPath + Path.DirectorySeparatorChar;
+            if (!fullSkinDirectoryPath.StartsWith(comparisonPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                errorMessage = "Der Skin liegt ausserhalb des erwarteten Skin-Ordners.";
+                return false;
+            }
+
+            try
+            {
+                if (!Directory.Exists(fullSkinDirectoryPath))
+                {
+                    errorMessage = "Der Skin-Ordner ist nicht mehr vorhanden.";
+                    return false;
+                }
+
+                Directory.Delete(fullSkinDirectoryPath, true);
+                Reload();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "skin-delete-failed-" + normalizedId,
+                    string.Format("Skin '{0}' konnte nicht geloescht werden.", normalizedId),
+                    ex);
+                errorMessage = "Der Skin konnte nicht geloescht werden.";
+                return false;
+            }
         }
 
         private static PanelSkinDefinition[] LoadDefinitions()
