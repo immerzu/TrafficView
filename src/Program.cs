@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.11.0")]
-[assembly: AssemblyFileVersion("1.4.11.0")]
+[assembly: AssemblyVersion("1.4.12.0")]
+[assembly: AssemblyFileVersion("1.4.12.0")]
 
 namespace TrafficView
 {
@@ -641,6 +641,8 @@ namespace TrafficView
 
         private void PanelSkinMenuItem_Click(object sender, EventArgs e)
         {
+            this.EnsureValidSelectedSkin();
+
             ToolStripMenuItem item = sender as ToolStripMenuItem;
             string panelSkinId = item != null ? item.Tag as string : null;
             if (string.IsNullOrEmpty(panelSkinId))
@@ -803,6 +805,20 @@ namespace TrafficView
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
             this.UpdateMenuState();
+        }
+
+        private bool EnsureValidSelectedSkin()
+        {
+            string normalizedPanelSkinId = PanelSkinCatalog.NormalizeSkinId(this.settings.PanelSkinId);
+            if (string.Equals(this.settings.PanelSkinId, normalizedPanelSkinId, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            this.settings = this.settings.WithPanelSkinId(normalizedPanelSkinId);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            return true;
         }
 
         private void ExitItem_Click(object sender, EventArgs e)
@@ -1045,6 +1061,12 @@ namespace TrafficView
 
         private void UpdateMenuState()
         {
+            bool selectedSkinAdjusted = this.EnsureValidSelectedSkin();
+            if (selectedSkinAdjusted)
+            {
+                this.RebuildPanelSkinMenuItems();
+            }
+
             this.toggleItem.Text = this.popupForm.Visible
                 ? UiLanguage.Get("Menu.Hide", "Ausblenden")
                 : UiLanguage.Get("Menu.Show", "Anzeigen");
@@ -6497,3 +6519,4 @@ namespace TrafficView
         }
     }
 }
+

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 
 namespace TrafficView
@@ -52,7 +53,22 @@ namespace TrafficView
     {
         public const string DefaultSkinId = "08";
         private const string SkinSettingsFileName = "skin.ini";
+        private const string DeleteStagingDirectoryName = ".delete";
         private static readonly object SyncRoot = new object();
+        private static readonly KeyValuePair<string, Size>[] RequiredAssetDefinitions = new KeyValuePair<string, Size>[]
+        {
+            new KeyValuePair<string, Size>("TrafficView.panel.90.png", new Size(92, 50)),
+            new KeyValuePair<string, Size>("TrafficView.panel.png", new Size(102, 56)),
+            new KeyValuePair<string, Size>("TrafficView.panel.110.png", new Size(112, 62)),
+            new KeyValuePair<string, Size>("TrafficView.panel.125.png", new Size(128, 70)),
+            new KeyValuePair<string, Size>("TrafficView.panel.150.png", new Size(153, 84))
+        };
+        private static readonly string[] SupportedSurfaceEffects = new string[]
+        {
+            "none",
+            "glass",
+            "glass-readable"
+        };
         private static PanelSkinDefinition[] cachedDefinitions;
 
         public static string GetSkinsDirectoryPath()
@@ -182,8 +198,10 @@ namespace TrafficView
             }
 
             string skinsDirectoryPath = GetSkinsDirectoryPath();
-            string fullSkinsDirectoryPath;
-            string fullSkinDirectoryPath;
+            string fullSkinsDirectoryPath = string.Empty;
+            string fullSkinDirectoryPath = string.Empty;
+            string deleteStagingDirectoryPath = string.Empty;
+            string stagedSkinDirectoryPath = string.Empty;
 
             try
             {
@@ -191,6 +209,13 @@ namespace TrafficView
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 fullSkinDirectoryPath = Path.GetFullPath(definition.DirectoryPath)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                deleteStagingDirectoryPath = Path.Combine(fullSkinsDirectoryPath, ".delete");
+                stagedSkinDirectoryPath = Path.Combine(
+                    deleteStagingDirectoryPath,
+                    string.Format(
+                        "{0}-{1}",
+                        normalizedId,
+                        Guid.NewGuid().ToString("N")));
             }
             catch (Exception ex)
             {
@@ -217,19 +242,103 @@ namespace TrafficView
                     return false;
                 }
 
-                Directory.Delete(fullSkinDirectoryPath, true);
+                Directory.CreateDirectory(deleteStagingDirectoryPath);
+                Directory.Move(fullSkinDirectoryPath, stagedSkinDirectoryPath);
+                Directory.Delete(stagedSkinDirectoryPath, true);
                 Reload();
                 return true;
             }
             catch (Exception ex)
             {
+                try
+                {
+                    if (!Directory.Exists(fullSkinDirectoryPath) &&
+                        Directory.Exists(stagedSkinDirectoryPath))
+                    {
+                        Directory.Move(stagedSkinDirectoryPath, fullSkinDirectoryPath);
+                    }
+                }
+                catch (Exception rollbackEx)
+                {
+                    AppLog.WarnOnce(
+                        "skin-delete-rollback-failed-" + normalizedId,
+                        string.Format("Rollback fuer Skin '{0}' ist fehlgeschlagen.", normalizedId),
+                        rollbackEx);
+                }
+
                 AppLog.WarnOnce(
                     "skin-delete-failed-" + normalizedId,
                     string.Format("Skin '{0}' konnte nicht geloescht werden.", normalizedId),
                     ex);
-                errorMessage = "Der Skin konnte nicht geloescht werden.";
+                errorMessage = "Der Skin konnte nicht vollstaendig geloescht werden.";
                 return false;
             }
+        }
+
+        public static bool TryValidateSkinDirectory(string skinDirectoryPath, out string errorMessage)
+        {
+            errorMessage = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(skinDirectoryPath))
+            {
+                errorMessage = "Der Skin-Ordner ist leer oder ungueltig.";
+                return false;
+            }
+
+            if (!Directory.Exists(skinDirectoryPath))
+            {
+                errorMessage = "Der Skin-Ordner wurde nicht gefunden.";
+                return false;
+            }
+
+            string settingsPath = Path.Combine(skinDirectoryPath, SkinSettingsFileName);
+            if (!File.Exists(settingsPath))
+            {
+                errorMessage = "Die skin.ini fehlt.";
+                return false;
+            }
+
+            for (int i = 0; i < RequiredAssetDefinitions.Length; i++)
+            {
+                string fileName = RequiredAssetDefinitions[i].Key;
+                Size expectedSize = RequiredAssetDefinitions[i].Value;
+                string assetPath = Path.Combine(skinDirectoryPath, fileName);
+
+                if (!File.Exists(assetPath))
+                {
+                    errorMessage = string.Format("Die Skin-Datei '{0}' fehlt.", fileName);
+                    return false;
+                }
+
+                try
+                {
+                    using (Bitmap bitmap = new Bitmap(assetPath))
+                    {
+                        if (bitmap.Width != expectedSize.Width || bitmap.Height != expectedSize.Height)
+                        {
+                            errorMessage = string.Format(
+                                "Die Skin-Datei '{0}' hat die falsche Groesse ({1}x{2} statt {3}x{4}).",
+                                fileName,
+                                bitmap.Width,
+                                bitmap.Height,
+                                expectedSize.Width,
+                                expectedSize.Height);
+                            return false;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce(
+                        "skin-asset-validate-failed-" + assetPath,
+                        string.Format("Skin-Datei '{0}' konnte nicht gelesen werden.", assetPath),
+                        ex);
+                    errorMessage = string.Format("Die Skin-Datei '{0}' ist beschaedigt oder nicht lesbar.", fileName);
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static PanelSkinDefinition[] LoadDefinitions()
@@ -239,11 +348,17 @@ namespace TrafficView
 
             if (Directory.Exists(skinsDirectoryPath))
             {
+                CleanupDeleteStagingDirectory(skinsDirectoryPath);
                 string[] skinDirectoryPaths = Directory.GetDirectories(skinsDirectoryPath);
                 Array.Sort(skinDirectoryPaths, StringComparer.OrdinalIgnoreCase);
 
                 for (int i = 0; i < skinDirectoryPaths.Length; i++)
                 {
+                    if (ShouldIgnoreSkinDirectory(skinDirectoryPaths[i]))
+                    {
+                        continue;
+                    }
+
                     PanelSkinDefinition definition = TryLoadDefinition(skinDirectoryPaths[i]);
                     if (definition == null)
                     {
@@ -255,6 +370,13 @@ namespace TrafficView
                     {
                         if (string.Equals(definitions[j].Id, definition.Id, StringComparison.OrdinalIgnoreCase))
                         {
+                            AppLog.WarnOnce(
+                                "skin-definition-duplicate-id-" + definition.Id,
+                                string.Format(
+                                    "Skin-Ordner '{0}' wurde uebersprungen, weil die Skin-ID '{1}' bereits durch '{2}' belegt ist.",
+                                    skinDirectoryPaths[i],
+                                    definition.Id,
+                                    definitions[j].DirectoryPath));
                             alreadyAdded = true;
                             break;
                         }
@@ -275,6 +397,91 @@ namespace TrafficView
             return definitions.ToArray();
         }
 
+        private static bool ShouldIgnoreSkinDirectory(string skinDirectoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(skinDirectoryPath))
+            {
+                return true;
+            }
+
+            string directoryName = Path.GetFileName(
+                skinDirectoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return string.Equals(
+                directoryName,
+                DeleteStagingDirectoryName,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void CleanupDeleteStagingDirectory(string skinsDirectoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(skinsDirectoryPath))
+            {
+                return;
+            }
+
+            string deleteStagingDirectoryPath = Path.Combine(skinsDirectoryPath, DeleteStagingDirectoryName);
+            if (!Directory.Exists(deleteStagingDirectoryPath))
+            {
+                return;
+            }
+
+            string[] stagedDirectoryPaths;
+            try
+            {
+                stagedDirectoryPaths = Directory.GetDirectories(deleteStagingDirectoryPath);
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "skin-delete-staging-enumeration-failed",
+                    string.Format(
+                        "Temporäre Skin-Löschreste unter '{0}' konnten nicht geprüft werden.",
+                        deleteStagingDirectoryPath),
+                    ex);
+                return;
+            }
+
+            for (int i = 0; i < stagedDirectoryPaths.Length; i++)
+            {
+                string stagedDirectoryPath = stagedDirectoryPaths[i];
+
+                try
+                {
+                    if (Directory.Exists(stagedDirectoryPath))
+                    {
+                        Directory.Delete(stagedDirectoryPath, true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce(
+                        "skin-delete-staging-cleanup-failed-" + stagedDirectoryPath,
+                        string.Format(
+                            "Ein temporärer Skin-Löschrest unter '{0}' konnte nicht entfernt werden.",
+                            stagedDirectoryPath),
+                        ex);
+                }
+            }
+
+            try
+            {
+                if (Directory.Exists(deleteStagingDirectoryPath) &&
+                    Directory.GetFileSystemEntries(deleteStagingDirectoryPath).Length == 0)
+                {
+                    Directory.Delete(deleteStagingDirectoryPath, false);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "skin-delete-staging-root-cleanup-failed",
+                    string.Format(
+                        "Das temporäre Skin-Löschverzeichnis '{0}' konnte nicht bereinigt werden.",
+                        deleteStagingDirectoryPath),
+                    ex);
+            }
+        }
+
         private static PanelSkinDefinition TryLoadDefinition(string skinDirectoryPath)
         {
             if (string.IsNullOrWhiteSpace(skinDirectoryPath))
@@ -282,16 +489,66 @@ namespace TrafficView
                 return null;
             }
 
-            string settingsPath = Path.Combine(skinDirectoryPath, SkinSettingsFileName);
-            if (!File.Exists(settingsPath))
+            string validationError;
+            if (!TryValidateSkinDirectory(skinDirectoryPath, out validationError))
             {
+                AppLog.WarnOnce(
+                    "skin-definition-validation-failed-" + skinDirectoryPath,
+                    string.Format(
+                        "Skin-Ordner '{0}' wurde uebersprungen: {1}",
+                        skinDirectoryPath,
+                        string.IsNullOrWhiteSpace(validationError) ? "ungueltige Skin-Dateien" : validationError));
                 return null;
             }
 
-            string id = Path.GetFileName(skinDirectoryPath);
-            string displayNameKey = string.Empty;
-            string displayNameFallback = id;
-            string surfaceEffect = "none";
+            string settingsPath = Path.Combine(skinDirectoryPath, SkinSettingsFileName);
+            string id;
+            string displayNameKey;
+            string displayNameFallback;
+            string surfaceEffect;
+            string parseErrorMessage;
+            if (!TryParseSkinDefinition(
+                skinDirectoryPath,
+                settingsPath,
+                out id,
+                out displayNameKey,
+                out displayNameFallback,
+                out surfaceEffect,
+                out parseErrorMessage))
+            {
+                AppLog.WarnOnce(
+                    "skin-definition-load-failed-" + skinDirectoryPath,
+                    string.Format(
+                        "Skin-Definition konnte nicht aus '{0}' geladen werden: {1}",
+                        settingsPath,
+                        string.IsNullOrWhiteSpace(parseErrorMessage) ? "ungueltige skin.ini" : parseErrorMessage));
+                return null;
+            }
+
+            return new PanelSkinDefinition(
+                id,
+                displayNameKey,
+                displayNameFallback,
+                surfaceEffect,
+                skinDirectoryPath);
+        }
+
+        private static bool TryParseSkinDefinition(
+            string skinDirectoryPath,
+            string settingsPath,
+            out string id,
+            out string displayNameKey,
+            out string displayNameFallback,
+            out string surfaceEffect,
+            out string errorMessage)
+        {
+            string directoryName = Path.GetFileName(
+                skinDirectoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            id = directoryName;
+            displayNameKey = string.Empty;
+            displayNameFallback = directoryName;
+            surfaceEffect = "none";
+            errorMessage = string.Empty;
 
             try
             {
@@ -351,18 +608,57 @@ namespace TrafficView
             catch (Exception ex)
             {
                 AppLog.WarnOnce(
-                    "skin-definition-load-failed-" + skinDirectoryPath,
-                    string.Format("Skin-Definition konnte nicht aus '{0}' geladen werden.", settingsPath),
+                    "skin-definition-read-failed-" + skinDirectoryPath,
+                    string.Format("Skin-Definition konnte nicht aus '{0}' gelesen werden.", settingsPath),
                     ex);
-                return null;
+                errorMessage = "skin.ini konnte nicht gelesen werden.";
+                return false;
             }
 
-            return new PanelSkinDefinition(
-                id,
-                displayNameKey,
-                displayNameFallback,
-                surfaceEffect,
-                skinDirectoryPath);
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                errorMessage = "Die Skin-ID in der skin.ini ist leer.";
+                return false;
+            }
+
+            if (!string.Equals(id, directoryName, StringComparison.OrdinalIgnoreCase))
+            {
+                errorMessage = string.Format(
+                    "Die Skin-ID '{0}' stimmt nicht mit dem Ordnernamen '{1}' ueberein.",
+                    id,
+                    directoryName);
+                return false;
+            }
+
+            if (!IsSupportedSurfaceEffect(surfaceEffect))
+            {
+                errorMessage = string.Format(
+                    "Der SurfaceEffect '{0}' wird nicht unterstuetzt.",
+                    surfaceEffect);
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsSupportedSurfaceEffect(string surfaceEffect)
+        {
+            string normalizedSurfaceEffect = string.IsNullOrWhiteSpace(surfaceEffect)
+                ? "none"
+                : surfaceEffect.Trim();
+
+            for (int i = 0; i < SupportedSurfaceEffects.Length; i++)
+            {
+                if (string.Equals(
+                    SupportedSurfaceEffects[i],
+                    normalizedSurfaceEffect,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

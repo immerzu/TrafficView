@@ -26,6 +26,155 @@ $menuAssetFiles = @(
     "LOLO-SOFT_00_SW.png"
 )
 $sourceFiles = Get-ChildItem -Path $sourceDir -Filter *.cs | Sort-Object Name | ForEach-Object { $_.FullName }
+$requiredSkinFiles = [ordered]@{
+    "skin.ini" = $null
+    "TrafficView.panel.90.png" = @{ Width = 92; Height = 50 }
+    "TrafficView.panel.png" = @{ Width = 102; Height = 56 }
+    "TrafficView.panel.110.png" = @{ Width = 112; Height = 62 }
+    "TrafficView.panel.125.png" = @{ Width = 128; Height = 70 }
+    "TrafficView.panel.150.png" = @{ Width = 153; Height = 84 }
+}
+$deleteStagingDirectoryName = ".delete"
+$supportedSurfaceEffects = @(
+    "none",
+    "glass",
+    "glass-readable"
+)
+
+Add-Type -AssemblyName System.Drawing
+
+function Remove-DeleteStagingDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SkinsDirectoryPath
+    )
+
+    $deleteStagingDirectoryPath = Join-Path $SkinsDirectoryPath $deleteStagingDirectoryName
+    if (-not (Test-Path $deleteStagingDirectoryPath)) {
+        return
+    }
+
+    try {
+        Remove-Item -LiteralPath $deleteStagingDirectoryPath -Recurse -Force
+    }
+    catch {
+        throw "Temporäres Skin-Löschverzeichnis konnte nicht bereinigt werden: $deleteStagingDirectoryPath"
+    }
+}
+
+function Test-SkinDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SkinDirectoryPath
+    )
+
+    if (-not (Test-Path $SkinDirectoryPath)) {
+        throw "Skin-Ordner nicht gefunden: $SkinDirectoryPath"
+    }
+
+    $skinSettingsPath = Join-Path $SkinDirectoryPath "skin.ini"
+    $skinDirectoryName = Split-Path -Leaf $SkinDirectoryPath
+    $skinId = $skinDirectoryName
+    $surfaceEffect = "none"
+
+    foreach ($entry in $requiredSkinFiles.GetEnumerator()) {
+        $fileName = $entry.Key
+        $filePath = Join-Path $SkinDirectoryPath $fileName
+
+        if (-not (Test-Path $filePath)) {
+            throw "Skin-Datei fehlt: $filePath"
+        }
+
+        if ($null -eq $entry.Value) {
+            continue
+        }
+
+        $bitmap = $null
+        try {
+            $bitmap = New-Object System.Drawing.Bitmap($filePath)
+            if ($bitmap.Width -ne $entry.Value.Width -or $bitmap.Height -ne $entry.Value.Height) {
+                throw "Skin-Datei hat falsche Groesse: $filePath ($($bitmap.Width)x$($bitmap.Height) statt $($entry.Value.Width)x$($entry.Value.Height))"
+            }
+        }
+        finally {
+            if ($bitmap -ne $null) {
+                $bitmap.Dispose()
+            }
+        }
+    }
+
+    foreach ($line in Get-Content $skinSettingsPath) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $trimmedLine = $line.Trim()
+        if ($trimmedLine.StartsWith("#") -or $trimmedLine.StartsWith(";")) {
+            continue
+        }
+
+        $equalsIndex = $trimmedLine.IndexOf("=")
+        if ($equalsIndex -le 0) {
+            continue
+        }
+
+        $key = $trimmedLine.Substring(0, $equalsIndex).Trim()
+        $value = $trimmedLine.Substring($equalsIndex + 1).Trim()
+
+        if ($key -ieq "Id" -and -not [string]::IsNullOrWhiteSpace($value)) {
+            $skinId = $value
+            continue
+        }
+
+        if ($key -ieq "SurfaceEffect") {
+            $surfaceEffect = $value
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($skinId)) {
+        throw "Skin-ID leer in: $skinSettingsPath"
+    }
+
+    if ($skinId -ine $skinDirectoryName) {
+        throw "Skin-ID stimmt nicht mit Ordnernamen überein: $skinSettingsPath ($skinId statt $skinDirectoryName)"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($surfaceEffect)) {
+        $surfaceEffect = "none"
+    }
+
+    if ($supportedSurfaceEffects -inotcontains $surfaceEffect) {
+        throw "Nicht unterstützter SurfaceEffect in $skinSettingsPath : $surfaceEffect"
+    }
+}
+
+function Test-AllSkinDirectories {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SkinsDirectoryPath
+    )
+
+    Remove-DeleteStagingDirectory -SkinsDirectoryPath $SkinsDirectoryPath
+
+    $skinDirectories = Get-ChildItem -Path $SkinsDirectoryPath -Directory |
+        Where-Object { $_.Name -ne $deleteStagingDirectoryName } |
+        Sort-Object Name
+    if (-not $skinDirectories -or $skinDirectories.Count -eq 0) {
+        throw "Keine Skin-Ordner gefunden: $SkinsDirectoryPath"
+    }
+
+    $seenSkinIds = @{}
+    foreach ($skinDirectory in $skinDirectories) {
+        Test-SkinDirectory -SkinDirectoryPath $skinDirectory.FullName
+
+        $skinDirectoryName = $skinDirectory.Name
+        if ($seenSkinIds.ContainsKey($skinDirectoryName)) {
+            throw "Doppelte Skin-ID erkannt: $skinDirectoryName"
+        }
+
+        $seenSkinIds[$skinDirectoryName] = $true
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
@@ -86,6 +235,8 @@ if (-not (Test-Path $skinsSourceDirectory)) {
 if (-not $sourceFiles -or $sourceFiles.Count -eq 0) {
     throw "Keine C#-Quelldateien im Verzeichnis '$sourceDir' gefunden."
 }
+
+Test-AllSkinDirectories -SkinsDirectoryPath $skinsSourceDirectory
 
 & $compiler `
     /nologo `
