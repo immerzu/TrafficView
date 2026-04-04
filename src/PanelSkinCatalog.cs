@@ -12,13 +12,35 @@ namespace TrafficView
             string displayNameKey,
             string displayNameFallback,
             string surfaceEffect,
-            string directoryPath)
+            string directoryPath,
+            Size? clientSize,
+            Rectangle? downloadCaptionBounds,
+            Rectangle? downloadValueBounds,
+            Rectangle? uploadCaptionBounds,
+            Rectangle? uploadValueBounds,
+            Rectangle? meterBounds,
+            Rectangle? sparklineBounds,
+            bool drawDynamicRing,
+            bool drawCenterArrows,
+            bool drawSparkline,
+            bool drawMeterValueSupport)
         {
             this.Id = string.IsNullOrWhiteSpace(id) ? "08" : id.Trim();
             this.DisplayNameKey = string.IsNullOrWhiteSpace(displayNameKey) ? string.Empty : displayNameKey.Trim();
             this.DisplayNameFallback = string.IsNullOrWhiteSpace(displayNameFallback) ? this.Id : displayNameFallback.Trim();
             this.SurfaceEffect = string.IsNullOrWhiteSpace(surfaceEffect) ? "none" : surfaceEffect.Trim();
             this.DirectoryPath = string.IsNullOrWhiteSpace(directoryPath) ? string.Empty : directoryPath.Trim();
+            this.ClientSize = clientSize;
+            this.DownloadCaptionBounds = downloadCaptionBounds;
+            this.DownloadValueBounds = downloadValueBounds;
+            this.UploadCaptionBounds = uploadCaptionBounds;
+            this.UploadValueBounds = uploadValueBounds;
+            this.MeterBounds = meterBounds;
+            this.SparklineBounds = sparklineBounds;
+            this.DrawDynamicRing = drawDynamicRing;
+            this.DrawCenterArrows = drawCenterArrows;
+            this.DrawSparkline = drawSparkline;
+            this.DrawMeterValueSupport = drawMeterValueSupport;
         }
 
         public string Id { get; private set; }
@@ -30,6 +52,28 @@ namespace TrafficView
         public string SurfaceEffect { get; private set; }
 
         public string DirectoryPath { get; private set; }
+
+        public Size? ClientSize { get; private set; }
+
+        public Rectangle? DownloadCaptionBounds { get; private set; }
+
+        public Rectangle? DownloadValueBounds { get; private set; }
+
+        public Rectangle? UploadCaptionBounds { get; private set; }
+
+        public Rectangle? UploadValueBounds { get; private set; }
+
+        public Rectangle? MeterBounds { get; private set; }
+
+        public Rectangle? SparklineBounds { get; private set; }
+
+        public bool DrawDynamicRing { get; private set; }
+
+        public bool DrawCenterArrows { get; private set; }
+
+        public bool DrawSparkline { get; private set; }
+
+        public bool DrawMeterValueSupport { get; private set; }
 
         public bool HasGlassSurfaceEffect
         {
@@ -54,15 +98,8 @@ namespace TrafficView
         public const string DefaultSkinId = "08";
         private const string SkinSettingsFileName = "skin.ini";
         private const string DeleteStagingDirectoryName = ".delete";
+        private static readonly Size DefaultClientSize = new Size(102, 56);
         private static readonly object SyncRoot = new object();
-        private static readonly KeyValuePair<string, Size>[] RequiredAssetDefinitions = new KeyValuePair<string, Size>[]
-        {
-            new KeyValuePair<string, Size>("TrafficView.panel.90.png", new Size(92, 50)),
-            new KeyValuePair<string, Size>("TrafficView.panel.png", new Size(102, 56)),
-            new KeyValuePair<string, Size>("TrafficView.panel.110.png", new Size(112, 62)),
-            new KeyValuePair<string, Size>("TrafficView.panel.125.png", new Size(128, 70)),
-            new KeyValuePair<string, Size>("TrafficView.panel.150.png", new Size(153, 84))
-        };
         private static readonly string[] SupportedSurfaceEffects = new string[]
         {
             "none",
@@ -298,10 +335,20 @@ namespace TrafficView
                 return false;
             }
 
-            for (int i = 0; i < RequiredAssetDefinitions.Length; i++)
+            Size? clientSizeOverride;
+            string clientSizeErrorMessage;
+            if (!TryReadClientSizeOverride(settingsPath, out clientSizeOverride, out clientSizeErrorMessage))
             {
-                string fileName = RequiredAssetDefinitions[i].Key;
-                Size expectedSize = RequiredAssetDefinitions[i].Value;
+                errorMessage = clientSizeErrorMessage;
+                return false;
+            }
+
+            KeyValuePair<string, Size>[] expectedAssetDefinitions = GetExpectedAssetDefinitions(clientSizeOverride);
+
+            for (int i = 0; i < expectedAssetDefinitions.Length; i++)
+            {
+                string fileName = expectedAssetDefinitions[i].Key;
+                Size expectedSize = expectedAssetDefinitions[i].Value;
                 string assetPath = Path.Combine(skinDirectoryPath, fileName);
 
                 if (!File.Exists(assetPath))
@@ -339,6 +386,89 @@ namespace TrafficView
             }
 
             return true;
+        }
+
+        private static KeyValuePair<string, Size>[] GetExpectedAssetDefinitions(Size? clientSizeOverride)
+        {
+            Size baseClientSize = clientSizeOverride ?? DefaultClientSize;
+            return new KeyValuePair<string, Size>[]
+            {
+                new KeyValuePair<string, Size>("TrafficView.panel.90.png", ScaleAssetSize(baseClientSize, 90)),
+                new KeyValuePair<string, Size>("TrafficView.panel.png", baseClientSize),
+                new KeyValuePair<string, Size>("TrafficView.panel.110.png", ScaleAssetSize(baseClientSize, 110)),
+                new KeyValuePair<string, Size>("TrafficView.panel.125.png", ScaleAssetSize(baseClientSize, 125)),
+                new KeyValuePair<string, Size>("TrafficView.panel.150.png", ScaleAssetSize(baseClientSize, 150))
+            };
+        }
+
+        private static Size ScaleAssetSize(Size baseClientSize, int percentage)
+        {
+            return new Size(
+                ScaleDimension(baseClientSize.Width, percentage),
+                ScaleDimension(baseClientSize.Height, percentage));
+        }
+
+        private static int ScaleDimension(int value, int percentage)
+        {
+            return (int)Math.Floor(((value * percentage) / 100.0) + 0.5);
+        }
+
+        private static bool TryReadClientSizeOverride(string settingsPath, out Size? clientSize, out string errorMessage)
+        {
+            clientSize = null;
+            errorMessage = string.Empty;
+
+            try
+            {
+                string[] lines = File.ReadAllLines(settingsPath);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string line = lines[i];
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    string trimmedLine = line.Trim();
+                    if (trimmedLine.StartsWith("#", StringComparison.Ordinal) ||
+                        trimmedLine.StartsWith(";", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    int equalsIndex = trimmedLine.IndexOf('=');
+                    if (equalsIndex <= 0)
+                    {
+                        continue;
+                    }
+
+                    string key = trimmedLine.Substring(0, equalsIndex).Trim();
+                    string value = trimmedLine.Substring(equalsIndex + 1).Trim();
+                    if (!string.Equals(key, "ClientSize", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!TryParseSize(value, out clientSize))
+                    {
+                        errorMessage = "ClientSize ist ungueltig.";
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "skin-clientsize-read-failed-" + settingsPath,
+                    string.Format("ClientSize konnte nicht aus '{0}' gelesen werden.", settingsPath),
+                    ex);
+                errorMessage = "skin.ini konnte nicht gelesen werden.";
+                return false;
+            }
         }
 
         private static PanelSkinDefinition[] LoadDefinitions()
@@ -506,6 +636,17 @@ namespace TrafficView
             string displayNameKey;
             string displayNameFallback;
             string surfaceEffect;
+            Size? clientSize;
+            Rectangle? downloadCaptionBounds;
+            Rectangle? downloadValueBounds;
+            Rectangle? uploadCaptionBounds;
+            Rectangle? uploadValueBounds;
+            Rectangle? meterBounds;
+            Rectangle? sparklineBounds;
+            bool drawDynamicRing;
+            bool drawCenterArrows;
+            bool drawSparkline;
+            bool drawMeterValueSupport;
             string parseErrorMessage;
             if (!TryParseSkinDefinition(
                 skinDirectoryPath,
@@ -514,6 +655,17 @@ namespace TrafficView
                 out displayNameKey,
                 out displayNameFallback,
                 out surfaceEffect,
+                out clientSize,
+                out downloadCaptionBounds,
+                out downloadValueBounds,
+                out uploadCaptionBounds,
+                out uploadValueBounds,
+                out meterBounds,
+                out sparklineBounds,
+                out drawDynamicRing,
+                out drawCenterArrows,
+                out drawSparkline,
+                out drawMeterValueSupport,
                 out parseErrorMessage))
             {
                 AppLog.WarnOnce(
@@ -530,7 +682,18 @@ namespace TrafficView
                 displayNameKey,
                 displayNameFallback,
                 surfaceEffect,
-                skinDirectoryPath);
+                skinDirectoryPath,
+                clientSize,
+                downloadCaptionBounds,
+                downloadValueBounds,
+                uploadCaptionBounds,
+                uploadValueBounds,
+                meterBounds,
+                sparklineBounds,
+                drawDynamicRing,
+                drawCenterArrows,
+                drawSparkline,
+                drawMeterValueSupport);
         }
 
         private static bool TryParseSkinDefinition(
@@ -540,6 +703,17 @@ namespace TrafficView
             out string displayNameKey,
             out string displayNameFallback,
             out string surfaceEffect,
+            out Size? clientSize,
+            out Rectangle? downloadCaptionBounds,
+            out Rectangle? downloadValueBounds,
+            out Rectangle? uploadCaptionBounds,
+            out Rectangle? uploadValueBounds,
+            out Rectangle? meterBounds,
+            out Rectangle? sparklineBounds,
+            out bool drawDynamicRing,
+            out bool drawCenterArrows,
+            out bool drawSparkline,
+            out bool drawMeterValueSupport,
             out string errorMessage)
         {
             string directoryName = Path.GetFileName(
@@ -548,6 +722,17 @@ namespace TrafficView
             displayNameKey = string.Empty;
             displayNameFallback = directoryName;
             surfaceEffect = "none";
+            clientSize = null;
+            downloadCaptionBounds = null;
+            downloadValueBounds = null;
+            uploadCaptionBounds = null;
+            uploadValueBounds = null;
+            meterBounds = null;
+            sparklineBounds = null;
+            drawDynamicRing = true;
+            drawCenterArrows = true;
+            drawSparkline = true;
+            drawMeterValueSupport = true;
             errorMessage = string.Empty;
 
             try
@@ -602,6 +787,128 @@ namespace TrafficView
                     if (string.Equals(key, "SurfaceEffect", StringComparison.OrdinalIgnoreCase))
                     {
                         surfaceEffect = value;
+                        continue;
+                    }
+
+                    if (string.Equals(key, "ClientSize", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseSize(value, out clientSize))
+                        {
+                            errorMessage = "ClientSize ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "DownloadCaptionBounds", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseRectangle(value, out downloadCaptionBounds))
+                        {
+                            errorMessage = "DownloadCaptionBounds ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "DownloadValueBounds", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseRectangle(value, out downloadValueBounds))
+                        {
+                            errorMessage = "DownloadValueBounds ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "UploadCaptionBounds", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseRectangle(value, out uploadCaptionBounds))
+                        {
+                            errorMessage = "UploadCaptionBounds ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "UploadValueBounds", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseRectangle(value, out uploadValueBounds))
+                        {
+                            errorMessage = "UploadValueBounds ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "MeterBounds", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseRectangle(value, out meterBounds))
+                        {
+                            errorMessage = "MeterBounds ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "SparklineBounds", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseRectangle(value, out sparklineBounds))
+                        {
+                            errorMessage = "SparklineBounds ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "DrawDynamicRing", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseBoolean(value, out drawDynamicRing))
+                        {
+                            errorMessage = "DrawDynamicRing ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "DrawCenterArrows", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseBoolean(value, out drawCenterArrows))
+                        {
+                            errorMessage = "DrawCenterArrows ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "DrawSparkline", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseBoolean(value, out drawSparkline))
+                        {
+                            errorMessage = "DrawSparkline ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
+                    }
+
+                    if (string.Equals(key, "DrawMeterValueSupport", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!TryParseBoolean(value, out drawMeterValueSupport))
+                        {
+                            errorMessage = "DrawMeterValueSupport ist ungueltig.";
+                            return false;
+                        }
+
+                        continue;
                     }
                 }
             }
@@ -621,12 +928,17 @@ namespace TrafficView
                 return false;
             }
 
-            if (!string.Equals(id, directoryName, StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(displayNameFallback))
+            {
+                displayNameFallback = id;
+            }
+
+            if (!string.Equals(displayNameFallback, directoryName, StringComparison.OrdinalIgnoreCase))
             {
                 errorMessage = string.Format(
-                    "Die Skin-ID '{0}' stimmt nicht mit dem Ordnernamen '{1}' ueberein.",
-                    id,
-                    directoryName);
+                    "Der Skin-Ordnername '{0}' stimmt nicht mit DisplayNameFallback '{1}' ueberein.",
+                    directoryName,
+                    displayNameFallback);
                 return false;
             }
 
@@ -639,6 +951,97 @@ namespace TrafficView
             }
 
             return true;
+        }
+
+        private static bool TryParseRectangle(string value, out Rectangle? rectangle)
+        {
+            rectangle = null;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            string[] parts = value.Split(',');
+            if (parts.Length != 4)
+            {
+                return false;
+            }
+
+            int x;
+            int y;
+            int width;
+            int height;
+            if (!int.TryParse(parts[0].Trim(), out x) ||
+                !int.TryParse(parts[1].Trim(), out y) ||
+                !int.TryParse(parts[2].Trim(), out width) ||
+                !int.TryParse(parts[3].Trim(), out height))
+            {
+                return false;
+            }
+
+            if (width <= 0 || height <= 0)
+            {
+                return false;
+            }
+
+            rectangle = new Rectangle(x, y, width, height);
+            return true;
+        }
+
+        private static bool TryParseSize(string value, out Size? size)
+        {
+            size = null;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string[] parts = value.Split(',');
+            if (parts.Length != 2)
+            {
+                return false;
+            }
+
+            int width;
+            int height;
+            if (!int.TryParse(parts[0].Trim(), out width) ||
+                !int.TryParse(parts[1].Trim(), out height) ||
+                width <= 0 ||
+                height <= 0)
+            {
+                return false;
+            }
+
+            size = new Size(width, height);
+            return true;
+        }
+
+        private static bool TryParseBoolean(string value, out bool result)
+        {
+            result = false;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string normalized = value.Trim();
+            if (string.Equals(normalized, "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "1", StringComparison.OrdinalIgnoreCase))
+            {
+                result = true;
+                return true;
+            }
+
+            if (string.Equals(normalized, "false", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "no", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "0", StringComparison.OrdinalIgnoreCase))
+            {
+                result = false;
+                return true;
+            }
+
+            return false;
         }
 
         private static bool IsSupportedSurfaceEffect(string surfaceEffect)

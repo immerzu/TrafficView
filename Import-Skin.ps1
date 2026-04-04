@@ -17,58 +17,32 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $skinsRoot = Join-Path $root "Skins"
 $requiredSkinFiles = [ordered]@{
     "skin.ini" = $null
-    "TrafficView.panel.90.png" = @{ Width = 92; Height = 50 }
-    "TrafficView.panel.png" = @{ Width = 102; Height = 56 }
-    "TrafficView.panel.110.png" = @{ Width = 112; Height = 62 }
-    "TrafficView.panel.125.png" = @{ Width = 128; Height = 70 }
-    "TrafficView.panel.150.png" = @{ Width = 153; Height = 84 }
+    "TrafficView.panel.90.png" = $true
+    "TrafficView.panel.png" = $true
+    "TrafficView.panel.110.png" = $true
+    "TrafficView.panel.125.png" = $true
+    "TrafficView.panel.150.png" = $true
 }
 $supportedSurfaceEffects = @(
     "none",
     "glass",
     "glass-readable"
 )
+$invalidSkinFolderCharacters = [System.IO.Path]::GetInvalidFileNameChars()
 
-function Test-SkinDirectory {
+function Get-SkinMetadata {
     param(
         [Parameter(Mandatory = $true)]
         [string]$SkinDirectoryPath
     )
 
-    if (-not (Test-Path $SkinDirectoryPath)) {
-        throw "Skin-Ordner nicht gefunden: $SkinDirectoryPath"
-    }
-
     $skinSettingsPath = Join-Path $SkinDirectoryPath "skin.ini"
     $skinDirectoryName = Split-Path -Leaf $SkinDirectoryPath
     $skinId = $skinDirectoryName
+    $displayNameFallback = $skinDirectoryName
     $surfaceEffect = "none"
-
-    foreach ($entry in $requiredSkinFiles.GetEnumerator()) {
-        $fileName = $entry.Key
-        $filePath = Join-Path $SkinDirectoryPath $fileName
-
-        if (-not (Test-Path $filePath)) {
-            throw "Skin-Datei fehlt: $filePath"
-        }
-
-        if ($null -eq $entry.Value) {
-            continue
-        }
-
-        $bitmap = $null
-        try {
-            $bitmap = New-Object System.Drawing.Bitmap($filePath)
-            if ($bitmap.Width -ne $entry.Value.Width -or $bitmap.Height -ne $entry.Value.Height) {
-                throw "Skin-Datei hat falsche Groesse: $filePath ($($bitmap.Width)x$($bitmap.Height) statt $($entry.Value.Width)x$($entry.Value.Height))"
-            }
-        }
-        finally {
-            if ($bitmap -ne $null) {
-                $bitmap.Dispose()
-            }
-        }
-    }
+    $clientWidth = 102
+    $clientHeight = 56
 
     foreach ($line in Get-Content $skinSettingsPath) {
         if ([string]::IsNullOrWhiteSpace($line)) {
@@ -93,17 +67,110 @@ function Test-SkinDirectory {
             continue
         }
 
+        if ($key -ieq "DisplayNameFallback" -and -not [string]::IsNullOrWhiteSpace($value)) {
+            $displayNameFallback = $value
+            continue
+        }
+
         if ($key -ieq "SurfaceEffect") {
             $surfaceEffect = $value
+            continue
+        }
+
+        if ($key -ieq "ClientSize") {
+            $parts = $value.Split(',')
+            if ($parts.Length -ne 2) {
+                throw "ClientSize ist ungueltig in: $skinSettingsPath"
+            }
+
+            $parsedWidth = 0
+            $parsedHeight = 0
+            if (-not [int]::TryParse($parts[0].Trim(), [ref]$parsedWidth) -or
+                -not [int]::TryParse($parts[1].Trim(), [ref]$parsedHeight) -or
+                $parsedWidth -le 0 -or
+                $parsedHeight -le 0) {
+                throw "ClientSize ist ungueltig in: $skinSettingsPath"
+            }
+
+            $clientWidth = $parsedWidth
+            $clientHeight = $parsedHeight
         }
     }
 
-    if ([string]::IsNullOrWhiteSpace($skinId)) {
-        throw "Skin-ID leer in: $skinSettingsPath"
+    if ([string]::IsNullOrWhiteSpace($surfaceEffect)) {
+        $surfaceEffect = "none"
     }
 
-    if ($skinId -ine $skinDirectoryName) {
-        throw "Skin-ID stimmt nicht mit Ordnernamen überein: $skinSettingsPath ($skinId statt $skinDirectoryName)"
+    if ([string]::IsNullOrWhiteSpace($displayNameFallback)) {
+        $displayNameFallback = $skinId
+    }
+
+    [PSCustomObject]@{
+        Id = $skinId
+        DisplayNameFallback = $displayNameFallback
+        SurfaceEffect = $surfaceEffect
+        ClientWidth = $clientWidth
+        ClientHeight = $clientHeight
+        DirectoryName = $skinDirectoryName
+        DirectoryPath = $SkinDirectoryPath
+    }
+}
+
+function Get-SkinFolderNameFromFallback {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    $folderName = $Value.Trim()
+    if ([string]::IsNullOrWhiteSpace($folderName)) {
+        throw "DisplayNameFallback ist leer und kann nicht als Skin-Ordnername verwendet werden."
+    }
+
+    foreach ($invalidCharacter in $invalidSkinFolderCharacters) {
+        if ($folderName.Contains([string]$invalidCharacter)) {
+            throw "DisplayNameFallback enthaelt ungueltige Zeichen fuer einen Skin-Ordner: '$Value'"
+        }
+    }
+
+    if ($folderName.EndsWith(".", [System.StringComparison]::Ordinal)) {
+        throw "DisplayNameFallback darf nicht mit einem Punkt enden: '$Value'"
+    }
+
+    return $folderName
+}
+
+function Test-SkinDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SkinDirectoryPath
+    )
+
+    if (-not (Test-Path $SkinDirectoryPath)) {
+        throw "Skin-Ordner nicht gefunden: $SkinDirectoryPath"
+    }
+
+    $skinSettingsPath = Join-Path $SkinDirectoryPath "skin.ini"
+
+    foreach ($entry in $requiredSkinFiles.GetEnumerator()) {
+        $fileName = $entry.Key
+        $filePath = Join-Path $SkinDirectoryPath $fileName
+
+        if (-not (Test-Path $filePath)) {
+            throw "Skin-Datei fehlt: $filePath"
+        }
+
+        if ($null -eq $entry.Value) {
+            continue
+        }
+    }
+
+    $skinMetadata = Get-SkinMetadata -SkinDirectoryPath $SkinDirectoryPath
+    $skinId = $skinMetadata.Id
+    $surfaceEffect = $skinMetadata.SurfaceEffect
+
+    if ([string]::IsNullOrWhiteSpace($skinId)) {
+        throw "Skin-ID leer in: $skinSettingsPath"
     }
 
     if ([string]::IsNullOrWhiteSpace($surfaceEffect)) {
@@ -112,6 +179,45 @@ function Test-SkinDirectory {
 
     if ($supportedSurfaceEffects -inotcontains $surfaceEffect) {
         throw "Nicht unterstützter SurfaceEffect in $skinSettingsPath : $surfaceEffect"
+    }
+
+    $expectedAssetSizes = [ordered]@{
+        "TrafficView.panel.90.png" = @{
+            Width = [int][Math]::Floor((($skinMetadata.ClientWidth * 90) / 100.0) + 0.5)
+            Height = [int][Math]::Floor((($skinMetadata.ClientHeight * 90) / 100.0) + 0.5)
+        }
+        "TrafficView.panel.png" = @{
+            Width = $skinMetadata.ClientWidth
+            Height = $skinMetadata.ClientHeight
+        }
+        "TrafficView.panel.110.png" = @{
+            Width = [int][Math]::Floor((($skinMetadata.ClientWidth * 110) / 100.0) + 0.5)
+            Height = [int][Math]::Floor((($skinMetadata.ClientHeight * 110) / 100.0) + 0.5)
+        }
+        "TrafficView.panel.125.png" = @{
+            Width = [int][Math]::Floor((($skinMetadata.ClientWidth * 125) / 100.0) + 0.5)
+            Height = [int][Math]::Floor((($skinMetadata.ClientHeight * 125) / 100.0) + 0.5)
+        }
+        "TrafficView.panel.150.png" = @{
+            Width = [int][Math]::Floor((($skinMetadata.ClientWidth * 150) / 100.0) + 0.5)
+            Height = [int][Math]::Floor((($skinMetadata.ClientHeight * 150) / 100.0) + 0.5)
+        }
+    }
+
+    foreach ($entry in $expectedAssetSizes.GetEnumerator()) {
+        $filePath = Join-Path $SkinDirectoryPath $entry.Key
+        $bitmap = $null
+        try {
+            $bitmap = New-Object System.Drawing.Bitmap($filePath)
+            if ($bitmap.Width -ne $entry.Value.Width -or $bitmap.Height -ne $entry.Value.Height) {
+                throw "Skin-Datei hat falsche Groesse: $filePath ($($bitmap.Width)x$($bitmap.Height) statt $($entry.Value.Width)x$($entry.Value.Height))"
+            }
+        }
+        finally {
+            if ($bitmap -ne $null) {
+                $bitmap.Dispose()
+            }
+        }
     }
 }
 
@@ -122,8 +228,8 @@ if (-not (Test-Path $skinsRoot)) {
 $resolvedSource = (Resolve-Path $SourceSkinDirectory).Path
 Test-SkinDirectory -SkinDirectoryPath $resolvedSource
 
-$sourceLeafName = Split-Path $resolvedSource -Leaf
-$targetLeafName = if ([string]::IsNullOrWhiteSpace($TargetSkinId)) { $sourceLeafName } else { $TargetSkinId.Trim() }
+$skinMetadata = Get-SkinMetadata -SkinDirectoryPath $resolvedSource
+$targetLeafName = Get-SkinFolderNameFromFallback -Value $skinMetadata.DisplayNameFallback
 $targetDirectory = Join-Path $skinsRoot $targetLeafName
 
 if ((Test-Path $targetDirectory) -and -not $ReplaceExisting.IsPresent) {

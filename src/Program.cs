@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.12.0")]
-[assembly: AssemblyFileVersion("1.4.12.0")]
+[assembly: AssemblyVersion("1.4.14.0")]
+[assembly: AssemblyFileVersion("1.4.14.0")]
 
 namespace TrafficView
 {
@@ -1780,6 +1780,11 @@ namespace TrafficView
             float centerInset = Math.Max(1F, this.ScaleFloat(2.3F));
             byte backgroundAlpha = MonitorSettings.ToOpacityByte(this.settings.TransparencyPercent);
 
+            if (!this.ShouldDrawStaticBackgroundLayer())
+            {
+                return;
+            }
+
             float strokeInset = strokeWidth / 2F;
             RectangleF outerBounds = new RectangleF(
                 strokeInset,
@@ -1873,6 +1878,67 @@ namespace TrafficView
             return definition != null && definition.HasReadableInfoPlateEffect;
         }
 
+        private PanelSkinDefinition GetCurrentPanelSkinDefinition()
+        {
+            return PanelSkinCatalog.GetSkinById(this.settings.PanelSkinId);
+        }
+
+        private bool IsHudOnlyTransparencyMode()
+        {
+            return this.settings != null && this.settings.TransparencyPercent >= 100;
+        }
+
+        private bool ShouldDrawStaticBackgroundLayer()
+        {
+            return !this.IsHudOnlyTransparencyMode()
+                && MonitorSettings.ToOpacityByte(this.settings.TransparencyPercent) > 0;
+        }
+
+        private bool ShouldDrawDynamicRing()
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            return definition == null || definition.DrawDynamicRing;
+        }
+
+        private bool ShouldDrawCenterTrafficArrows()
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            return definition == null || definition.DrawCenterArrows;
+        }
+
+        private bool ShouldDrawSparkline()
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            return definition == null || definition.DrawSparkline;
+        }
+
+        private bool ShouldDrawMeterValueSupport()
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            return definition == null || definition.DrawMeterValueSupport;
+        }
+
+        private Rectangle ScaleSkinRectangle(Rectangle bounds)
+        {
+            return new Rectangle(
+                this.ScaleValue(bounds.X),
+                this.ScaleValue(bounds.Y),
+                this.ScaleValue(bounds.Width),
+                this.ScaleValue(bounds.Height));
+        }
+
+        private Size ScaleSkinSize(Size size)
+        {
+            return new Size(
+                this.ScaleValue(size.Width),
+                this.ScaleValue(size.Height));
+        }
+
+        private Rectangle GetScaledSkinBounds(Rectangle defaultBounds, Rectangle? overrideBounds)
+        {
+            return this.ScaleSkinRectangle(overrideBounds ?? defaultBounds);
+        }
+
         private bool TryDrawPanelBackgroundAsset(Graphics graphics, byte backgroundAlpha)
         {
             Bitmap panelBackgroundAsset = GetPanelBackgroundAsset(this.settings.PanelSkinId, this.ClientSize);
@@ -1887,33 +1953,30 @@ namespace TrafficView
             {
                 graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
-
-                using (ImageAttributes imageAttributes = CreateAlphaImageAttributes(backgroundAlpha))
+                using (Bitmap adjustedAsset = CreateSelectiveTransparencyBitmap(panelBackgroundAsset, backgroundAlpha))
                 {
-                    if (panelBackgroundAsset.Width == this.ClientSize.Width &&
-                        panelBackgroundAsset.Height == this.ClientSize.Height)
+                    if (adjustedAsset.Width == this.ClientSize.Width &&
+                        adjustedAsset.Height == this.ClientSize.Height)
                     {
                         graphics.DrawImage(
-                            panelBackgroundAsset,
-                            new Rectangle(0, 0, panelBackgroundAsset.Width, panelBackgroundAsset.Height),
+                            adjustedAsset,
+                            new Rectangle(0, 0, adjustedAsset.Width, adjustedAsset.Height),
                             0,
                             0,
-                            panelBackgroundAsset.Width,
-                            panelBackgroundAsset.Height,
-                            GraphicsUnit.Pixel,
-                            imageAttributes);
+                            adjustedAsset.Width,
+                            adjustedAsset.Height,
+                            GraphicsUnit.Pixel);
                     }
                     else
                     {
                         graphics.DrawImage(
-                            panelBackgroundAsset,
+                            adjustedAsset,
                             new Rectangle(0, 0, this.ClientSize.Width, this.ClientSize.Height),
                             0,
                             0,
-                            panelBackgroundAsset.Width,
-                            panelBackgroundAsset.Height,
-                            GraphicsUnit.Pixel,
-                            imageAttributes);
+                            adjustedAsset.Width,
+                            adjustedAsset.Height,
+                            GraphicsUnit.Pixel);
                     }
                 }
 
@@ -1962,35 +2025,98 @@ namespace TrafficView
                 UploadRingHighColor,
                 SmoothStep(visualUploadFillRatio));
 
-            if (this.IsReadableInfoPanelSkinEnabled())
+            if (this.IsReadableInfoPanelSkinEnabled() && !this.IsHudOnlyTransparencyMode())
             {
                 this.DrawReadableTrafficInfoPanel(graphics, meterBounds);
             }
+            else if (!this.IsHudOnlyTransparencyMode())
+            {
+                this.DrawTransparencyAwareInfoPanel(graphics, meterBounds);
+            }
 
-            this.DrawMeterValueBalanceSupport(graphics, meterBounds);
+            if (!this.IsHudOnlyTransparencyMode() && this.ShouldDrawMeterValueSupport())
+            {
+                this.DrawMeterValueBalanceSupport(graphics, meterBounds);
+            }
+
             this.DrawTrafficTexts(graphics);
-            this.DrawMiniTrafficSparkline(graphics, meterBounds);
-            this.DrawInterleavedTrafficRing(
-                graphics,
-                sharedRingBounds,
-                sharedRingWidth,
-                visualDownloadFillRatio,
-                visualUploadFillRatio,
-                MeterTrackColor,
-                MeterTrackInnerColor,
-                DownloadRingLowColor,
-                downloadRingEndColor,
-                UploadRingLowColor,
-                uploadRingEndColor,
-                false);
-            this.DrawCenterTrafficArrows(
-                graphics,
-                centerBounds,
-                iconBounds,
-                downloadFillRatio,
-                uploadFillRatio,
-                visualDownloadFillRatio,
-                visualUploadFillRatio);
+            if (this.ShouldDrawSparkline())
+            {
+                this.DrawMiniTrafficSparkline(graphics, meterBounds);
+            }
+
+            if (this.IsHudOnlyTransparencyMode())
+            {
+                this.DrawHudOnlyMeterGuideCircles(graphics, sharedRingBounds, sharedRingWidth);
+            }
+
+            if (this.ShouldDrawDynamicRing())
+            {
+                this.DrawInterleavedTrafficRing(
+                    graphics,
+                    sharedRingBounds,
+                    sharedRingWidth,
+                    visualDownloadFillRatio,
+                    visualUploadFillRatio,
+                    MeterTrackColor,
+                    MeterTrackInnerColor,
+                    DownloadRingLowColor,
+                    downloadRingEndColor,
+                    UploadRingLowColor,
+                    uploadRingEndColor,
+                    false);
+            }
+
+            if (this.ShouldDrawCenterTrafficArrows())
+            {
+                this.DrawCenterTrafficArrows(
+                    graphics,
+                    centerBounds,
+                    iconBounds,
+                    downloadFillRatio,
+                    uploadFillRatio,
+                    visualDownloadFillRatio,
+                    visualUploadFillRatio);
+            }
+        }
+
+        private void DrawHudOnlyMeterGuideCircles(
+            Graphics graphics,
+            RectangleF sharedRingBounds,
+            float sharedRingWidth)
+        {
+            GraphicsState state = graphics.Save();
+
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+
+                float outlineWidth = 1F;
+                float stableRingWidth = NormalizeStrokeWidth(sharedRingWidth);
+                float edgeOffset = Math.Max(0F, (stableRingWidth - outlineWidth) / 2F);
+                RectangleF baseBounds = GetStableArcBounds(sharedRingBounds);
+                RectangleF outerBounds = GetStableArcBounds(
+                    InflateRectangle(baseBounds, edgeOffset + 2F));
+                RectangleF innerBounds = GetStableArcBounds(
+                    InflateRectangle(baseBounds, -(edgeOffset + 2F)));
+
+                Color outerColor = Color.FromArgb(220, 164, 228, 255);
+                Color innerColor = Color.FromArgb(212, 132, 210, 255);
+
+                using (Pen outerPen = new Pen(outerColor, outlineWidth))
+                using (Pen innerPen = new Pen(innerColor, outlineWidth))
+                {
+                    outerPen.Alignment = PenAlignment.Center;
+                    innerPen.Alignment = PenAlignment.Center;
+                    graphics.DrawEllipse(outerPen, outerBounds);
+                    graphics.DrawEllipse(innerPen, innerBounds);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
         }
 
         protected override void Dispose(bool disposing)
@@ -2713,6 +2839,12 @@ namespace TrafficView
 
         private Rectangle GetDownloadMeterBounds()
         {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            if (definition != null && definition.MeterBounds.HasValue)
+            {
+                return this.ScaleSkinRectangle(definition.MeterBounds.Value);
+            }
+
             int diameter = this.ScaleValue(this.IsReadableInfoPanelSkinEnabled()
                 ? BaseMeterDiameter - 3
                 : BaseMeterDiameter);
@@ -2912,6 +3044,8 @@ namespace TrafficView
                     -Math.Max(0.2F, stableStrokeWidth * 0.03F)));
             float stableStartAngle = NormalizeArcAngle(startAngle);
             float stableSweepAngle = NormalizeArcSweepAngle(sweepAngle);
+            int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+            bool ultraTransparent = transparencyPercent >= 100;
             GraphicsState state = graphics.Save();
 
             try
@@ -2922,8 +3056,8 @@ namespace TrafficView
                 if (glowWidth > 0.05F)
                 {
                     using (Pen glowPen = new Pen(
-                        Color.FromArgb(120, color),
-                        NormalizeStrokeWidth(stableStrokeWidth + glowWidth)))
+                        Color.FromArgb(ultraTransparent ? 210 : 120, color),
+                        NormalizeStrokeWidth(stableStrokeWidth + glowWidth + (ultraTransparent ? this.ScaleFloat(1.1F) : 0F))))
                     {
                         glowPen.Alignment = PenAlignment.Center;
                         glowPen.LineJoin = LineJoin.MiterClipped;
@@ -2971,6 +3105,20 @@ namespace TrafficView
                         accentBounds,
                         shadowStartAngle,
                         shadowSweep);
+                }
+
+                if (ultraTransparent)
+                {
+                    using (Pen corePen = new Pen(
+                        Color.FromArgb(236, GetInterpolatedColor(color, Color.White, 0.34D)),
+                        NormalizeStrokeWidth(Math.Max(1F, stableStrokeWidth * 0.28F))))
+                    {
+                        corePen.Alignment = PenAlignment.Center;
+                        corePen.LineJoin = LineJoin.Round;
+                        corePen.StartCap = LineCap.Round;
+                        corePen.EndCap = LineCap.Round;
+                        graphics.DrawArc(corePen, accentBounds, stableStartAngle, stableSweepAngle);
+                    }
                 }
             }
             finally
@@ -3064,14 +3212,26 @@ namespace TrafficView
             float scaledWidth = NormalizeArrowDimension(width * scale);
             float scaledHeight = NormalizeArrowDimension(height * scale);
             float scaledShaftWidth = NormalizeArrowDimension(shaftWidth * Math.Max(0.92F, scale));
-            float glowWidth = glowBaseWidth + (pulse * this.ScaleFloat(0.85F)) + ((float)intensity * this.ScaleFloat(0.75F));
+            int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+            bool ultraTransparent = transparencyPercent >= 100;
+            float glowWidth = glowBaseWidth
+                + (pulse * this.ScaleFloat(0.85F))
+                + ((float)intensity * this.ScaleFloat(0.75F))
+                + (ultraTransparent ? this.ScaleFloat(0.95F) : 0F);
             int glowAlpha = 96 + (int)Math.Round((pulse * 36F) + (float)intensity * 54F, MidpointRounding.AwayFromZero);
+            if (ultraTransparent)
+            {
+                glowAlpha = Math.Min(232, glowAlpha + 62);
+            }
             Color glowColor = Color.FromArgb(
                 Math.Max(0, Math.Min(220, glowAlpha)),
                 bodyColor.R,
                 bodyColor.G,
                 bodyColor.B);
-            Color outlineColor = GetInterpolatedColor(bodyColor, Color.FromArgb(255, 250, 248, 236), 0.22D + (0.10D * pulse));
+            Color outlineColor = GetInterpolatedColor(
+                bodyColor,
+                Color.FromArgb(255, 250, 248, 236),
+                (0.22D + (0.10D * pulse)) + (ultraTransparent ? 0.12D : 0D));
             GraphicsState state = graphics.Save();
 
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -3080,7 +3240,9 @@ namespace TrafficView
             using (GraphicsPath arrowPath = CreateArrowPath(stableCenter, scaledWidth, scaledHeight, scaledShaftWidth, pointsUp))
             using (Pen glowPen = new Pen(glowColor, glowWidth))
             using (SolidBrush arrowBrush = new SolidBrush(bodyColor))
-            using (Pen outlinePen = new Pen(outlineColor, Math.Max(0.8F, this.ScaleFloat(0.8F))))
+            using (Pen outlinePen = new Pen(
+                outlineColor,
+                Math.Max(0.8F, this.ScaleFloat(0.8F)) + (ultraTransparent ? this.ScaleFloat(0.25F) : 0F)))
             {
                 glowPen.LineJoin = LineJoin.Round;
                 glowPen.Alignment = PenAlignment.Center;
@@ -3619,6 +3781,79 @@ namespace TrafficView
             return imageAttributes;
         }
 
+        private static Bitmap CreateSelectiveTransparencyBitmap(Bitmap sourceBitmap, byte baseAlpha)
+        {
+            if (sourceBitmap == null)
+            {
+                return null;
+            }
+
+            Bitmap adjustedBitmap = new Bitmap(sourceBitmap.Width, sourceBitmap.Height, PixelFormat.Format32bppArgb);
+            if (baseAlpha >= 255)
+            {
+                using (Graphics graphics = Graphics.FromImage(adjustedBitmap))
+                {
+                    graphics.DrawImageUnscaled(sourceBitmap, 0, 0);
+                }
+
+                return adjustedBitmap;
+            }
+
+            double baseAlphaRatio = baseAlpha / 255D;
+
+            for (int y = 0; y < sourceBitmap.Height; y++)
+            {
+                for (int x = 0; x < sourceBitmap.Width; x++)
+                {
+                    Color pixel = sourceBitmap.GetPixel(x, y);
+                    if (pixel.A <= 0)
+                    {
+                        adjustedBitmap.SetPixel(x, y, Color.Transparent);
+                        continue;
+                    }
+
+                    double luminance = ((pixel.R * 0.2126D) + (pixel.G * 0.7152D) + (pixel.B * 0.0722D)) / 255D;
+                    int maxChannel = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+                    int minChannel = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+                    double saturation = maxChannel <= 0
+                        ? 0D
+                        : (maxChannel - minChannel) / (double)maxChannel;
+
+                    double highlightWeight = Clamp01((luminance - 0.22D) / 0.78D);
+                    double accentWeight = Clamp01((saturation - 0.45D) / 0.55D) * 0.45D;
+                    double preserveWeight = Clamp01(Math.Max(highlightWeight, accentWeight));
+                    double effectiveAlphaRatio = baseAlphaRatio + ((1D - baseAlphaRatio) * preserveWeight);
+                    int effectiveAlpha = (int)Math.Round(pixel.A * effectiveAlphaRatio);
+
+                    adjustedBitmap.SetPixel(
+                        x,
+                        y,
+                        Color.FromArgb(
+                            Math.Max(0, Math.Min(255, effectiveAlpha)),
+                            pixel.R,
+                            pixel.G,
+                            pixel.B));
+                }
+            }
+
+            return adjustedBitmap;
+        }
+
+        private static double Clamp01(double value)
+        {
+            if (value <= 0D)
+            {
+                return 0D;
+            }
+
+            if (value >= 1D)
+            {
+                return 1D;
+            }
+
+            return value;
+        }
+
         private static Label CreateCaptionLabel(string text, Color color)
         {
             Label label = new OverlayInputLabel();
@@ -3758,13 +3993,20 @@ namespace TrafficView
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
 
+                int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+                int fillAlpha = Math.Min(188, 118 + (int)Math.Round(transparencyPercent * 0.55D));
+                int borderAlpha = Math.Min(96, 48 + (int)Math.Round(transparencyPercent * 0.30D));
+                int innerAlpha = Math.Min(64, 28 + (int)Math.Round(transparencyPercent * 0.18D));
+                int highlightStrongAlpha = Math.Min(92, 66 + (int)Math.Round(transparencyPercent * 0.20D));
+                int highlightSoftAlpha = Math.Min(44, 28 + (int)Math.Round(transparencyPercent * 0.14D));
+
                 using (GraphicsPath platePath = CreateRoundedPath(bounds, radius))
                 using (GraphicsPath innerPath = CreateRoundedPath(
                     InflateRectangle(bounds, -this.ScaleFloat(1.5F)),
                     Math.Max(2F, radius - this.ScaleFloat(1.5F))))
-                using (SolidBrush fillBrush = new SolidBrush(Color.FromArgb(118, 5, 14, 34)))
-                using (Pen borderPen = new Pen(Color.FromArgb(48, 164, 215, 255), Math.Max(0.8F, this.ScaleFloat(0.8F))))
-                using (Pen innerPen = new Pen(Color.FromArgb(28, 255, 255, 255), Math.Max(0.6F, this.ScaleFloat(0.6F))))
+                using (SolidBrush fillBrush = new SolidBrush(Color.FromArgb(fillAlpha, 5, 14, 34)))
+                using (Pen borderPen = new Pen(Color.FromArgb(borderAlpha, 164, 215, 255), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                using (Pen innerPen = new Pen(Color.FromArgb(innerAlpha, 255, 255, 255), Math.Max(0.6F, this.ScaleFloat(0.6F))))
                 using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
                     new PointF(bounds.Left, bounds.Top),
                     new PointF(bounds.Left, bounds.Bottom),
@@ -3775,8 +4017,8 @@ namespace TrafficView
                     blend.Positions = new float[] { 0F, 0.12F, 0.34F, 1F };
                     blend.Colors = new Color[]
                     {
-                        Color.FromArgb(66, 220, 238, 255),
-                        Color.FromArgb(28, 188, 220, 255),
+                        Color.FromArgb(highlightStrongAlpha, 220, 238, 255),
+                        Color.FromArgb(highlightSoftAlpha, 188, 220, 255),
                         Color.FromArgb(10, 96, 140, 196),
                         Color.Transparent
                     };
@@ -3809,7 +4051,75 @@ namespace TrafficView
             }
         }
 
-        private static void DrawReadableTrafficText(
+        private void DrawTransparencyAwareInfoPanel(Graphics graphics, Rectangle meterBounds)
+        {
+            int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+            if (transparencyPercent <= 0)
+            {
+                return;
+            }
+
+            int left = this.ScaleValue(3);
+            int right = Math.Max(left + this.ScaleValue(44), meterBounds.Left - this.ScaleValue(5));
+            int top = Math.Max(0, this.downloadCaptionLabel.Bounds.Top - this.ScaleValue(3));
+            int bottom = Math.Min(this.ClientSize.Height, this.uploadValueLabel.Bounds.Bottom + this.ScaleValue(4));
+            if (right - left < this.ScaleValue(16) || bottom - top < this.ScaleValue(16))
+            {
+                return;
+            }
+
+            RectangleF bounds = new RectangleF(
+                AlignToHalfPixel(left),
+                AlignToHalfPixel(top),
+                Math.Max(1F, right - left),
+                Math.Max(1F, bottom - top));
+            float radius = Math.Max(this.ScaleFloat(5.5F), Math.Min(bounds.Width, bounds.Height) * 0.16F);
+            int fillAlpha = Math.Min(176, 42 + (int)Math.Round(transparencyPercent * 0.90D));
+            int borderAlpha = Math.Min(82, 18 + (int)Math.Round(transparencyPercent * 0.34D));
+            int highlightAlpha = Math.Min(62, 14 + (int)Math.Round(transparencyPercent * 0.26D));
+
+            GraphicsState state = graphics.Save();
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+
+                using (GraphicsPath platePath = CreateRoundedPath(bounds, radius))
+                using (LinearGradientBrush fillBrush = new LinearGradientBrush(
+                    new PointF(bounds.Left, bounds.Top),
+                    new PointF(bounds.Right, bounds.Bottom),
+                    Color.FromArgb(fillAlpha, 4, 10, 24),
+                    Color.FromArgb(Math.Max(0, fillAlpha - 18), 8, 18, 36)))
+                using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
+                    new PointF(bounds.Left, bounds.Top),
+                    new PointF(bounds.Left, bounds.Bottom),
+                    Color.Transparent,
+                    Color.Transparent))
+                using (Pen borderPen = new Pen(Color.FromArgb(borderAlpha, 132, 192, 235), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                {
+                    ColorBlend blend = new ColorBlend();
+                    blend.Positions = new float[] { 0F, 0.16F, 0.40F, 1F };
+                    blend.Colors = new Color[]
+                    {
+                        Color.FromArgb(highlightAlpha, 210, 232, 255),
+                        Color.FromArgb(Math.Max(0, highlightAlpha - 20), 168, 206, 244),
+                        Color.FromArgb(10, 90, 132, 176),
+                        Color.Transparent
+                    };
+                    highlightBrush.InterpolationColors = blend;
+
+                    graphics.FillPath(fillBrush, platePath);
+                    graphics.FillPath(highlightBrush, platePath);
+                    graphics.DrawPath(borderPen, platePath);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
+        private void DrawReadableTrafficText(
             Graphics graphics,
             string text,
             Font font,
@@ -3823,10 +4133,21 @@ namespace TrafficView
             StringFormat format = allowEllipsis
                 ? TrafficEllipsisTextFormat
                 : TrafficTextStringFormat;
+            int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+            bool ultraTransparent = transparencyPercent >= 100;
+            int glowAlpha = ultraTransparent
+                ? (isPrimaryValue ? 68 : 42)
+                : Math.Min(isPrimaryValue ? 48 : 28, (isPrimaryValue ? 28 : 16) + (int)Math.Round(transparencyPercent * 0.22D));
+            int shadowAlpha = ultraTransparent
+                ? (isPrimaryValue ? 212 : 176)
+                : Math.Min(isPrimaryValue ? 164 : 132, (isPrimaryValue ? 112 : 92) + (int)Math.Round(transparencyPercent * 0.52D));
+            int outlineAlpha = ultraTransparent
+                ? (isPrimaryValue ? 198 : 166)
+                : Math.Min(isPrimaryValue ? 148 : 118, (isPrimaryValue ? 92 : 72) + (int)Math.Round(transparencyPercent * 0.56D));
 
-            using (SolidBrush glowBrush = new SolidBrush(Color.FromArgb(isPrimaryValue ? 28 : 16, color)))
-            using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(isPrimaryValue ? 112 : 92, 4, 10, 24)))
-            using (SolidBrush outlineBrush = new SolidBrush(Color.FromArgb(isPrimaryValue ? 92 : 72, 6, 14, 30)))
+            using (SolidBrush glowBrush = new SolidBrush(Color.FromArgb(glowAlpha, color)))
+            using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(shadowAlpha, 4, 10, 24)))
+            using (SolidBrush outlineBrush = new SolidBrush(Color.FromArgb(outlineAlpha, 6, 14, 30)))
             using (SolidBrush textBrush = new SolidBrush(color))
             {
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
@@ -3908,11 +4229,16 @@ namespace TrafficView
             {
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
+                int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+                bool ultraTransparent = transparencyPercent >= 100;
 
-                using (Pen guidePen = new Pen(Color.FromArgb(90, SparklineGuideColor), Math.Max(1F, this.ScaleFloat(1F))))
+                if (!ultraTransparent)
                 {
-                    graphics.DrawLine(guidePen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
-                    graphics.DrawLine(guidePen, bounds.Left, bounds.Top + 1, bounds.Right, bounds.Top + 1);
+                    using (Pen guidePen = new Pen(Color.FromArgb(90, SparklineGuideColor), Math.Max(1F, this.ScaleFloat(1F))))
+                    {
+                        graphics.DrawLine(guidePen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+                        graphics.DrawLine(guidePen, bounds.Left, bounds.Top + 1, bounds.Right, bounds.Top + 1);
+                    }
                 }
 
                 TrafficHistorySample[] samples = this.GetOverlaySparklineSamples();
@@ -3931,9 +4257,24 @@ namespace TrafficView
                 PointF[] downloadPoints = CreateSparklinePoints(samples, bounds, peak, true);
                 PointF[] uploadPoints = CreateSparklinePoints(samples, bounds, peak, false);
 
-                using (Pen downloadPen = new Pen(Color.FromArgb(220, SparklineDownloadColor), Math.Max(1.15F, this.ScaleFloat(1.15F))))
-                using (Pen uploadPen = new Pen(Color.FromArgb(220, SparklineUploadColor), Math.Max(1.15F, this.ScaleFloat(1.15F))))
+                float lineWidth = Math.Max(
+                    ultraTransparent ? this.ScaleFloat(1.65F) : this.ScaleFloat(1.15F),
+                    ultraTransparent ? 1.65F : 1.15F);
+                int lineAlpha = ultraTransparent ? 255 : 220;
+                int glowAlpha = ultraTransparent ? 132 : 92;
+                float glowWidth = lineWidth + Math.Max(this.ScaleFloat(0.9F), ultraTransparent ? 0.9F : 0.6F);
+
+                using (Pen downloadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineDownloadColor), glowWidth))
+                using (Pen uploadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineUploadColor), glowWidth))
+                using (Pen downloadPen = new Pen(Color.FromArgb(lineAlpha, SparklineDownloadColor), lineWidth))
+                using (Pen uploadPen = new Pen(Color.FromArgb(lineAlpha, SparklineUploadColor), lineWidth))
                 {
+                    downloadGlowPen.LineJoin = LineJoin.Round;
+                    downloadGlowPen.StartCap = LineCap.Round;
+                    downloadGlowPen.EndCap = LineCap.Round;
+                    uploadGlowPen.LineJoin = LineJoin.Round;
+                    uploadGlowPen.StartCap = LineCap.Round;
+                    uploadGlowPen.EndCap = LineCap.Round;
                     downloadPen.LineJoin = LineJoin.Round;
                     downloadPen.StartCap = LineCap.Round;
                     downloadPen.EndCap = LineCap.Round;
@@ -3943,11 +4284,13 @@ namespace TrafficView
 
                     if (downloadPoints.Length >= 2)
                     {
+                        graphics.DrawLines(downloadGlowPen, downloadPoints);
                         graphics.DrawLines(downloadPen, downloadPoints);
                     }
 
                     if (uploadPoints.Length >= 2)
                     {
+                        graphics.DrawLines(uploadGlowPen, uploadPoints);
                         graphics.DrawLines(uploadPen, uploadPoints);
                     }
                 }
@@ -3960,6 +4303,12 @@ namespace TrafficView
 
         private Rectangle GetSparklineBounds(Rectangle meterBounds)
         {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            if (definition != null && definition.SparklineBounds.HasValue)
+            {
+                return this.ScaleSkinRectangle(definition.SparklineBounds.Value);
+            }
+
             int left = this.ScaleValue(6);
             int top = this.ScaleValue(46);
             int width = Math.Max(12, meterBounds.Left - left - this.ScaleValue(4));
@@ -4061,7 +4410,7 @@ namespace TrafficView
                 : filteredPoints.ToArray();
         }
 
-        private static void DrawTrafficText(
+        private void DrawTrafficText(
             Graphics graphics,
             string text,
             Font font,
@@ -4076,9 +4425,16 @@ namespace TrafficView
                 stableBounds,
                 0F,
                 0.5F);
+            int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
+            bool ultraTransparent = transparencyPercent >= 100;
+            int contrastAlpha = ultraTransparent
+                ? (isPrimaryValue ? 164 : 132)
+                : Math.Min(
+                    isPrimaryValue ? 112 : 86,
+                    (isPrimaryValue ? 32 : 20) + (int)Math.Round(transparencyPercent * (isPrimaryValue ? 0.80D : 0.66D)));
 
             using (SolidBrush contrastBrush = new SolidBrush(Color.FromArgb(
-                isPrimaryValue ? 32 : 20,
+                contrastAlpha,
                 BackgroundBlue.R,
                 BackgroundBlue.G,
                 BackgroundBlue.B)))
@@ -4581,6 +4937,7 @@ namespace TrafficView
         {
             dpi = DpiHelper.NormalizeDpi(dpi);
             this.currentDpi = dpi;
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
 
             Font newFormFont = new Font("Segoe UI", this.ScaleFloat(BaseFormFontSize), FontStyle.Regular, GraphicsUnit.Pixel);
             Font newCaptionFont = new Font("Segoe UI", this.ScaleFloat(BaseCaptionFontSize), FontStyle.Bold, GraphicsUnit.Pixel);
@@ -4596,27 +4953,48 @@ namespace TrafficView
 
             this.SuspendLayout();
 
-            Size clientSize = new Size(this.ScaleValue(BaseClientWidth), this.ScaleValue(BaseClientHeight));
+            Size baseClientSize = definition != null && definition.ClientSize.HasValue
+                ? definition.ClientSize.Value
+                : new Size(BaseClientWidth, BaseClientHeight);
+            Size clientSize = this.ScaleSkinSize(baseClientSize);
             this.ClientSize = clientSize;
             this.MinimumSize = clientSize;
             this.MaximumSize = clientSize;
             this.Font = this.formFont;
 
+            Rectangle defaultDownloadCaptionBounds = new Rectangle(BaseCaptionX, BaseDownloadCaptionY, BaseCaptionWidth, BaseCaptionHeight);
+            Rectangle defaultDownloadValueBounds = new Rectangle(BaseDownloadValueX, BaseDownloadValueY, BaseValueWidth, BaseValueHeight);
+            Rectangle defaultUploadCaptionBounds = new Rectangle(BaseCaptionX, BaseUploadCaptionY, BaseCaptionWidth, BaseCaptionHeight);
+            Rectangle defaultUploadValueBounds = new Rectangle(BaseUploadValueX, BaseUploadValueY, BaseValueWidth, BaseValueHeight);
+
+            Rectangle scaledDownloadCaptionBounds = this.GetScaledSkinBounds(
+                defaultDownloadCaptionBounds,
+                definition != null ? definition.DownloadCaptionBounds : (Rectangle?)null);
+            Rectangle scaledDownloadValueBounds = this.GetScaledSkinBounds(
+                defaultDownloadValueBounds,
+                definition != null ? definition.DownloadValueBounds : (Rectangle?)null);
+            Rectangle scaledUploadCaptionBounds = this.GetScaledSkinBounds(
+                defaultUploadCaptionBounds,
+                definition != null ? definition.UploadCaptionBounds : (Rectangle?)null);
+            Rectangle scaledUploadValueBounds = this.GetScaledSkinBounds(
+                defaultUploadValueBounds,
+                definition != null ? definition.UploadValueBounds : (Rectangle?)null);
+
             this.downloadCaptionLabel.Font = this.captionFont;
-            this.downloadCaptionLabel.Location = new Point(this.ScaleValue(BaseCaptionX), this.ScaleValue(BaseDownloadCaptionY));
-            this.downloadCaptionLabel.Size = new Size(this.ScaleValue(BaseCaptionWidth), this.ScaleValue(BaseCaptionHeight));
+            this.downloadCaptionLabel.Location = scaledDownloadCaptionBounds.Location;
+            this.downloadCaptionLabel.Size = scaledDownloadCaptionBounds.Size;
 
             this.downloadValueLabel.Font = this.valueFont;
-            this.downloadValueLabel.Location = new Point(this.ScaleValue(BaseDownloadValueX), this.ScaleValue(BaseDownloadValueY));
-            this.downloadValueLabel.Size = new Size(this.ScaleValue(BaseValueWidth), this.ScaleValue(BaseValueHeight));
+            this.downloadValueLabel.Location = scaledDownloadValueBounds.Location;
+            this.downloadValueLabel.Size = scaledDownloadValueBounds.Size;
 
             this.uploadCaptionLabel.Font = this.captionFont;
-            this.uploadCaptionLabel.Location = new Point(this.ScaleValue(BaseCaptionX), this.ScaleValue(BaseUploadCaptionY));
-            this.uploadCaptionLabel.Size = new Size(this.ScaleValue(BaseCaptionWidth), this.ScaleValue(BaseCaptionHeight));
+            this.uploadCaptionLabel.Location = scaledUploadCaptionBounds.Location;
+            this.uploadCaptionLabel.Size = scaledUploadCaptionBounds.Size;
 
             this.uploadValueLabel.Font = this.valueFont;
-            this.uploadValueLabel.Location = new Point(this.ScaleValue(BaseUploadValueX), this.ScaleValue(BaseUploadValueY));
-            this.uploadValueLabel.Size = new Size(this.ScaleValue(BaseValueWidth), this.ScaleValue(BaseValueHeight));
+            this.uploadValueLabel.Location = scaledUploadValueBounds.Location;
+            this.uploadValueLabel.Size = scaledUploadValueBounds.Size;
 
             this.ResumeLayout(false);
             this.UpdateWindowRegion();
