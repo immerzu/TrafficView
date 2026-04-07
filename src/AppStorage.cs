@@ -61,5 +61,42 @@ namespace TrafficView
 
             return Path.Combine(localApplicationDataPath, SettingsDirectoryName);
         }
+
+        public static bool IsPathWithinBaseDirectory(string path)
+        {
+            string normalizedPath = NormalizePath(path);
+            string normalizedBaseDirectory = NormalizePath(BaseDirectory);
+
+            if (string.IsNullOrWhiteSpace(normalizedPath) || string.IsNullOrWhiteSpace(normalizedBaseDirectory))
+            {
+                return false;
+            }
+
+            if (string.Equals(normalizedPath, normalizedBaseDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return normalizedPath.StartsWith(
+                normalizedBaseDirectory + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
     }
 }

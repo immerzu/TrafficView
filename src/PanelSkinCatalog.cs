@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 
 namespace TrafficView
 {
@@ -234,75 +235,63 @@ namespace TrafficView
                 return false;
             }
 
-            string skinsDirectoryPath = GetSkinsDirectoryPath();
-            string fullSkinsDirectoryPath = string.Empty;
-            string fullSkinDirectoryPath = string.Empty;
-            string deleteStagingDirectoryPath = string.Empty;
-            string stagedSkinDirectoryPath = string.Empty;
-
             try
             {
-                fullSkinsDirectoryPath = Path.GetFullPath(skinsDirectoryPath)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                fullSkinDirectoryPath = Path.GetFullPath(definition.DirectoryPath)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                deleteStagingDirectoryPath = Path.Combine(fullSkinsDirectoryPath, ".delete");
-                stagedSkinDirectoryPath = Path.Combine(
-                    deleteStagingDirectoryPath,
-                    string.Format(
-                        "{0}-{1}",
-                        normalizedId,
-                        Guid.NewGuid().ToString("N")));
-            }
-            catch (Exception ex)
-            {
-                AppLog.WarnOnce(
-                    "skin-delete-path-normalize-failed-" + normalizedId,
-                    string.Format("Skin-Pfad konnte nicht normalisiert werden: '{0}'.", definition.DirectoryPath),
-                    ex);
-                errorMessage = "Der Skin-Pfad konnte nicht verarbeitet werden.";
-                return false;
-            }
-
-            string comparisonPrefix = fullSkinsDirectoryPath + Path.DirectorySeparatorChar;
-            if (!fullSkinDirectoryPath.StartsWith(comparisonPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                errorMessage = "Der Skin liegt ausserhalb des erwarteten Skin-Ordners.";
-                return false;
-            }
-
-            try
-            {
-                if (!Directory.Exists(fullSkinDirectoryPath))
+                List<SkinDeleteTarget> deleteTargets = GetDeleteTargets(normalizedId, definition);
+                if (deleteTargets.Count == 0)
                 {
                     errorMessage = "Der Skin-Ordner ist nicht mehr vorhanden.";
                     return false;
                 }
 
-                Directory.CreateDirectory(deleteStagingDirectoryPath);
-                Directory.Move(fullSkinDirectoryPath, stagedSkinDirectoryPath);
-                Directory.Delete(stagedSkinDirectoryPath, true);
+                List<SkinDeleteTarget> movedTargets = new List<SkinDeleteTarget>();
+
+                try
+                {
+                    for (int i = 0; i < deleteTargets.Count; i++)
+                    {
+                        SkinDeleteTarget target = deleteTargets[i];
+                        Directory.CreateDirectory(target.DeleteStagingDirectoryPath);
+                        Directory.Move(target.FullSkinDirectoryPath, target.StagedSkinDirectoryPath);
+                        movedTargets.Add(target);
+                    }
+
+                    for (int i = 0; i < movedTargets.Count; i++)
+                    {
+                        Directory.Delete(movedTargets[i].StagedSkinDirectoryPath, true);
+                    }
+                }
+                catch
+                {
+                    for (int i = movedTargets.Count - 1; i >= 0; i--)
+                    {
+                        SkinDeleteTarget target = movedTargets[i];
+
+                        try
+                        {
+                            if (!Directory.Exists(target.FullSkinDirectoryPath) &&
+                                Directory.Exists(target.StagedSkinDirectoryPath))
+                            {
+                                Directory.Move(target.StagedSkinDirectoryPath, target.FullSkinDirectoryPath);
+                            }
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            AppLog.WarnOnce(
+                                "skin-delete-rollback-failed-" + normalizedId + "-" + i.ToString(),
+                                string.Format("Rollback fuer Skin '{0}' ist fehlgeschlagen.", normalizedId),
+                                rollbackEx);
+                        }
+                    }
+
+                    throw;
+                }
+
                 Reload();
                 return true;
             }
             catch (Exception ex)
             {
-                try
-                {
-                    if (!Directory.Exists(fullSkinDirectoryPath) &&
-                        Directory.Exists(stagedSkinDirectoryPath))
-                    {
-                        Directory.Move(stagedSkinDirectoryPath, fullSkinDirectoryPath);
-                    }
-                }
-                catch (Exception rollbackEx)
-                {
-                    AppLog.WarnOnce(
-                        "skin-delete-rollback-failed-" + normalizedId,
-                        string.Format("Rollback fuer Skin '{0}' ist fehlgeschlagen.", normalizedId),
-                        rollbackEx);
-                }
-
                 AppLog.WarnOnce(
                     "skin-delete-failed-" + normalizedId,
                     string.Format("Skin '{0}' konnte nicht geloescht werden.", normalizedId),
@@ -319,6 +308,16 @@ namespace TrafficView
             if (string.IsNullOrWhiteSpace(skinDirectoryPath))
             {
                 errorMessage = "Der Skin-Ordner ist leer oder ungueltig.";
+                return false;
+            }
+
+            try
+            {
+                EnsurePortableSkinPathAllowed(skinDirectoryPath, "Skin-Verzeichnis");
+            }
+            catch (InvalidOperationException ex)
+            {
+                errorMessage = ex.Message;
                 return false;
             }
 
@@ -476,6 +475,8 @@ namespace TrafficView
             string skinsDirectoryPath = GetSkinsDirectoryPath();
             List<PanelSkinDefinition> definitions = new List<PanelSkinDefinition>();
 
+            EnsurePortableSkinPathAllowed(skinsDirectoryPath, "Skin-Basisverzeichnis");
+
             if (Directory.Exists(skinsDirectoryPath))
             {
                 CleanupDeleteStagingDirectory(skinsDirectoryPath);
@@ -549,6 +550,8 @@ namespace TrafficView
                 return;
             }
 
+            EnsurePortableSkinPathAllowed(skinsDirectoryPath, "Skin-Verzeichnis");
+
             string deleteStagingDirectoryPath = Path.Combine(skinsDirectoryPath, DeleteStagingDirectoryName);
             if (!Directory.Exists(deleteStagingDirectoryPath))
             {
@@ -577,6 +580,8 @@ namespace TrafficView
 
                 try
                 {
+                    EnsurePortableSkinPathAllowed(stagedDirectoryPath, "temporärer Skin-Löschrest");
+
                     if (Directory.Exists(stagedDirectoryPath))
                     {
                         Directory.Delete(stagedDirectoryPath, true);
@@ -618,6 +623,8 @@ namespace TrafficView
             {
                 return null;
             }
+
+            EnsurePortableSkinPathAllowed(skinDirectoryPath, "Skin-Verzeichnis");
 
             string validationError;
             if (!TryValidateSkinDirectory(skinDirectoryPath, out validationError))
@@ -1062,6 +1069,172 @@ namespace TrafficView
             }
 
             return false;
+        }
+
+        private static List<SkinDeleteTarget> GetDeleteTargets(string normalizedId, PanelSkinDefinition definition)
+        {
+            List<SkinDeleteTarget> targets = new List<SkinDeleteTarget>();
+            string skinDirectoryName = string.Empty;
+
+            try
+            {
+                string runtimeSkinsDirectoryPath = Path.GetFullPath(GetSkinsDirectoryPath())
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string runtimeSkinDirectoryPath = Path.GetFullPath(definition.DirectoryPath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                skinDirectoryName = Path.GetFileName(runtimeSkinDirectoryPath);
+
+                if (Directory.Exists(runtimeSkinDirectoryPath))
+                {
+                    targets.Add(CreateDeleteTarget(runtimeSkinsDirectoryPath, runtimeSkinDirectoryPath, normalizedId));
+                }
+
+                string developmentSkinsDirectoryPath = TryGetDevelopmentSkinsDirectoryPath(runtimeSkinsDirectoryPath);
+                if (!string.IsNullOrWhiteSpace(developmentSkinsDirectoryPath))
+                {
+                    string developmentSkinDirectoryPath = Path.Combine(developmentSkinsDirectoryPath, skinDirectoryName);
+                    string normalizedDevelopmentSkinDirectoryPath = Path.GetFullPath(developmentSkinDirectoryPath)
+                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+                    if (!targets.Any(
+                        delegate(SkinDeleteTarget target)
+                        {
+                            return string.Equals(
+                                target.FullSkinDirectoryPath,
+                                normalizedDevelopmentSkinDirectoryPath,
+                                StringComparison.OrdinalIgnoreCase);
+                        }) &&
+                        Directory.Exists(normalizedDevelopmentSkinDirectoryPath))
+                    {
+                        targets.Add(CreateDeleteTarget(
+                            developmentSkinsDirectoryPath,
+                            normalizedDevelopmentSkinDirectoryPath,
+                            normalizedId));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "skin-delete-path-normalize-failed-" + normalizedId,
+                    string.Format("Skin-Pfad konnte nicht normalisiert werden: '{0}'.", definition.DirectoryPath),
+                    ex);
+                return new List<SkinDeleteTarget>();
+            }
+
+            return targets;
+        }
+
+        private static SkinDeleteTarget CreateDeleteTarget(string skinsDirectoryPath, string skinDirectoryPath, string normalizedId)
+        {
+            string fullSkinsDirectoryPath = Path.GetFullPath(skinsDirectoryPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string fullSkinDirectoryPath = Path.GetFullPath(skinDirectoryPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string comparisonPrefix = fullSkinsDirectoryPath + Path.DirectorySeparatorChar;
+
+            EnsurePortableSkinPathAllowed(fullSkinsDirectoryPath, "Skin-Basisverzeichnis");
+            EnsurePortableSkinPathAllowed(fullSkinDirectoryPath, "Skin-Verzeichnis");
+
+            if (!fullSkinDirectoryPath.StartsWith(comparisonPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Der Skin liegt ausserhalb des erwarteten Skin-Ordners.");
+            }
+
+            string deleteStagingDirectoryPath = Path.Combine(fullSkinsDirectoryPath, DeleteStagingDirectoryName);
+            string stagedSkinDirectoryPath = Path.Combine(
+                deleteStagingDirectoryPath,
+                string.Format(
+                    "{0}-{1}",
+                    normalizedId,
+                    Guid.NewGuid().ToString("N")));
+
+            EnsurePortableSkinPathAllowed(deleteStagingDirectoryPath, "Skin-Staging-Verzeichnis");
+            EnsurePortableSkinPathAllowed(stagedSkinDirectoryPath, "temporäres Skin-Staging-Verzeichnis");
+
+            return new SkinDeleteTarget(
+                fullSkinsDirectoryPath,
+                fullSkinDirectoryPath,
+                deleteStagingDirectoryPath,
+                stagedSkinDirectoryPath);
+        }
+
+        private static string TryGetDevelopmentSkinsDirectoryPath(string runtimeSkinsDirectoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(runtimeSkinsDirectoryPath))
+            {
+                return string.Empty;
+            }
+
+            if (AppStorage.IsPortableMode)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                DirectoryInfo runtimeSkinsDirectory = new DirectoryInfo(runtimeSkinsDirectoryPath);
+                DirectoryInfo runtimeBaseDirectory = runtimeSkinsDirectory.Parent;
+                if (runtimeBaseDirectory == null ||
+                    !string.Equals(runtimeBaseDirectory.Name, "dist", StringComparison.OrdinalIgnoreCase))
+                {
+                    return string.Empty;
+                }
+
+                DirectoryInfo projectBaseDirectory = runtimeBaseDirectory.Parent;
+                if (projectBaseDirectory == null)
+                {
+                    return string.Empty;
+                }
+
+                string developmentSkinsDirectoryPath = Path.Combine(projectBaseDirectory.FullName, "Skins");
+                return Directory.Exists(developmentSkinsDirectoryPath)
+                    ? developmentSkinsDirectoryPath
+                    : string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static void EnsurePortableSkinPathAllowed(string path, string pathLabel)
+        {
+            if (!AppStorage.IsPortableMode)
+            {
+                return;
+            }
+
+            if (AppStorage.IsPathWithinBaseDirectory(path))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                string.Format(
+                    "Der Pfad fuer {0} liegt ausserhalb des Portable-Verzeichnisses: '{1}'.",
+                    string.IsNullOrWhiteSpace(pathLabel) ? "Skin-Dateien" : pathLabel,
+                    path ?? string.Empty));
+        }
+
+        private struct SkinDeleteTarget
+        {
+            public SkinDeleteTarget(
+                string fullSkinsDirectoryPath,
+                string fullSkinDirectoryPath,
+                string deleteStagingDirectoryPath,
+                string stagedSkinDirectoryPath)
+            {
+                this.FullSkinsDirectoryPath = fullSkinsDirectoryPath;
+                this.FullSkinDirectoryPath = fullSkinDirectoryPath;
+                this.DeleteStagingDirectoryPath = deleteStagingDirectoryPath;
+                this.StagedSkinDirectoryPath = stagedSkinDirectoryPath;
+            }
+
+            public readonly string FullSkinsDirectoryPath;
+            public readonly string FullSkinDirectoryPath;
+            public readonly string DeleteStagingDirectoryPath;
+            public readonly string StagedSkinDirectoryPath;
         }
     }
 }

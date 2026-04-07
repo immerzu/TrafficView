@@ -5,8 +5,11 @@ $sourceDir = Join-Path $root "src"
 $outputDir = Join-Path $root "dist"
 $outputFile = Join-Path $outputDir "TrafficView.exe"
 $settingsOutputFile = Join-Path $outputDir "TrafficView.settings.ini"
+$settingsBackupOutputFile = Join-Path $outputDir "TrafficView.settings.ini_"
 $usageOutputFile = Join-Path $outputDir "Verbrauch.txt"
+$usageBackupOutputFile = Join-Path $outputDir "Verbrauch.txt_"
 $usageArchiveOutputFile = Join-Path $outputDir "Verbrauch.archiv.txt"
+$usageArchiveBackupOutputFile = Join-Path $outputDir "Verbrauch.archiv.txt_"
 $manifestFile = Join-Path $root "TrafficView.manifest"
 $iconFile = Join-Path $root "TrafficView.ico"
 $configSourceFile = Join-Path $root "TrafficView.exe.config"
@@ -317,12 +320,24 @@ if (Test-Path $settingsOutputFile) {
     Remove-Item -LiteralPath $settingsOutputFile -Force
 }
 
+if (Test-Path $settingsBackupOutputFile) {
+    Remove-Item -LiteralPath $settingsBackupOutputFile -Force
+}
+
 if (Test-Path $usageOutputFile) {
     Remove-Item -LiteralPath $usageOutputFile -Force
 }
 
+if (Test-Path $usageBackupOutputFile) {
+    Remove-Item -LiteralPath $usageBackupOutputFile -Force
+}
+
 if (Test-Path $usageArchiveOutputFile) {
     Remove-Item -LiteralPath $usageArchiveOutputFile -Force
+}
+
+if (Test-Path $usageArchiveBackupOutputFile) {
+    Remove-Item -LiteralPath $usageArchiveBackupOutputFile -Force
 }
 
 if (Test-Path $skinsOutputDirectory) {

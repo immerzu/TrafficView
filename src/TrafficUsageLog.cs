@@ -101,7 +101,7 @@ namespace TrafficView
             return true;
         }
 
-        public void FlushPending()
+        public bool FlushPending()
         {
             this.RunMaintenanceIfNeeded();
 
@@ -110,7 +110,7 @@ namespace TrafficView
             {
                 if (this.pendingLines.Count == 0)
                 {
-                    return;
+                    return true;
                 }
 
                 linesToWrite = this.pendingLines.ToArray();
@@ -120,6 +120,7 @@ namespace TrafficView
 
             try
             {
+                EnsureUsageDirectoryExists();
                 File.AppendAllLines(path, linesToWrite);
 
                 lock (this.syncRoot)
@@ -135,6 +136,7 @@ namespace TrafficView
                 }
 
                 this.RunMaintenanceIfNeeded();
+                return true;
             }
             catch (Exception ex)
             {
@@ -142,6 +144,7 @@ namespace TrafficView
                     "traffic-usage-flush-failed",
                     string.Format("Verbrauchsdaten konnten nicht nach '{0}' geschrieben werden.", path),
                     ex);
+                return false;
             }
         }
 
@@ -301,6 +304,17 @@ namespace TrafficView
                 return false;
             }
 
+            if (ArePathsEqual(targetPath, GetUsageFilePath()) ||
+                ArePathsEqual(targetPath, GetUsageArchiveFilePath()))
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-export-target-conflicts-with-usage-storage",
+                    string.Format(
+                        "Verbrauchsdaten-Export nach '{0}' wurde blockiert, weil das Ziel mit einer internen Verbrauchsdatei kollidiert.",
+                        targetPath));
+                return false;
+            }
+
             string adapterKey = GetAdapterKey(settings);
             List<string> lines = new List<string>();
             lines.Add("TimestampUtc;AdapterId;AdapterName;DownloadBytes;UploadBytes");
@@ -358,22 +372,17 @@ namespace TrafficView
 
         public static string GetUsageFilePath()
         {
-            return Path.Combine(AppStorage.BaseDirectory, UsageFileName);
+            return Path.Combine(GetUsageBaseDirectory(), UsageFileName);
         }
 
         public static string GetUsageArchiveFilePath()
         {
-            return Path.Combine(AppStorage.BaseDirectory, UsageArchiveFileName);
+            return Path.Combine(GetUsageBaseDirectory(), UsageArchiveFileName);
         }
 
         public static string GetAdapterKey(MonitorSettings settings)
         {
-            if (settings == null || string.IsNullOrWhiteSpace(settings.AdapterId))
-            {
-                return "automatic";
-            }
-
-            return settings.AdapterId.Trim();
+            return NetworkSnapshot.ResolveAdapterKey(settings);
         }
 
         private static bool TryParseRecord(string line, out TrafficUsageRecord record)
@@ -452,16 +461,18 @@ namespace TrafficView
                 return;
             }
 
-            this.lastMaintenanceUtc = nowUtc;
-            this.RotateActiveUsageFile();
+            if (this.RotateActiveUsageFile())
+            {
+                this.lastMaintenanceUtc = nowUtc;
+            }
         }
 
-        private void RotateActiveUsageFile()
+        private bool RotateActiveUsageFile()
         {
             string activePath = GetUsageFilePath();
             if (!File.Exists(activePath))
             {
-                return;
+                return true;
             }
 
             DateTime retentionStartLocal = GetRetentionStartLocal(DateTime.Now);
@@ -491,11 +502,47 @@ namespace TrafficView
 
                 if (archivedLines.Count == 0)
                 {
-                    return;
+                    return true;
                 }
 
-                File.AppendAllLines(GetUsageArchiveFilePath(), archivedLines);
-                File.WriteAllLines(activePath, retainedLines);
+                EnsureUsageDirectoryExists();
+                string archivePath = GetUsageArchiveFilePath();
+                string activeBackupPath = CreateDeleteBackupPath(activePath);
+                string archiveBackupPath = CreateDeleteBackupPath(archivePath);
+                bool archiveExisted = File.Exists(archivePath);
+
+                File.Copy(activePath, activeBackupPath, true);
+                if (archiveExisted)
+                {
+                    File.Copy(archivePath, archiveBackupPath, true);
+                }
+
+                try
+                {
+                    File.AppendAllLines(archivePath, archivedLines);
+                    File.WriteAllLines(activePath, retainedLines);
+                    return true;
+                }
+                catch
+                {
+                    File.Copy(activeBackupPath, activePath, true);
+
+                    if (archiveExisted)
+                    {
+                        File.Copy(archiveBackupPath, archivePath, true);
+                    }
+                    else
+                    {
+                        DeleteIfExists(archivePath);
+                    }
+
+                    throw;
+                }
+                finally
+                {
+                    DeleteIfExists(activeBackupPath);
+                    DeleteIfExists(archiveBackupPath);
+                }
             }
             catch (Exception ex)
             {
@@ -503,6 +550,7 @@ namespace TrafficView
                     "traffic-usage-maintenance-failed",
                     string.Format("Verbrauchslog konnte nicht rotiert werden. Datei='{0}'.", activePath),
                     ex);
+                return false;
             }
         }
 
@@ -596,18 +644,59 @@ namespace TrafficView
             return currentMonthStart.AddDays(-7);
         }
 
-        private static void DeleteIfExists(string path)
+        private static string GetUsageBaseDirectory()
         {
-            if (!File.Exists(path))
+            string path = AppStorage.GetSettingsDirectoryPath();
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return AppStorage.BaseDirectory;
+            }
+
+            return path;
+        }
+
+        private static void EnsureUsageDirectoryExists()
+        {
+            string directoryPath = GetUsageBaseDirectory();
+            if (string.IsNullOrWhiteSpace(directoryPath))
             {
                 return;
             }
 
-            File.Delete(path);
+            EnsurePortablePathAllowed(directoryPath, "Verbrauchsverzeichnis");
+
+            Directory.CreateDirectory(directoryPath);
+        }
+
+        private static void DeleteIfExists(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-delete-if-exists-failed-" + path,
+                    string.Format("Datei konnte nicht entfernt werden: '{0}'.", path),
+                    ex);
+            }
         }
 
         private static string CreateDeleteBackupPath(string originalPath)
         {
+            EnsurePortablePathAllowed(originalPath, "Verbrauchsdatei");
+
             return string.Format(
                 CultureInfo.InvariantCulture,
                 "{0}.{1}.delete",
@@ -615,19 +704,94 @@ namespace TrafficView
                 Guid.NewGuid().ToString("N"));
         }
 
+        private static void EnsurePortablePathAllowed(string path, string pathLabel)
+        {
+            if (!AppStorage.IsPortableMode)
+            {
+                return;
+            }
+
+            if (AppStorage.IsPathWithinBaseDirectory(path))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0} liegt ausserhalb des Portable-Verzeichnisses: '{1}'.",
+                    string.IsNullOrWhiteSpace(pathLabel) ? "Pfad" : pathLabel,
+                    path ?? string.Empty));
+        }
+
+        private static bool ArePathsEqual(string left, string right)
+        {
+            string normalizedLeft = NormalizePathForComparison(left);
+            string normalizedRight = NormalizePathForComparison(right);
+
+            if (normalizedLeft == null || normalizedRight == null)
+            {
+                return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizePathForComparison(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+            catch (NotSupportedException)
+            {
+                return null;
+            }
+            catch (PathTooLongException)
+            {
+                return null;
+            }
+        }
+
         private static void RestoreDeleteBackup(string backupPath, string originalPath, bool wasMoved)
         {
-            if (!wasMoved || !File.Exists(backupPath))
+            if (!wasMoved || string.IsNullOrWhiteSpace(backupPath) || string.IsNullOrWhiteSpace(originalPath))
             {
                 return;
             }
 
-            if (File.Exists(originalPath))
+            try
             {
-                return;
-            }
+                if (!File.Exists(backupPath))
+                {
+                    return;
+                }
 
-            File.Move(backupPath, originalPath);
+                if (File.Exists(originalPath))
+                {
+                    return;
+                }
+
+                File.Move(backupPath, originalPath);
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-restore-delete-backup-failed-" + originalPath,
+                    string.Format(
+                        "Loesch-Backup konnte nicht nach '{0}' wiederhergestellt werden.",
+                        originalPath),
+                    ex);
+            }
         }
 
         private static DateTime GetStartOfWeek(DateTime dateTime)

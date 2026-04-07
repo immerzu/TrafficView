@@ -67,6 +67,8 @@ namespace TrafficView
                     return;
                 }
 
+                EnsurePortableLogPathAllowed(logPath);
+
                 lock (SyncRoot)
                 {
                     string directory = Path.GetDirectoryName(logPath);
@@ -132,13 +134,20 @@ namespace TrafficView
         {
             string baseDirectory;
 
-            try
+            if (AppStorage.IsPortableMode)
             {
-                baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                baseDirectory = AppStorage.BaseDirectory;
             }
-            catch
+            else
             {
-                baseDirectory = string.Empty;
+                try
+                {
+                    baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                }
+                catch
+                {
+                    baseDirectory = string.Empty;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(baseDirectory))
@@ -153,6 +162,8 @@ namespace TrafficView
         {
             try
             {
+                EnsurePortableLogPathAllowed(logPath);
+
                 if (!File.Exists(logPath))
                 {
                     return;
@@ -165,6 +176,7 @@ namespace TrafficView
                 }
 
                 string backupPath = logPath + ".1";
+                EnsurePortableLogPathAllowed(backupPath);
                 if (File.Exists(backupPath))
                 {
                     File.Delete(backupPath);
@@ -175,6 +187,24 @@ namespace TrafficView
             catch
             {
             }
+        }
+
+        private static void EnsurePortableLogPathAllowed(string path)
+        {
+            if (!AppStorage.IsPortableMode)
+            {
+                return;
+            }
+
+            if (AppStorage.IsPathWithinBaseDirectory(path))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                string.Format(
+                    "Der Log-Pfad liegt ausserhalb des Portable-Verzeichnisses: '{0}'.",
+                    path ?? string.Empty));
         }
     }
 }

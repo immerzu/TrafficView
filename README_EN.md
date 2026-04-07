@@ -21,6 +21,13 @@ On the first start, the program opens a language selection window first. After t
 - In a development or final project folder: run `dist\\TrafficView.exe`
 - In a delivery folder: run `TrafficView.exe`
 
+## Release
+
+- The active release format is the portable ZIP package only.
+- Create it via `portable-release.ps1`
+- Output goes to `..\\Ausgabe\\TrafficView.Portable.<Version>.zip`
+- An installer is not part of the active release workflow.
+
 ## Operation
 
 - Left click the tray icon: show or hide the display

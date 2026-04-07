@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -15,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.14.0")]
-[assembly: AssemblyFileVersion("1.4.14.0")]
+[assembly: AssemblyVersion("1.4.17.0")]
+[assembly: AssemblyFileVersion("1.4.17.0")]
 
 namespace TrafficView
 {
@@ -633,9 +634,12 @@ namespace TrafficView
                 return;
             }
 
-            this.settings = this.settings.WithLanguageCode(languageCode);
+            this.settings = this.settings
+                .WithLanguageCode(languageCode)
+                .WithInitialLanguagePromptHandled(true);
             this.settings.Save();
             UiLanguage.SetLanguage(this.settings.LanguageCode);
+            this.popupForm.ApplySettings(this.settings);
             this.UpdateMenuState();
         }
 
@@ -655,9 +659,8 @@ namespace TrafficView
 
         private void DeleteSkinItem_Click(object sender, EventArgs e)
         {
-            if (this.popupForm != null && this.popupForm.IsHandleCreated && !this.popupForm.IsDisposed)
+            if (this.TryBeginInvokePopupForm(new Action(this.ConfirmAndDeleteCurrentSkin)))
             {
-                this.popupForm.BeginInvoke(new Action(this.ConfirmAndDeleteCurrentSkin));
                 return;
             }
 
@@ -693,6 +696,7 @@ namespace TrafficView
 
         private void ConfirmAndDeleteCurrentSkinCore(PanelSkinDefinition currentSkin)
         {
+            string originalSkinId = currentSkin.Id;
             IWin32Window owner = this.popupForm.Visible && !this.popupForm.IsDisposed
                 ? (IWin32Window)this.popupForm
                 : null;
@@ -703,7 +707,7 @@ namespace TrafficView
                     owner,
                     UiLanguage.Get(
                         "Menu.DeleteSkinProtected",
-                        "Der Standardskin 'Normal' kann nicht geloescht werden."),
+                        "Der Standardskin 'Normal' kann nicht gelöscht werden."),
                     UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -719,7 +723,7 @@ namespace TrafficView
                     owner,
                     UiLanguage.Get(
                         "Menu.DeleteSkinLastBlocked",
-                        "Der letzte verbliebene Skin kann nicht geloescht werden."),
+                        "Der letzte verbliebene Skin kann nicht gelöscht werden."),
                     UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -731,7 +735,7 @@ namespace TrafficView
                 owner,
                 UiLanguage.Format(
                     "Menu.DeleteSkinConfirm",
-                    "Soll der aktuelle Skin '{0}' wirklich geloescht werden?",
+                    "Soll der aktuelle Skin '{0}' wirklich gelöscht werden?",
                     currentSkinName),
                 UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
                 MessageBoxButtons.YesNo,
@@ -757,15 +761,23 @@ namespace TrafficView
             string errorMessage;
             if (!PanelSkinCatalog.TryDeleteSkin(currentSkin.Id, out errorMessage))
             {
+                string restoredSkinId = fallbackSkinId;
+                PanelSkinDefinition restoredSkin = PanelSkinCatalog.GetSkinById(originalSkinId);
+                if (restoredSkin != null &&
+                    string.Equals(restoredSkin.Id, originalSkinId, StringComparison.OrdinalIgnoreCase))
+                {
+                    restoredSkinId = restoredSkin.Id;
+                }
+
                 ShowMessageBox(
                     owner,
                     string.IsNullOrWhiteSpace(errorMessage)
-                        ? UiLanguage.Get("Menu.DeleteSkinFailed", "Der Skin konnte nicht geloescht werden.")
+                        ? UiLanguage.Get("Menu.DeleteSkinFailed", "Der Skin konnte nicht gelöscht werden.")
                         : errorMessage,
                     UiLanguage.Get("Menu.DeleteSkin", "Skin löschen"),
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
-                this.settings = this.settings.WithPanelSkinId(fallbackSkinId);
+                this.settings = this.settings.WithPanelSkinId(restoredSkinId);
                 this.settings.Save();
                 this.popupForm.ApplySettings(this.settings);
                 this.RebuildPanelSkinMenuItems();
@@ -869,8 +881,10 @@ namespace TrafficView
                 this.lastTrafficUsageFlushUtc == DateTime.MinValue ||
                 (DateTime.UtcNow - this.lastTrafficUsageFlushUtc).TotalSeconds >= 15D)
             {
-                this.trafficUsageLog.FlushPending();
-                this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+                if (this.trafficUsageLog.FlushPending())
+                {
+                    this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+                }
             }
         }
 
@@ -914,11 +928,13 @@ namespace TrafficView
 
         private void ShowCalibrationDialog(bool keepPopupVisible = false)
         {
-            bool popupWasVisible = this.popupForm.Visible;
-            Point popupRestoreLocation = this.popupForm.Location;
+            bool popupAvailable = this.HasUsablePopupForm();
+            bool popupWasVisible = popupAvailable && this.popupForm.Visible;
+            Point popupRestoreLocation = popupAvailable ? this.popupForm.Location : Point.Empty;
             bool shouldRestorePopup = popupWasVisible || keepPopupVisible;
             bool pausePopupTopMost = popupWasVisible && keepPopupVisible;
             MonitorSettings selectedSettings = null;
+            bool calibrationConfirmed = false;
 
             if (popupWasVisible && !keepPopupVisible)
             {
@@ -934,15 +950,22 @@ namespace TrafficView
             {
                 using (CalibrationForm calibrationForm = new CalibrationForm(this.settings))
                 {
-                    if (calibrationForm.ShowDialog() == DialogResult.OK && calibrationForm.SelectedSettings != null)
+                    calibrationForm.ShowDialog();
+
+                    if (calibrationForm.SelectedSettings != null)
                     {
                         selectedSettings = calibrationForm.SelectedSettings.Clone();
+                        calibrationConfirmed = true;
+                    }
+                    else if (calibrationForm.SavedAdapterSettings != null)
+                    {
+                        selectedSettings = calibrationForm.SavedAdapterSettings.Clone();
                     }
                 }
             }
             finally
             {
-                if (pausePopupTopMost)
+                if (pausePopupTopMost && this.HasUsablePopupForm())
                 {
                     this.popupForm.ResumeTopMostEnforcement(false);
                 }
@@ -951,9 +974,15 @@ namespace TrafficView
             if (selectedSettings != null)
             {
                 this.settings = selectedSettings;
-                this.settings = this.settings.WithInitialCalibrationPromptHandled(true);
+                if (calibrationConfirmed)
+                {
+                    this.settings = this.settings.WithInitialCalibrationPromptHandled(true);
+                }
                 this.settings.Save();
-                this.popupForm.ApplySettings(this.settings);
+                if (this.HasUsablePopupForm())
+                {
+                    this.popupForm.ApplySettings(this.settings);
+                }
                 this.UpdateMenuState();
             }
 
@@ -965,9 +994,21 @@ namespace TrafficView
 
         private void BringPopupToFront(Point? restoreLocation = null)
         {
+            if (!this.HasUsablePopupForm())
+            {
+                return;
+            }
+
             this.ShowPopupAtPreferredOrSavedLocation(restoreLocation, false);
 
-            this.popupForm.BeginInvoke(new Action(this.popupForm.BringToFrontOnly));
+            if (this.TryBeginInvokePopupForm(new Action(this.popupForm.BringToFrontOnly)))
+            {
+            }
+            else if (this.HasUsablePopupForm())
+            {
+                this.popupForm.BringToFrontOnly();
+            }
+
             this.SchedulePopupFrontRefresh(180, restoreLocation);
             this.SchedulePopupFrontRefresh(420, restoreLocation);
         }
@@ -983,7 +1024,7 @@ namespace TrafficView
                 timer.Stop();
                 timer.Dispose();
 
-                if (this.popupForm.IsDisposed)
+                if (!this.HasUsablePopupForm())
                 {
                     return;
                 }
@@ -996,6 +1037,11 @@ namespace TrafficView
 
         private void ShowPopupAtPreferredOrSavedLocation(Point? restoreLocation, bool activateWindow)
         {
+            if (!this.HasUsablePopupForm())
+            {
+                return;
+            }
+
             Point? effectiveLocation = restoreLocation;
             if (!effectiveLocation.HasValue &&
                 this.settings.HasSavedPopupLocation)
@@ -1006,6 +1052,13 @@ namespace TrafficView
             if (effectiveLocation.HasValue)
             {
                 this.popupForm.ShowAtLocation(effectiveLocation.Value, activateWindow);
+                if (this.settings.HasSavedPopupLocation &&
+                    this.popupForm.Location != this.settings.PopupLocation)
+                {
+                    this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                    this.settings.Save();
+                }
+
                 return;
             }
 
@@ -1014,8 +1067,16 @@ namespace TrafficView
 
         private void PromptInitialCalibrationOnFirstStart()
         {
-            if (this.settings.InitialCalibrationPromptHandled)
+            if (this.settings.InitialCalibrationPromptHandled &&
+                this.settings.HasCalibrationData())
             {
+                return;
+            }
+
+            if (this.settings.HasCalibrationData())
+            {
+                this.settings = this.settings.WithInitialCalibrationPromptHandled(true);
+                this.settings.Save();
                 return;
             }
 
@@ -1024,8 +1085,16 @@ namespace TrafficView
 
         private void PromptInitialLanguageOnFirstStart()
         {
-            if (this.settings.InitialLanguagePromptHandled)
+            bool hasStoredLanguageSetting = MonitorSettings.HasStoredLanguageSetting();
+            if (this.settings.InitialLanguagePromptHandled && hasStoredLanguageSetting)
             {
+                return;
+            }
+
+            if (hasStoredLanguageSetting)
+            {
+                this.settings = this.settings.WithInitialLanguagePromptHandled(true);
+                this.settings.Save();
                 return;
             }
 
@@ -1038,9 +1107,44 @@ namespace TrafficView
                         .WithInitialLanguagePromptHandled(true);
                     this.settings.Save();
                     UiLanguage.SetLanguage(this.settings.LanguageCode);
-                    this.popupForm.ApplySettings(this.settings);
+                    if (this.HasUsablePopupForm())
+                    {
+                        this.popupForm.ApplySettings(this.settings);
+                    }
                     this.UpdateMenuState();
                 }
+            }
+        }
+
+        private bool HasUsablePopupForm()
+        {
+            return this.popupForm != null && !this.popupForm.IsDisposed;
+        }
+
+        private bool CanInvokePopupForm()
+        {
+            return this.HasUsablePopupForm() && this.popupForm.IsHandleCreated;
+        }
+
+        private bool TryBeginInvokePopupForm(Action action)
+        {
+            if (action == null || !this.CanInvokePopupForm())
+            {
+                return false;
+            }
+
+            try
+            {
+                this.popupForm.BeginInvoke(action);
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
             }
         }
 
@@ -1078,7 +1182,7 @@ namespace TrafficView
                 this.settings.TransparencyPercent);
             this.sizeItem.Text = UiLanguage.Format(
                 "Menu.SizeFormat",
-                "Groesse ({0} %)",
+                "Göße ({0} %)",
                 this.settings.PopupScalePercent);
             this.skinItem.Text = UiLanguage.Get(
                 "Menu.Skins",
@@ -1131,7 +1235,7 @@ namespace TrafficView
                 {
                     this.calibrationStatusItem.Text = UiLanguage.Get(
                         "Menu.CalibrationStatusAdapterMissing",
-                        "Kalibrationsstatus: Adapter nicht gefunden");
+                        "Kalibrationsstatus: Internetverbindung nicht gefunden");
                     return;
                 }
 
@@ -1139,7 +1243,7 @@ namespace TrafficView
                 {
                     this.calibrationStatusItem.Text = UiLanguage.Get(
                         "Menu.CalibrationStatusAdapterInactive",
-                        "Kalibrationsstatus: Adapter inaktiv");
+                        "Kalibrationsstatus: Internetverbindung inaktiv");
                     return;
                 }
 
@@ -1148,14 +1252,14 @@ namespace TrafficView
                         ? "Menu.CalibrationStatusSaved"
                         : "Menu.CalibrationStatusAdapterSelected",
                     this.settings.HasCalibrationData()
-                        ? "Kalibrationsstatus: gespeichert"
-                        : "Kalibrationsstatus: Adapter gewaehlt");
+                        ? "Kalibrationsstatus: abgeschlossen"
+                        : "Kalibrationsstatus: Internetverbindung gewählt");
                 return;
             }
 
             this.calibrationStatusItem.Text = UiLanguage.Get(
                 "Menu.CalibrationStatusOpen",
-                "Kalibrationsstatus: offen");
+                "Kalibrationsstatus: nicht abgeschlossen");
         }
 
         private string GetPanelSkinDisplayName(string panelSkinId)
@@ -1181,7 +1285,7 @@ namespace TrafficView
             {
                 displayName += UiLanguage.Get(
                     "Menu.SkinProtectedSuffix",
-                    " (nicht loeschbar)");
+                    " (nicht löschbar)");
             }
 
             return displayName;
@@ -1226,8 +1330,12 @@ namespace TrafficView
 
         private UsageWindowData CreateUsageWindowData()
         {
-            this.trafficUsageLog.FlushPending();
-            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            if (this.trafficUsageLog.PendingRecordCount > 0 &&
+                this.trafficUsageLog.FlushPending())
+            {
+                this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            }
+
             TrafficUsageSummaries summaries = this.trafficUsageLog.GetSummaries(this.settings);
 
             return new UsageWindowData(
@@ -1240,15 +1348,87 @@ namespace TrafficView
         private bool ClearUsageData()
         {
             bool cleared = this.trafficUsageLog.ClearAll();
-            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            if (cleared)
+            {
+                this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
+            }
+
             return cleared;
         }
 
         private bool ExportUsageData(string targetPath)
         {
-            this.trafficUsageLog.FlushPending();
-            this.lastTrafficUsageFlushUtc = DateTime.UtcNow;
-            return this.trafficUsageLog.ExportCsv(this.settings, this.settings.GetAdapterDisplayName(), targetPath);
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                UsageWindowData usageWindowData = this.CreateUsageWindowData();
+                DateTime exportTimestampLocal = DateTime.Now;
+                List<string> csvLines = new List<string>();
+                string adapterDisplayName = usageWindowData.AdapterDisplayName ?? string.Empty;
+
+                csvLines.Add(string.Join(";",
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.AdapterCaption", "Internetverbindung:").TrimEnd(':')),
+                    EscapeCsvValue(adapterDisplayName)));
+                csvLines.Add(string.Empty);
+                csvLines.Add(string.Join(";",
+                    string.Empty,
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.ColumnDaily", "Täglich")),
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.ColumnWeekly", "Wöchentlich")),
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.ColumnMonthly", "Monatlich"))));
+                csvLines.Add(string.Join(";",
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.RowPeriodStart", "Beginn")),
+                    EscapeCsvValue(this.FormatUsagePeriodStart(exportTimestampLocal, TrafficUsagePeriod.Daily)),
+                    EscapeCsvValue(this.FormatUsagePeriodStart(exportTimestampLocal, TrafficUsagePeriod.Weekly)),
+                    EscapeCsvValue(this.FormatUsagePeriodStart(exportTimestampLocal, TrafficUsagePeriod.Monthly))));
+                csvLines.Add(string.Join(";",
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.RowPeriodEnd", "Ende")),
+                    EscapeCsvValue(this.FormatUsagePeriodEnd(exportTimestampLocal)),
+                    EscapeCsvValue(this.FormatUsagePeriodEnd(exportTimestampLocal)),
+                    EscapeCsvValue(this.FormatUsagePeriodEnd(exportTimestampLocal))));
+                csvLines.Add(string.Join(";",
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.RowUpload", "Upload")),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.DailySummary.UploadBytes)),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.WeeklySummary.UploadBytes)),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.MonthlySummary.UploadBytes))));
+                csvLines.Add(string.Join(";",
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.RowDownload", "Download")),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.DailySummary.DownloadBytes)),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.WeeklySummary.DownloadBytes)),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.MonthlySummary.DownloadBytes))));
+                csvLines.Add(string.Join(";",
+                    EscapeCsvValue(UiLanguage.Get("UsageWindow.RowTotal", "Gesamt")),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.DailySummary.TotalBytes)),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.WeeklySummary.TotalBytes)),
+                    EscapeCsvValue(FormatUsageAmount(usageWindowData.MonthlySummary.TotalBytes))));
+
+                string directoryPath = Path.GetDirectoryName(targetPath);
+                if (!string.IsNullOrWhiteSpace(directoryPath))
+                {
+                    Directory.CreateDirectory(directoryPath);
+                }
+
+                using (StreamWriter writer = new StreamWriter(targetPath, false, new System.Text.UTF8Encoding(true)))
+                {
+                    for (int i = 0; i < csvLines.Count; i++)
+                    {
+                        writer.WriteLine(csvLines[i]);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-window-export-failed",
+                    string.Format("Verbrauchsdaten konnten nicht nach '{0}' exportiert werden.", targetPath),
+                    ex);
+                return false;
+            }
         }
 
         private void ShowUsageWindow()
@@ -1307,11 +1487,56 @@ namespace TrafficView
             return string.Format("{0:" + format + "} {1}", value, units[unitIndex]);
         }
 
+        private string FormatUsagePeriodStart(DateTime exportTimestampLocal, TrafficUsagePeriod period)
+        {
+            DateTime periodStartLocal;
+            switch (period)
+            {
+                case TrafficUsagePeriod.Daily:
+                    periodStartLocal = exportTimestampLocal.Date;
+                    break;
+                case TrafficUsagePeriod.Weekly:
+                    periodStartLocal = GetStartOfWeek(exportTimestampLocal);
+                    break;
+                case TrafficUsagePeriod.Monthly:
+                    periodStartLocal = new DateTime(exportTimestampLocal.Year, exportTimestampLocal.Month, 1);
+                    break;
+                default:
+                    periodStartLocal = exportTimestampLocal;
+                    break;
+            }
+
+            return periodStartLocal.ToString("dd.MM.yyyy HH:mm:ss");
+        }
+
+        private string FormatUsagePeriodEnd(DateTime exportTimestampLocal)
+        {
+            return exportTimestampLocal.ToString("dd.MM.yyyy HH:mm:ss");
+        }
+
+        private static DateTime GetStartOfWeek(DateTime dateTime)
+        {
+            DayOfWeek firstDayOfWeek = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+            int offset = (7 + (dateTime.DayOfWeek - firstDayOfWeek)) % 7;
+            return dateTime.Date.AddDays(-offset);
+        }
+
+        private static string EscapeCsvValue(string value)
+        {
+            string safeValue = value ?? string.Empty;
+            if (safeValue.IndexOfAny(new char[] { ';', '"', '\r', '\n' }) < 0)
+            {
+                return safeValue;
+            }
+
+            return "\"" + safeValue.Replace("\"", "\"\"") + "\"";
+        }
+
         private static AdapterAvailabilityState GetAdapterAvailabilityState(MonitorSettings settings)
         {
             if (settings == null || !settings.HasAdapterSelection())
             {
-                return AdapterAvailabilityState.Automatic;
+                return AdapterAvailabilityState.Missing;
             }
 
             return NetworkSnapshot.GetAdapterAvailabilityState(settings);
@@ -1659,7 +1884,7 @@ namespace TrafficView
 
             if (this.Visible)
             {
-                this.BeginInvoke(new Action(delegate
+                this.TryBeginInvokeSafely(new Action(delegate
                 {
                     this.EnsureTopMostPlacement(false);
                 }));
@@ -1720,6 +1945,7 @@ namespace TrafficView
                     null,
                     "popup-location-dpi-clamped",
                     "Popup-Position wurde nach einer DPI-Aenderung in einen sichtbaren Arbeitsbereich verschoben.");
+                this.OnOverlayLocationCommitted();
                 return;
             }
 
@@ -1729,7 +1955,7 @@ namespace TrafficView
 
                 if (this.Visible && this.IsHandleCreated)
                 {
-                    this.BeginInvoke(new Action(delegate
+                    this.TryBeginInvokeSafely(new Action(delegate
                     {
                         if (!this.IsDisposed && this.Visible)
                         {
@@ -1744,6 +1970,28 @@ namespace TrafficView
             }
 
             base.WndProc(ref m);
+        }
+
+        private bool TryBeginInvokeSafely(Action action)
+        {
+            if (action == null || this.IsDisposed || !this.IsHandleCreated)
+            {
+                return false;
+            }
+
+            try
+            {
+                this.BeginInvoke(action);
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
         }
 
         protected override void OnPaintBackground(PaintEventArgs e)
@@ -2372,6 +2620,7 @@ namespace TrafficView
             if (adjustedLocation != this.Location)
             {
                 this.Location = adjustedLocation;
+                this.OnOverlayLocationCommitted();
             }
         }
 
@@ -2408,9 +2657,10 @@ namespace TrafficView
                 return Screen.FromPoint(anchorPoint.Value).WorkingArea;
             }
 
-            Rectangle preferredBounds = new Rectangle(preferredLocation, this.Size);
+            Point safePreferredLocation = NormalizeRectangleOrigin(preferredLocation, this.Size);
+            Rectangle preferredBounds = new Rectangle(safePreferredLocation, this.Size);
             Point preferredCenter = GetRectangleCenter(preferredBounds);
-            Rectangle bestWorkingArea = Screen.FromPoint(preferredLocation).WorkingArea;
+            Rectangle bestWorkingArea = Screen.FromPoint(safePreferredLocation).WorkingArea;
             long bestDistance = GetDistanceSquaredToRectangle(bestWorkingArea, preferredCenter);
             int bestIntersectionArea = GetIntersectionArea(preferredBounds, bestWorkingArea);
 
@@ -2439,6 +2689,18 @@ namespace TrafficView
             }
 
             return bestWorkingArea;
+        }
+
+        private static Point NormalizeRectangleOrigin(Point location, Size size)
+        {
+            int safeWidth = Math.Max(0, size.Width);
+            int safeHeight = Math.Max(0, size.Height);
+            long maxX = (long)int.MaxValue - safeWidth;
+            long maxY = (long)int.MaxValue - safeHeight;
+
+            return new Point(
+                ClampToInt32(Math.Min(location.X, maxX)),
+                ClampToInt32(Math.Min(location.Y, maxY)));
         }
 
         private Point ClampLocationToWorkingArea(Point preferredLocation, Size windowSize, Rectangle workingArea)
@@ -2510,34 +2772,51 @@ namespace TrafficView
 
         private static Point GetRectangleCenter(Rectangle bounds)
         {
+            long centerX = (long)bounds.Left + (bounds.Width / 2L);
+            long centerY = (long)bounds.Top + (bounds.Height / 2L);
             return new Point(
-                bounds.Left + (bounds.Width / 2),
-                bounds.Top + (bounds.Height / 2));
+                ClampToInt32(centerX),
+                ClampToInt32(centerY));
         }
 
         private static long GetDistanceSquaredToRectangle(Rectangle rectangle, Point point)
         {
-            int dx = 0;
+            long dx = 0L;
             if (point.X < rectangle.Left)
             {
-                dx = rectangle.Left - point.X;
+                dx = (long)rectangle.Left - point.X;
             }
             else if (point.X >= rectangle.Right)
             {
-                dx = point.X - rectangle.Right;
+                dx = (long)point.X - rectangle.Right;
             }
 
-            int dy = 0;
+            long dy = 0L;
             if (point.Y < rectangle.Top)
             {
-                dy = rectangle.Top - point.Y;
+                dy = (long)rectangle.Top - point.Y;
             }
             else if (point.Y >= rectangle.Bottom)
             {
-                dy = point.Y - rectangle.Bottom;
+                dy = (long)point.Y - rectangle.Bottom;
             }
 
-            return ((long)dx * dx) + ((long)dy * dy);
+            return (dx * dx) + (dy * dy);
+        }
+
+        private static int ClampToInt32(long value)
+        {
+            if (value < int.MinValue)
+            {
+                return int.MinValue;
+            }
+
+            if (value > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            return (int)value;
         }
 
         public static string FormatSpeed(double bytesPerSecond)
@@ -5037,9 +5316,11 @@ namespace TrafficView
             }
 
             Point previousCenter = GetRectangleCenter(previousBounds);
+            long adjustedX = (long)previousCenter.X - (this.Width / 2L);
+            long adjustedY = (long)previousCenter.Y - (this.Height / 2L);
             return new Point(
-                previousCenter.X - (this.Width / 2),
-                previousCenter.Y - (this.Height / 2));
+                ClampToInt32(adjustedX),
+                ClampToInt32(adjustedY));
         }
 
         private void UpdateWindowRegion()
@@ -5263,12 +5544,35 @@ namespace TrafficView
         private readonly ProgressBar progressBar;
         private readonly Label statusLabel;
         private readonly Label infoLabel;
+        private readonly Label speedtestHintLabel;
         private readonly Button startButton;
         private readonly Button saveAdapterButton;
         private readonly Button saveButton;
         private readonly Button cancelButton;
+        private readonly LinkLabel speedtestNetLinkLabel;
+        private readonly LinkLabel wieIstMeineIpLinkLabel;
+        private readonly FlowLayoutPanel speedtestLinksPanel;
+        private readonly Control calibrationLogoControl;
+        private readonly TableLayoutPanel calibrationButtonPanel;
+        private readonly TableLayoutPanel calibrationSpeedtestPanel;
+        private readonly int calibrationButtonHorizontalPadding;
+        private readonly int calibrationButtonVerticalPadding;
+        private readonly int calibrationButtonHeightMinimum;
+        private readonly int calibrationButtonHeightReserve;
+        private readonly int calibrationButtonMinimumWidth;
+        private readonly int calibrationButtonTextWidthReserve;
+        private readonly int calibrationContentMinimumWidth;
+        private readonly int calibrationDialogWidthReserve;
+        private readonly int calibrationDialogHeightReserve;
+        private readonly int calibrationFooterWrapMinimumWidth;
+        private readonly int calibrationFooterContentMinimumWidth;
+        private readonly int calibrationFooterLinkSpacing;
+        private readonly int calibrationFooterLogoHeight;
+        private readonly int calibrationFooterLogoMinimumWidth;
+        private readonly int calibrationFooterLogoMaximumWidth;
         private readonly Timer calibrationTimer;
         private readonly TableLayoutPanel rootLayout;
+        private readonly bool isInitialCalibrationRequired;
         private bool selectedAdapterAvailable = true;
         private MonitorSettings currentSettings;
         private MonitorSettings activeSettings;
@@ -5279,6 +5583,7 @@ namespace TrafficView
         private double peakUploadBytesPerSecond;
         private int elapsedSeconds;
         private bool allowClose;
+        private bool calibrationDialogSizeLocked;
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -5300,7 +5605,7 @@ namespace TrafficView
         {
             this.currentSettings = settings.Clone();
             this.SelectedSettings = null;
-            this.AdapterSelectionSavedOnly = false;
+            this.isInitialCalibrationRequired = !this.currentSettings.InitialCalibrationPromptHandled;
 
             this.Text = UiLanguage.Get("Calibration.Title", "Kalibration");
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -5312,17 +5617,51 @@ namespace TrafficView
             this.AutoScaleMode = AutoScaleMode.Font;
             this.Font = SystemFonts.MessageBoxFont;
             this.TopMost = true;
-            this.AutoScroll = true;
-            this.ClientSize = new Size(620, 340);
-            this.MinimumSize = new Size(600, 320);
+            this.AutoScroll = false;
+            int sectionSpacing = Math.Max(6, this.Font.Height - 6);
+            int compactSpacing = Math.Max(4, this.Font.Height / 3);
+            int progressBarHeight = Math.Max(14, this.Font.Height + 1);
+            int buttonSpacing = Math.Max(6, compactSpacing + 1);
+            int linkSpacing = Math.Max(6, compactSpacing + 1);
+            int logoHeight = Math.Max(22, (this.Font.Height * 2) - 2);
+            int horizontalPadding = Math.Max(18, this.Font.Height + 6);
+            int verticalPadding = Math.Max(8, this.Font.Height - 2);
+            int topPadding = Math.Max(1, verticalPadding - 7);
+            int bottomPadding = Math.Max(0, verticalPadding - 10);
+            int dialogHeightReserve = Math.Max(1, compactSpacing - 3);
+            int contentMinimumHeight = Math.Max(116, this.Font.Height * 6);
+            int baseContentWidth = Math.Max(548, this.Font.Height * 29);
+            int contentMinimumWidth = Math.Max(440, this.Font.Height * 25);
+            int baseClientWidth = Math.Max(620, (horizontalPadding * 2) + baseContentWidth);
+            int baseClientHeight = Math.Max(152, dialogHeightReserve + topPadding + bottomPadding + contentMinimumHeight);
+            int baseMinimumClientWidth = Math.Max(580, (horizontalPadding * 2) + contentMinimumWidth);
+            int baseMinimumClientHeight = Math.Max(144, topPadding + bottomPadding + contentMinimumHeight);
+            this.ClientSize = new Size(baseClientWidth, baseClientHeight);
+            this.MinimumSize = new Size(baseMinimumClientWidth, baseMinimumClientHeight);
+            this.calibrationButtonHorizontalPadding = Math.Max(8, compactSpacing + 2);
+            this.calibrationButtonVerticalPadding = Math.Max(1, (compactSpacing / 2) - 1);
+            this.calibrationButtonHeightMinimum = Math.Max(36, this.Font.Height + 14);
+            this.calibrationButtonHeightReserve = Math.Max(16, (compactSpacing * 3) - 2);
+            this.calibrationButtonMinimumWidth = Math.Max(96, (this.Font.Height * 5) + 24);
+            this.calibrationButtonTextWidthReserve = Math.Max(12, compactSpacing * 3);
+            this.calibrationContentMinimumWidth = contentMinimumWidth;
+            this.calibrationDialogWidthReserve = Math.Max(10, horizontalPadding - sectionSpacing);
+            this.calibrationDialogHeightReserve = dialogHeightReserve;
+            this.calibrationFooterWrapMinimumWidth = Math.Max(340, this.Font.Height * 20);
+            this.calibrationFooterContentMinimumWidth = Math.Max(250, this.Font.Height * 13);
+            this.calibrationFooterLinkSpacing = linkSpacing;
+            this.calibrationFooterLogoHeight = logoHeight;
+            this.calibrationFooterLogoMinimumWidth = Math.Max(96, logoHeight + Math.Max(24, compactSpacing * 4));
+            this.calibrationFooterLogoMaximumWidth = Math.Max(180, logoHeight * 3);
             int compactButtonHeight = this.GetCalibrationButtonHeight();
 
             this.rootLayout = new TableLayoutPanel();
             this.rootLayout.ColumnCount = 1;
-            this.rootLayout.RowCount = 5;
+            this.rootLayout.RowCount = 6;
             this.rootLayout.Dock = DockStyle.Fill;
-            this.rootLayout.Padding = new Padding(18, 16, 18, 16);
+            this.rootLayout.Padding = new Padding(horizontalPadding, topPadding, horizontalPadding, bottomPadding);
             this.rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            this.rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             this.rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             this.rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             this.rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -5333,17 +5672,17 @@ namespace TrafficView
             this.infoLabel = new Label();
             this.infoLabel.AutoSize = true;
             this.infoLabel.Dock = DockStyle.Fill;
-            this.infoLabel.Margin = new Padding(0, 0, 0, 12);
+            this.infoLabel.Margin = new Padding(0, 0, 0, Math.Max(2, compactSpacing - 2));
             this.infoLabel.Text = UiLanguage.Get(
                 "Calibration.Info",
-                "Waehle den Netzwerkadapter fuer die Kalibration. Die Messung laeuft ca. 30 Sekunden. Das Fenster bleibt bis zum Speichern oder Abbrechen geoeffnet.");
+                "Wähle die Internetverbindung für Kalibration und Überwachung. Die Messung läuft ca. 30 Sekunden. Das Fenster bleibt bis zum Speichern oder Abbrechen geöffnet.");
             this.rootLayout.Controls.Add(this.infoLabel, 0, 0);
 
             TableLayoutPanel adapterLayout = new TableLayoutPanel();
             adapterLayout.ColumnCount = 1;
             adapterLayout.RowCount = 2;
             adapterLayout.Dock = DockStyle.Fill;
-            adapterLayout.Margin = new Padding(0, 0, 0, 12);
+            adapterLayout.Margin = new Padding(0, 0, 0, Math.Max(2, compactSpacing - 2));
             adapterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             adapterLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             adapterLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -5352,8 +5691,8 @@ namespace TrafficView
             Label adapterLabel = new Label();
             adapterLabel.AutoSize = true;
             adapterLabel.Dock = DockStyle.Fill;
-            adapterLabel.Margin = new Padding(0, 0, 0, 6);
-            adapterLabel.Text = UiLanguage.Get("Calibration.AdapterLabel", "Adapter");
+            adapterLabel.Margin = new Padding(0, 0, 0, Math.Max(1, compactSpacing - 2));
+            adapterLabel.Text = UiLanguage.Get("Calibration.AdapterLabel", "Internetverbindung");
             adapterLayout.Controls.Add(adapterLabel, 0, 0);
 
             this.adapterComboBox = new ComboBox();
@@ -5361,14 +5700,14 @@ namespace TrafficView
             this.adapterComboBox.Dock = DockStyle.Top;
             this.adapterComboBox.IntegralHeight = false;
             this.adapterComboBox.Margin = new Padding(0);
-            this.adapterComboBox.MinimumSize = new Size(0, Math.Max(30, this.adapterComboBox.PreferredHeight + 6));
+            this.adapterComboBox.MinimumSize = new Size(0, Math.Max(28, this.adapterComboBox.PreferredHeight + 4));
             this.adapterComboBox.SelectedIndexChanged += this.AdapterComboBox_SelectedIndexChanged;
             adapterLayout.Controls.Add(this.adapterComboBox, 0, 1);
 
             this.progressBar = new ProgressBar();
             this.progressBar.Dock = DockStyle.Top;
-            this.progressBar.Margin = new Padding(0, 0, 0, 8);
-            this.progressBar.Height = 18;
+            this.progressBar.Margin = new Padding(0, 0, 0, Math.Max(1, compactSpacing - 2));
+            this.progressBar.Height = progressBarHeight;
             this.progressBar.Minimum = 0;
             this.progressBar.Maximum = CalibrationDurationSeconds;
             this.rootLayout.Controls.Add(this.progressBar, 0, 2);
@@ -5376,55 +5715,132 @@ namespace TrafficView
             this.statusLabel = new Label();
             this.statusLabel.AutoSize = true;
             this.statusLabel.Dock = DockStyle.Fill;
-            this.statusLabel.Margin = new Padding(0, 0, 0, 12);
+            this.statusLabel.Margin = new Padding(0, 0, 0, Math.Max(1, compactSpacing - 2));
             this.statusLabel.Text = UiLanguage.Get(
                 "Calibration.ReadyStatus",
-                "Bereit fuer die Kalibration. Bitte mit 'Starten' beginnen und spaeter mit 'Speichern' uebernehmen oder mit 'Abbrechen' schliessen.");
+                "Bereit für die Kalibration. Bitte mit 'Starten' beginnen und später mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.");
+            this.statusLabel.MinimumSize = new Size(0, Math.Max(20, this.Font.Height + Math.Max(1, compactSpacing - 3)));
             this.rootLayout.Controls.Add(this.statusLabel, 0, 3);
 
-            TableLayoutPanel buttonPanel = new TableLayoutPanel();
-            buttonPanel.ColumnCount = 4;
-            buttonPanel.RowCount = 1;
+            this.calibrationButtonPanel = new TableLayoutPanel();
+            TableLayoutPanel buttonPanel = this.calibrationButtonPanel;
+            buttonPanel.ColumnCount = 2;
+            buttonPanel.RowCount = 2;
             buttonPanel.AutoSize = true;
             buttonPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             buttonPanel.Dock = DockStyle.None;
             buttonPanel.Anchor = AnchorStyles.Top;
             buttonPanel.Margin = new Padding(0);
+            buttonPanel.GrowStyle = TableLayoutPanelGrowStyle.FixedSize;
             buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, compactButtonHeight));
+            buttonPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            buttonPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             this.rootLayout.Controls.Add(buttonPanel, 0, 4);
 
             this.startButton = new Button();
-            this.startButton.Text = UiLanguage.Get("Calibration.Start", "Starten");
-            this.startButton.Margin = new Padding(0, 0, 8, 0);
+            string startButtonText = UiLanguage.Get("Calibration.Start", "Starten");
+            string remeasureButtonText = UiLanguage.Get("Calibration.Remeasure", "Neu messen");
+            this.startButton.Text = startButtonText;
+            this.startButton.Margin = new Padding(0, 0, 0, buttonSpacing);
             this.ConfigureDialogButton(this.startButton);
+            this.startButton.Width = Math.Max(
+                this.GetCalibrationButtonWidth(startButtonText),
+                this.GetCalibrationButtonWidth(remeasureButtonText));
             this.startButton.Click += this.StartButton_Click;
             buttonPanel.Controls.Add(this.startButton, 1, 0);
 
             this.saveAdapterButton = new Button();
-            this.saveAdapterButton.Text = UiLanguage.Get("Calibration.SaveAdapter", "Adapter speichern");
-            this.saveAdapterButton.Margin = new Padding(0, 0, 8, 0);
+            this.saveAdapterButton.Text = UiLanguage.Get("Calibration.SaveAdapter", "Internetverbindung speichern");
+            this.saveAdapterButton.Margin = new Padding(0, 0, buttonSpacing, buttonSpacing);
             this.ConfigureDialogButton(this.saveAdapterButton);
             this.saveAdapterButton.Click += this.SaveAdapterButton_Click;
             buttonPanel.Controls.Add(this.saveAdapterButton, 0, 0);
 
             this.saveButton = new Button();
             this.saveButton.Text = UiLanguage.Get("Calibration.Save", "Speichern");
-            this.saveButton.Margin = new Padding(8, 0, 8, 0);
+            this.saveButton.Margin = new Padding(0, 0, buttonSpacing, 0);
             this.ConfigureDialogButton(this.saveButton);
             this.saveButton.Enabled = false;
             this.saveButton.Click += this.SaveButton_Click;
-            buttonPanel.Controls.Add(this.saveButton, 2, 0);
+            buttonPanel.Controls.Add(this.saveButton, 0, 1);
 
             this.cancelButton = new Button();
             this.cancelButton.Text = UiLanguage.Get("Calibration.Cancel", "Abbrechen");
             this.cancelButton.Margin = new Padding(0);
             this.ConfigureDialogButton(this.cancelButton);
             this.cancelButton.Click += this.CancelButton_Click;
-            buttonPanel.Controls.Add(this.cancelButton, 3, 0);
+            buttonPanel.Controls.Add(this.cancelButton, 1, 1);
+
+            int initialButtonPanelWidth = buttonPanel.GetPreferredSize(Size.Empty).Width;
+            int initialClientWidth = Math.Max(
+                this.ClientSize.Width,
+                initialButtonPanelWidth + this.rootLayout.Padding.Horizontal + this.calibrationDialogWidthReserve);
+            int initialMinimumClientWidth = Math.Max(
+                baseMinimumClientWidth,
+                initialButtonPanelWidth + this.rootLayout.Padding.Horizontal + this.calibrationDialogWidthReserve);
+            this.ClientSize = new Size(initialClientWidth, this.ClientSize.Height);
+            this.MinimumSize = this.SizeFromClientSize(
+                new Size(initialMinimumClientWidth, Math.Max(baseMinimumClientHeight, this.ClientSize.Height)));
+
+            this.calibrationSpeedtestPanel = new TableLayoutPanel();
+            TableLayoutPanel speedtestPanel = this.calibrationSpeedtestPanel;
+            speedtestPanel.AutoSize = true;
+            speedtestPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            speedtestPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            speedtestPanel.Margin = new Padding(0, 0, 0, 0);
+            speedtestPanel.ColumnCount = 2;
+            speedtestPanel.RowCount = 2;
+            speedtestPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            speedtestPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            speedtestPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            speedtestPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            this.rootLayout.Controls.Add(speedtestPanel, 0, 5);
+
+            this.calibrationLogoControl = this.CreateCalibrationLogoControl(
+                this.calibrationFooterLogoHeight,
+                this.calibrationFooterLogoMinimumWidth,
+                this.calibrationFooterLogoMaximumWidth);
+            if (this.calibrationLogoControl != null)
+            {
+                this.calibrationLogoControl.Margin = new Padding(0, 0, Math.Max(4, compactSpacing - 2), 0);
+                speedtestPanel.Controls.Add(this.calibrationLogoControl, 0, 0);
+                speedtestPanel.SetRowSpan(this.calibrationLogoControl, 2);
+            }
+
+            this.speedtestHintLabel = new Label();
+            this.speedtestHintLabel.AutoSize = true;
+            this.speedtestHintLabel.Margin = new Padding(0, 0, 0, 0);
+            this.speedtestHintLabel.TextAlign = ContentAlignment.MiddleLeft;
+            this.speedtestHintLabel.Text = UiLanguage.Get(
+                "Calibration.SpeedtestHint",
+                "Zum Erzeugen von Datenverkehr kann ein Speedtest geöffnet werden:");
+            speedtestPanel.Controls.Add(this.speedtestHintLabel, 1, 0);
+
+            this.speedtestLinksPanel = new FlowLayoutPanel();
+            this.speedtestLinksPanel.AutoSize = true;
+            this.speedtestLinksPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            this.speedtestLinksPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            this.speedtestLinksPanel.FlowDirection = FlowDirection.LeftToRight;
+            this.speedtestLinksPanel.WrapContents = true;
+            this.speedtestLinksPanel.Margin = new Padding(0);
+            speedtestPanel.Controls.Add(this.speedtestLinksPanel, 1, 1);
+
+            this.speedtestNetLinkLabel = new LinkLabel();
+            this.speedtestNetLinkLabel.AutoSize = true;
+            this.speedtestNetLinkLabel.Margin = new Padding(0, 0, this.calibrationFooterLinkSpacing, 0);
+            this.speedtestNetLinkLabel.Text = UiLanguage.Get("Calibration.SpeedtestNet", "Speedtest.net öffnen");
+            this.speedtestNetLinkLabel.Tag = "https://www.speedtest.net";
+            this.speedtestNetLinkLabel.LinkClicked += this.SpeedtestLinkLabel_LinkClicked;
+            this.speedtestLinksPanel.Controls.Add(this.speedtestNetLinkLabel);
+
+            this.wieIstMeineIpLinkLabel = new LinkLabel();
+            this.wieIstMeineIpLinkLabel.AutoSize = true;
+            this.wieIstMeineIpLinkLabel.Margin = new Padding(0, 0, 0, 0);
+            this.wieIstMeineIpLinkLabel.Text = UiLanguage.Get("Calibration.SpeedtestWieIstMeineIp", "wieistmeineip.de Speedtest öffnen");
+            this.wieIstMeineIpLinkLabel.Tag = "https://www.wieistmeineip.de/speedtest/";
+            this.wieIstMeineIpLinkLabel.LinkClicked += this.SpeedtestLinkLabel_LinkClicked;
+            this.speedtestLinksPanel.Controls.Add(this.wieIstMeineIpLinkLabel);
 
             this.AcceptButton = this.startButton;
             this.CancelButton = this.cancelButton;
@@ -5440,8 +5856,7 @@ namespace TrafficView
         }
 
         public MonitorSettings SelectedSettings { get; private set; }
-
-        public bool AdapterSelectionSavedOnly { get; private set; }
+        public MonitorSettings SavedAdapterSettings { get; private set; }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
@@ -5449,8 +5864,8 @@ namespace TrafficView
             {
                 e.Cancel = true;
                 this.statusLabel.Text = this.saveButton.Enabled
-                    ? UiLanguage.Get("Calibration.CloseHintDone", "Kalibration fertig. Bitte mit 'Speichern' uebernehmen oder mit 'Abbrechen' schliessen.")
-                    : UiLanguage.Get("Calibration.CloseHintWaiting", "Bitte 'Abbrechen' verwenden oder die Kalibration abschliessen und mit 'Speichern' uebernehmen.");
+                    ? UiLanguage.Get("Calibration.CloseHintDone", "Kalibration abgeschlossen. Bitte mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.")
+                    : UiLanguage.Get("Calibration.CloseHintWaiting", "Bitte 'Abbrechen' verwenden oder die Kalibration abschließen und mit 'Speichern' bestätigen.");
                 return;
             }
 
@@ -5465,11 +5880,11 @@ namespace TrafficView
         private void CalibrationForm_Load(object sender, EventArgs e)
         {
             this.AdjustDialogLayout();
+            this.LockCalibrationDialogSize();
         }
 
         private void CalibrationForm_Shown(object sender, EventArgs e)
         {
-            this.AdjustDialogLayout();
             SetWindowPos(this.Handle, CalibrationHwndTopMost, this.Left, this.Top, this.Width, this.Height, CalibrationSwpShowWindow);
             this.BringToFront();
             this.Activate();
@@ -5482,7 +5897,11 @@ namespace TrafficView
             int compactButtonHeight = this.GetCalibrationButtonHeight();
             button.AutoSize = false;
             button.Dock = DockStyle.Fill;
-            button.Padding = new Padding(8, 2, 8, 2);
+            button.Padding = new Padding(
+                this.calibrationButtonHorizontalPadding,
+                this.calibrationButtonVerticalPadding,
+                this.calibrationButtonHorizontalPadding,
+                this.calibrationButtonVerticalPadding);
             button.TextAlign = ContentAlignment.MiddleCenter;
             button.Width = this.GetCalibrationButtonWidth(button.Text);
             button.MinimumSize = new Size(0, compactButtonHeight);
@@ -5492,7 +5911,7 @@ namespace TrafficView
 
         private int GetCalibrationButtonHeight()
         {
-            return Math.Max(38, this.Font.Height + 18);
+            return Math.Max(this.calibrationButtonHeightMinimum, this.Font.Height + this.calibrationButtonHeightReserve);
         }
 
         private int GetCalibrationButtonWidth(string text)
@@ -5502,7 +5921,61 @@ namespace TrafficView
                 this.Font,
                 new Size(int.MaxValue, int.MaxValue),
                 TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
-            return Math.Max(96, textSize.Width + 28);
+            int horizontalPadding = this.calibrationButtonHorizontalPadding * 2;
+            return Math.Max(this.calibrationButtonMinimumWidth, textSize.Width + horizontalPadding + this.calibrationButtonTextWidthReserve);
+        }
+
+        private Control CreateCalibrationLogoControl(int logoHeight, int minimumWidth, int maximumWidth)
+        {
+            string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LOLO-SOFT_00_SW.png");
+            if (!File.Exists(logoPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                Bitmap logoImage;
+                using (FileStream stream = new FileStream(logoPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (Image image = Image.FromStream(stream))
+                {
+                    logoImage = new Bitmap(image);
+                }
+
+                int logoWidth = Math.Max(minimumWidth, (int)Math.Round((double)logoImage.Width * logoHeight / Math.Max(1, logoImage.Height)));
+                logoWidth = Math.Min(maximumWidth, logoWidth);
+
+                Panel logoPanel = new Panel();
+                logoPanel.Size = new Size(logoWidth, logoHeight);
+                logoPanel.Margin = Padding.Empty;
+                logoPanel.Padding = Padding.Empty;
+                logoPanel.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+                logoPanel.BackColor = Color.Transparent;
+
+                PictureBox pictureBox = new PictureBox();
+                pictureBox.Dock = DockStyle.Fill;
+                pictureBox.Margin = Padding.Empty;
+                pictureBox.Padding = Padding.Empty;
+                pictureBox.TabStop = false;
+                pictureBox.Image = logoImage;
+                pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
+                pictureBox.BackColor = Color.Transparent;
+                logoPanel.Controls.Add(pictureBox);
+                logoPanel.Disposed += delegate
+                {
+                    pictureBox.Image.Dispose();
+                };
+
+                return logoPanel;
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "calibration-logo-load-failed",
+                    string.Format("Kalibrationslogo konnte nicht aus '{0}' geladen werden.", logoPath),
+                    ex);
+                return null;
+            }
         }
 
         private void SetCalibrationButtonText(Button button, string text)
@@ -5513,7 +5986,46 @@ namespace TrafficView
             }
 
             button.Text = text ?? string.Empty;
-            button.Width = this.GetCalibrationButtonWidth(button.Text);
+            button.Width = Math.Max(button.Width, this.GetCalibrationButtonWidth(button.Text));
+        }
+
+        private void LockCalibrationDialogSize()
+        {
+            if (this.calibrationDialogSizeLocked)
+            {
+                return;
+            }
+
+            Size fixedSize = this.SizeFromClientSize(this.ClientSize);
+            this.MinimumSize = fixedSize;
+            this.MaximumSize = fixedSize;
+            this.AutoScrollMinSize = Size.Empty;
+            this.calibrationDialogSizeLocked = true;
+        }
+
+        private void SpeedtestLinkLabel_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            LinkLabel linkLabel = sender as LinkLabel;
+            string targetUrl = linkLabel != null ? linkLabel.Tag as string : null;
+            if (string.IsNullOrWhiteSpace(targetUrl))
+            {
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(targetUrl)
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "calibration-speedtest-open-failed-" + targetUrl,
+                    string.Format("Speedtest-Link konnte nicht geöffnet werden: {0}", targetUrl),
+                    ex);
+            }
         }
 
         private void StartButton_Click(object sender, EventArgs e)
@@ -5570,10 +6082,9 @@ namespace TrafficView
             this.peakUploadBytesPerSecond = 0D;
             this.elapsedSeconds = 0;
             this.SelectedSettings = null;
-            this.AdapterSelectionSavedOnly = false;
             this.allowClose = false;
             this.progressBar.Value = 0;
-            this.statusLabel.Text = UiLanguage.Get("Calibration.RunningInitial", "Kalibration laeuft... 0 / 30 s");
+            this.statusLabel.Text = UiLanguage.Get("Calibration.RunningInitial", "Kalibration läuft... 0 / 30 s");
             this.startButton.Enabled = false;
             this.SetCalibrationButtonText(this.startButton, UiLanguage.Get("Calibration.Start", "Starten"));
             this.saveButton.Enabled = false;
@@ -5596,18 +6107,41 @@ namespace TrafficView
                 this.currentSettings.CalibrationDownloadPeakBytesPerSecond,
                 this.currentSettings.CalibrationUploadPeakBytesPerSecond);
             this.currentSettings.Save();
+            this.SavedAdapterSettings = this.currentSettings.Clone();
+
+            if (this.isInitialCalibrationRequired && !this.currentSettings.HasCalibrationData())
+            {
+                this.SelectedSettings = null;
+                this.allowClose = false;
+                this.statusLabel.Text = UiLanguage.Format(
+                    "Calibration.AdapterSavedStatus",
+                    "Internetverbindung gespeichert: {0}. Bitte Kalibration abschließen, mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.",
+                    this.currentSettings.GetAdapterDisplayName());
+                this.startButton.Enabled = this.selectedAdapterAvailable;
+                this.saveAdapterButton.Enabled = this.selectedAdapterAvailable;
+                this.saveButton.Enabled = false;
+                this.adapterComboBox.Enabled = true;
+                this.AcceptButton = this.startButton;
+                this.ActiveControl = this.startButton;
+                return;
+            }
+
             this.SelectedSettings = this.currentSettings.Clone();
-            this.AdapterSelectionSavedOnly = true;
+            this.allowClose = false;
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.AdapterSavedStatus",
-                "Adapter gespeichert: {0}. Bitte Kalibration abschliessen, mit 'Speichern' uebernehmen oder mit 'Abbrechen' schliessen.",
+                "Internetverbindung gespeichert: {0}. Das Fenster bleibt für Kalibration, Speichern oder Abbrechen geöffnet.",
                 this.currentSettings.GetAdapterDisplayName());
+            this.startButton.Enabled = this.selectedAdapterAvailable && !this.calibrationTimer.Enabled;
+            this.saveAdapterButton.Enabled = this.selectedAdapterAvailable && !this.calibrationTimer.Enabled;
+            this.adapterComboBox.Enabled = !this.calibrationTimer.Enabled;
+            this.AcceptButton = this.saveButton.Enabled ? this.saveButton : this.startButton;
+            this.ActiveControl = this.saveButton.Enabled ? (Control)this.saveButton : this.startButton;
         }
 
         private void CancelButton_Click(object sender, EventArgs e)
         {
             this.SelectedSettings = null;
-            this.AdapterSelectionSavedOnly = false;
             this.allowClose = true;
             this.DialogResult = DialogResult.Cancel;
             this.Close();
@@ -5620,7 +6154,6 @@ namespace TrafficView
                 return;
             }
 
-            this.AdapterSelectionSavedOnly = false;
             this.allowClose = true;
             this.DialogResult = DialogResult.OK;
             this.Close();
@@ -5638,7 +6171,7 @@ namespace TrafficView
                 this.progressBar.Value = 0;
                 this.statusLabel.Text = UiLanguage.Get(
                     "Calibration.ReadyStatus",
-                    "Bereit fuer die Kalibration. Bitte mit 'Starten' beginnen und spaeter mit 'Speichern' uebernehmen oder mit 'Abbrechen' schliessen.");
+                    "Bereit für die Kalibration. Bitte mit 'Starten' beginnen und später mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.");
                 this.startButton.Enabled = true;
                 this.SetCalibrationButtonText(this.startButton, UiLanguage.Get("Calibration.Start", "Starten"));
                 this.saveButton.Enabled = false;
@@ -5696,7 +6229,7 @@ namespace TrafficView
             this.progressBar.Value = Math.Min(CalibrationDurationSeconds, this.elapsedSeconds);
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.RunningStatus",
-                "Kalibration laeuft... {0} / 30 s | DL {1} | UL {2}",
+                "Kalibration läuft... {0} / 30 s | DL {1} | UL {2}",
                 this.elapsedSeconds,
                 TrafficPopupForm.FormatSpeed(this.peakDownloadBytesPerSecond),
                 TrafficPopupForm.FormatSpeed(this.peakUploadBytesPerSecond));
@@ -5765,7 +6298,7 @@ namespace TrafficView
                 this.currentSettings.PanelSkinId);
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.CompletedStatus",
-                "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' uebernehmen.",
+                "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' bestätigen.",
                 TrafficPopupForm.FormatSpeed(storedDownloadPeak),
                 TrafficPopupForm.FormatSpeed(storedUploadPeak));
             this.startButton.Enabled = true;
@@ -5773,7 +6306,7 @@ namespace TrafficView
             this.saveAdapterButton.Enabled = true;
             this.adapterComboBox.Enabled = true;
             this.saveButton.Enabled = true;
-            this.AdjustDialogLayout();
+            this.rootLayout.PerformLayout();
             this.AcceptButton = this.saveButton;
             this.ActiveControl = this.saveButton;
         }
@@ -5811,20 +6344,49 @@ namespace TrafficView
         private void AdjustDialogLayout()
         {
             Rectangle workingArea = Screen.FromControl(this).WorkingArea;
-            int maxClientWidth = Math.Max(520, workingArea.Width - 80);
-            int maxClientHeight = Math.Max(320, workingArea.Height - 80);
-            int targetWidth = Math.Min(Math.Max(540, this.ClientSize.Width), maxClientWidth);
+            int layoutScreenMargin = Math.Max(80, this.Font.Height * 4);
+            int widthReserve = this.calibrationDialogWidthReserve;
+            int heightReserve = this.calibrationDialogHeightReserve;
+            int minimumContentWidth = this.calibrationContentMinimumWidth;
+            int wrapMinimumWidth = this.calibrationFooterWrapMinimumWidth;
+            int speedtestMinimumContentWidth = this.calibrationFooterContentMinimumWidth;
+            int minimumClientWidth = Math.Max(580, this.rootLayout.Padding.Horizontal + minimumContentWidth);
+            int minimumClientHeight = Math.Max(92, this.rootLayout.Padding.Vertical + (this.Font.Height * 4));
+            int maxClientWidth = Math.Max(520, workingArea.Width - layoutScreenMargin);
+            int maxClientHeight = Math.Max(192, workingArea.Height - layoutScreenMargin);
+            int targetWidth = Math.Min(Math.Max(minimumClientWidth, this.ClientSize.Width), maxClientWidth);
+            string currentStatusText = this.statusLabel.Text;
+            this.statusLabel.Text = this.GetCalibrationMeasurementStatusText();
             Size preferred = Size.Empty;
+            int buttonPanelWidth = 0;
 
             for (int pass = 0; pass < 2; pass++)
             {
-                int wrapWidth = Math.Max(320, targetWidth - this.rootLayout.Padding.Horizontal);
+                int wrapWidth = Math.Max(wrapMinimumWidth, targetWidth - this.rootLayout.Padding.Horizontal);
+                int speedtestContentWidth = wrapWidth;
+                if (this.calibrationLogoControl != null)
+                {
+                    speedtestContentWidth = Math.Max(
+                        speedtestMinimumContentWidth,
+                        wrapWidth - this.calibrationLogoControl.Width - this.calibrationLogoControl.Margin.Horizontal);
+                }
                 this.infoLabel.MaximumSize = new Size(wrapWidth, 0);
                 this.statusLabel.MaximumSize = new Size(wrapWidth, 0);
+                this.speedtestHintLabel.MaximumSize = new Size(speedtestContentWidth, 0);
+                this.speedtestLinksPanel.MaximumSize = new Size(speedtestContentWidth, int.MaxValue);
+                this.speedtestNetLinkLabel.MaximumSize = new Size(speedtestContentWidth, 0);
+                this.wieIstMeineIpLinkLabel.MaximumSize = new Size(speedtestContentWidth, 0);
                 this.rootLayout.PerformLayout();
 
                 preferred = this.rootLayout.GetPreferredSize(new Size(targetWidth, 0));
-                int requiredWidth = Math.Min(maxClientWidth, Math.Max(540, preferred.Width + 24));
+                buttonPanelWidth = this.calibrationButtonPanel.GetPreferredSize(Size.Empty).Width;
+                int requiredWidth = Math.Min(
+                    maxClientWidth,
+                    Math.Max(
+                        minimumClientWidth,
+                        Math.Max(
+                            preferred.Width + (widthReserve * 2),
+                            buttonPanelWidth + this.rootLayout.Padding.Horizontal + widthReserve)));
                 if (requiredWidth <= targetWidth)
                 {
                     break;
@@ -5834,11 +6396,101 @@ namespace TrafficView
             }
 
             int targetHeight = Math.Min(
-                Math.Max(320, preferred.Height + this.rootLayout.Padding.Vertical + 16),
+                Math.Max(this.rootLayout.Padding.Vertical, preferred.Height + heightReserve),
                 maxClientHeight);
 
             this.ClientSize = new Size(targetWidth, targetHeight);
-            this.AutoScrollMinSize = new Size(preferred.Width, preferred.Height + 8);
+            this.rootLayout.PerformLayout();
+            int confirmedPreferredWidth = this.rootLayout.GetPreferredSize(new Size(0, this.ClientSize.Height)).Width;
+            int confirmedPreferredHeight = this.rootLayout.GetPreferredSize(new Size(targetWidth, 0)).Height;
+            int requiredClientWidthFromLayout = Math.Min(
+                maxClientWidth,
+                Math.Max(
+                    minimumClientWidth,
+                    Math.Max(
+                        confirmedPreferredWidth + this.rootLayout.Padding.Horizontal + widthReserve,
+                        buttonPanelWidth + this.rootLayout.Padding.Horizontal + widthReserve)));
+            if (requiredClientWidthFromLayout > this.ClientSize.Width)
+            {
+                this.ClientSize = new Size(requiredClientWidthFromLayout, this.ClientSize.Height);
+            }
+
+            int confirmedClientWidth = this.ClientSize.Width;
+            int requiredClientHeightFromLayout = Math.Min(
+                maxClientHeight,
+                Math.Max(
+                    minimumClientHeight,
+                    this.rootLayout.GetPreferredSize(new Size(confirmedClientWidth, 0)).Height + heightReserve));
+            if (requiredClientHeightFromLayout > this.ClientSize.Height)
+            {
+                this.ClientSize = new Size(this.ClientSize.Width, requiredClientHeightFromLayout);
+            }
+
+            this.rootLayout.PerformLayout();
+            int requiredClientWidthFromVisibleControls = Math.Max(
+                minimumClientWidth,
+                Math.Max(
+                    this.calibrationButtonPanel.Right + this.calibrationButtonPanel.Margin.Right,
+                    this.calibrationSpeedtestPanel.Right + this.calibrationSpeedtestPanel.Margin.Right) + this.rootLayout.Padding.Right);
+            if (requiredClientWidthFromVisibleControls > this.ClientSize.Width)
+            {
+                this.ClientSize = new Size(requiredClientWidthFromVisibleControls, this.ClientSize.Height);
+                this.rootLayout.PerformLayout();
+            }
+
+            int requiredClientHeightFromVisibleControls = Math.Max(
+                minimumClientHeight,
+                Math.Max(
+                    this.calibrationButtonPanel.Bottom + this.calibrationButtonPanel.Margin.Bottom,
+                    this.calibrationSpeedtestPanel.Bottom + this.calibrationSpeedtestPanel.Margin.Bottom) + this.rootLayout.Padding.Bottom);
+            if (requiredClientHeightFromVisibleControls != this.ClientSize.Height)
+            {
+                this.ClientSize = new Size(this.ClientSize.Width, requiredClientHeightFromVisibleControls);
+            }
+
+            this.AutoScrollMinSize = Size.Empty;
+            this.statusLabel.Text = currentStatusText;
+            this.rootLayout.PerformLayout();
+        }
+
+        private string GetCalibrationMeasurementStatusText()
+        {
+            string adapterDisplayName = this.currentSettings != null
+                ? this.currentSettings.GetAdapterDisplayName()
+                : UiLanguage.Get("Monitoring.AdapterAutomatic", "Automatisch");
+
+            string[] samples = new string[]
+            {
+                UiLanguage.Get(
+                    "Calibration.ReadyStatus",
+                    "Bereit für die Kalibration. Bitte mit 'Starten' beginnen und später mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen."),
+                UiLanguage.Format(
+                    "Calibration.AdapterSavedStatus",
+                    "Internetverbindung gespeichert: {0}. Bitte Kalibration abschließen, mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.",
+                    adapterDisplayName),
+                UiLanguage.Format(
+                    "Calibration.RunningStatus",
+                    "Kalibration läuft... {0} / 30 s | DL {1} | UL {2}",
+                    CalibrationDurationSeconds,
+                    "999,9 MB/s",
+                    "999,9 MB/s"),
+                UiLanguage.Format(
+                    "Calibration.CompletedStatus",
+                    "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' bestätigen.",
+                    "999,9 MB/s",
+                    "999,9 MB/s")
+            };
+
+            string longest = samples[0];
+            for (int i = 1; i < samples.Length; i++)
+            {
+                if (samples[i].Length > longest.Length)
+                {
+                    longest = samples[i];
+                }
+            }
+
+            return longest;
         }
 
         private MonitorSettings CreateSettingsFromSelectedAdapter(
@@ -5847,14 +6499,16 @@ namespace TrafficView
             double calibrationUploadPeakBytesPerSecond)
         {
             AdapterListItem selectedItem = this.adapterComboBox.SelectedItem as AdapterListItem;
+            if (selectedItem == null)
+            {
+                return this.currentSettings;
+            }
+
             string adapterId = string.Empty;
             string adapterName = string.Empty;
 
-            if (selectedItem != null)
-            {
-                adapterId = selectedItem.Id;
-                adapterName = selectedItem.Name;
-            }
+            adapterId = selectedItem.Id;
+            adapterName = selectedItem.Name;
 
             return new MonitorSettings(
                 adapterId,
@@ -5877,14 +6531,14 @@ namespace TrafficView
         {
             List<AdapterListItem> items = NetworkSnapshot.GetAdapterItems();
             AdapterListItem automaticItem = new AdapterListItem(
+                MonitorSettings.AutomaticAdapterId,
                 string.Empty,
-                string.Empty,
-                UiLanguage.Get("Calibration.AdapterAutomatic", "Automatisch (alle aktiven Adapter)"),
+                UiLanguage.Get("Calibration.AdapterAutomatic", "Automatisch (bevorzugt LAN, sonst WLAN)"),
                 true);
             this.adapterComboBox.Items.Add(automaticItem);
 
-            int selectedIndex = 0;
-            bool selectedAdapterFound = false;
+            int selectedIndex = this.currentSettings.UsesAutomaticAdapterSelection() ? 0 : -1;
+            bool selectedAdapterFound = this.currentSettings.UsesAutomaticAdapterSelection();
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -5913,8 +6567,19 @@ namespace TrafficView
                 this.adapterComboBox.Items.Add(missingItem);
                 selectedIndex = this.adapterComboBox.Items.Count - 1;
             }
+            else if (!selectedAdapterFound && this.adapterComboBox.Items.Count > 0 && selectedIndex < 0)
+            {
+                selectedIndex = 0;
+            }
 
-            this.adapterComboBox.SelectedIndex = selectedIndex;
+            if (selectedIndex >= 0 && selectedIndex < this.adapterComboBox.Items.Count)
+            {
+                this.adapterComboBox.SelectedIndex = selectedIndex;
+            }
+            else
+            {
+                this.adapterComboBox.SelectedIndex = -1;
+            }
         }
 
         private void AdapterComboBox_SelectedIndexChanged(object sender, EventArgs e)
@@ -5925,7 +6590,7 @@ namespace TrafficView
         private void UpdateAdapterAvailabilityUi()
         {
             AdapterListItem selectedItem = this.adapterComboBox.SelectedItem as AdapterListItem;
-            this.selectedAdapterAvailable = selectedItem == null || selectedItem.IsAvailable;
+            this.selectedAdapterAvailable = selectedItem != null && selectedItem.IsAvailable;
 
             if (this.calibrationTimer.Enabled)
             {
@@ -5935,11 +6600,19 @@ namespace TrafficView
             this.startButton.Enabled = this.selectedAdapterAvailable;
             this.saveAdapterButton.Enabled = this.selectedAdapterAvailable;
 
-            if (selectedItem != null && !selectedItem.IsAvailable)
+            if (selectedItem == null)
+            {
+                this.statusLabel.Text = UiLanguage.Get(
+                    "Calibration.AdapterSelectionRequired",
+                    "Bitte eine aktive Internetverbindung auswählen.");
+                return;
+            }
+
+            if (!selectedItem.IsAvailable)
             {
                 this.statusLabel.Text = UiLanguage.Format(
                     "Calibration.AdapterUnavailableStatus",
-                    "Der gespeicherte Adapter '{0}' ist derzeit nicht verfügbar. Bitte einen aktiven Adapter oder 'Automatisch' auswählen.",
+                    "Die gespeicherte Internetverbindung '{0}' ist derzeit nicht verfügbar. Bitte eine aktive Internetverbindung oder 'Automatisch' auswählen.",
                     this.currentSettings.GetAdapterDisplayName());
                 return;
             }
@@ -5948,7 +6621,7 @@ namespace TrafficView
             {
                 this.statusLabel.Text = UiLanguage.Get(
                     "Calibration.ReadyStatus",
-                    "Bereit fuer die Kalibration. Bitte mit 'Starten' beginnen und spaeter mit 'Speichern' uebernehmen oder mit 'Abbrechen' schliessen.");
+                    "Bereit für die Kalibration. Bitte mit 'Starten' beginnen und später mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.");
             }
         }
     }
@@ -6011,23 +6684,72 @@ namespace TrafficView
             this.AutoScaleMode = AutoScaleMode.Dpi;
             this.Font = SystemFonts.MessageBoxFont;
             this.TopMost = true;
-            this.ClientSize = new Size(420, 190);
+            int compactSpacing = Math.Max(8, this.Font.Height / 2);
+            int sectionSpacing = Math.Max(12, this.Font.Height - 1);
+            int contentTop = Math.Max(14, this.Font.Height);
+            int horizontalPadding = Math.Max(16, this.Font.Height + 4);
+            int bottomPadding = Math.Max(18, compactSpacing + 10);
+            int infoMinimumHeight = Math.Max(48, (this.Font.Height * 2) + (compactSpacing * 2));
+            int languageLabelTextHorizontalPadding = Math.Max(8, compactSpacing + 2);
+            int languageLabelTextVerticalPadding = Math.Max(4, (compactSpacing / 2) + 1);
+            int languageLabelMinimumHeight = Math.Max(24, this.Font.Height + languageLabelTextVerticalPadding + 4);
+            int languageLabelMinimumWidth = Math.Max(120, (this.Font.Height * 6) + languageLabelTextHorizontalPadding + 18);
+            int comboBoxMinimumHeight = Math.Max(30, this.languageComboBox != null ? this.languageComboBox.PreferredHeight + 6 : this.Font.Height + 14);
+            int saveButtonHorizontalPadding = Math.Max(10, compactSpacing + 4);
+            int saveButtonVerticalPadding = Math.Max(4, (compactSpacing / 2) + 1);
+            int saveButtonTextHorizontalPadding = Math.Max(24, (saveButtonHorizontalPadding * 2) + 4);
+            int saveButtonTextVerticalPadding = Math.Max(12, (saveButtonVerticalPadding * 2) + 4);
+            int saveButtonMinimumWidth = Math.Max(112, (this.Font.Height * 5) + saveButtonTextHorizontalPadding);
+            int saveButtonMinimumHeight = Math.Max(40, this.Font.Height + saveButtonTextVerticalPadding);
+            int baseContentWidth = Math.Max(Math.Max(388, (this.Font.Height * 18) + 64), languageLabelMinimumWidth + 200);
+            int dialogMinimumWidth = Math.Max(420, (horizontalPadding * 2) + baseContentWidth);
+            int baseContentHeight =
+                contentTop +
+                infoMinimumHeight +
+                sectionSpacing +
+                languageLabelMinimumHeight +
+                compactSpacing +
+                comboBoxMinimumHeight +
+                sectionSpacing +
+                saveButtonMinimumHeight +
+                bottomPadding;
+            int dialogMinimumHeight = Math.Max(224, baseContentHeight);
+            this.ClientSize = new Size(dialogMinimumWidth, dialogMinimumHeight);
+            int contentLeft = horizontalPadding;
+            int contentRight = this.ClientSize.Width - horizontalPadding;
+            int contentWidth = contentRight - contentLeft;
 
             Label infoLabel = new Label();
             infoLabel.AutoSize = false;
             infoLabel.Text = UiLanguage.Get(
                 "StartupLanguage.Info",
-                "Bitte waehle zuerst die Programmsprache aus. Nach dem Speichern wird das Fenster geschlossen und das Programm startet weiter.");
-            infoLabel.SetBounds(16, 14, 388, 48);
+                "Bitte wähle zuerst die Programmsprache aus. Nach dem Speichern wird das Fenster geschlossen und das Programm startet weiter.");
+            Size infoTextSize = TextRenderer.MeasureText(
+                infoLabel.Text,
+                infoLabel.Font,
+                new Size(contentWidth, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            int infoHeight = Math.Max(infoMinimumHeight, infoTextSize.Height);
+            infoLabel.SetBounds(contentLeft, contentTop, contentWidth, infoHeight);
 
             Label languageLabel = new Label();
             languageLabel.AutoSize = false;
             languageLabel.Text = UiLanguage.Get("StartupLanguage.Label", "Sprache");
-            languageLabel.SetBounds(16, 72, 120, 24);
+            Size languageLabelTextSize = TextRenderer.MeasureText(
+                languageLabel.Text,
+                languageLabel.Font,
+                new Size(contentWidth, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            int languageLabelTop = infoLabel.Bottom + sectionSpacing;
+            int languageLabelHeight = Math.Max(languageLabelMinimumHeight, languageLabelTextSize.Height + languageLabelTextVerticalPadding);
+            int languageLabelWidth = Math.Max(languageLabelMinimumWidth, languageLabelTextSize.Width + languageLabelTextHorizontalPadding);
+            languageLabel.SetBounds(contentLeft, languageLabelTop, languageLabelWidth, languageLabelHeight);
 
             this.languageComboBox = new ComboBox();
             this.languageComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            this.languageComboBox.SetBounds(16, 98, 388, 30);
+            int comboBoxTop = languageLabel.Bottom + compactSpacing;
+            int comboBoxHeight = Math.Max(comboBoxMinimumHeight, this.languageComboBox.PreferredHeight + 6);
+            this.languageComboBox.SetBounds(contentLeft, comboBoxTop, contentWidth, comboBoxHeight);
 
             LanguageOption[] languages = UiLanguage.GetSupportedLanguages();
             int selectedIndex = 0;
@@ -6049,17 +6771,54 @@ namespace TrafficView
             this.saveButton.AutoSize = true;
             this.saveButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             this.saveButton.Text = UiLanguage.Get("StartupLanguage.Save", "Speichern");
-            this.saveButton.Padding = new Padding(10, 4, 10, 4);
-            this.saveButton.MinimumSize = new Size(112, 32);
+            this.saveButton.Padding = new Padding(
+                saveButtonHorizontalPadding,
+                saveButtonVerticalPadding,
+                saveButtonHorizontalPadding,
+                saveButtonVerticalPadding);
+            this.saveButton.MinimumSize = new Size(saveButtonMinimumWidth, saveButtonMinimumHeight);
             this.saveButton.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
             Size saveButtonSize = this.saveButton.GetPreferredSize(Size.Empty);
             int saveButtonWidth = Math.Max(this.saveButton.MinimumSize.Width, saveButtonSize.Width);
             int saveButtonHeight = Math.Max(this.saveButton.MinimumSize.Height, saveButtonSize.Height);
+            int buttonTop = this.languageComboBox.Bottom + sectionSpacing;
+            this.ClientSize = new Size(
+                this.ClientSize.Width,
+                Math.Max(this.ClientSize.Height, buttonTop + saveButtonHeight + bottomPadding));
             this.saveButton.SetBounds(
-                this.ClientSize.Width - 16 - saveButtonWidth,
-                this.ClientSize.Height - 16 - saveButtonHeight,
+                contentRight - saveButtonWidth,
+                buttonTop,
                 saveButtonWidth,
                 saveButtonHeight);
+            int requiredClientWidthFromControls = Math.Max(
+                Math.Max(
+                    languageLabel.Right + horizontalPadding,
+                    this.languageComboBox.Right + horizontalPadding),
+                this.saveButton.Right + horizontalPadding);
+            if (requiredClientWidthFromControls > this.ClientSize.Width)
+            {
+                this.ClientSize = new Size(requiredClientWidthFromControls, this.ClientSize.Height);
+                contentRight = this.ClientSize.Width - horizontalPadding;
+                contentWidth = contentRight - contentLeft;
+                infoLabel.SetBounds(contentLeft, infoLabel.Top, contentWidth, infoLabel.Height);
+                this.languageComboBox.SetBounds(contentLeft, this.languageComboBox.Top, contentWidth, this.languageComboBox.Height);
+                this.saveButton.SetBounds(
+                    contentRight - saveButtonWidth,
+                    this.saveButton.Top,
+                    saveButtonWidth,
+                    saveButtonHeight);
+            }
+            int requiredClientHeightFromVisibleControls = Math.Max(
+                Math.Max(
+                    infoLabel.Bottom,
+                    languageLabel.Bottom),
+                Math.Max(
+                    this.languageComboBox.Bottom,
+                    this.saveButton.Bottom)) + bottomPadding;
+            if (requiredClientHeightFromVisibleControls != this.ClientSize.Height)
+            {
+                this.ClientSize = new Size(this.ClientSize.Width, requiredClientHeightFromVisibleControls);
+            }
             this.saveButton.Click += this.SaveButton_Click;
 
             this.AcceptButton = this.saveButton;
@@ -6106,28 +6865,84 @@ namespace TrafficView
         public TransparencyForm(int transparencyPercent, Action<int> previewTransparency)
         {
             this.previewTransparency = previewTransparency;
-            this.Text = UiLanguage.Get("Transparency.Title", "Transparenz");
+            this.Text = UiLanguage.Get("Transparency.Title", "Transparenzeinstellung");
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             this.ShowInTaskbar = false;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.AutoScaleMode = AutoScaleMode.Dpi;
-            this.ClientSize = new Size(320, 160);
             this.Font = SystemFonts.MessageBoxFont;
             this.TopMost = true;
+            int compactSpacing = Math.Max(4, this.Font.Height / 3);
+            int sectionSpacing = Math.Max(8, compactSpacing * 2);
+            int horizontalPadding = Math.Max(16, this.Font.Height + 4);
+            int buttonSpacing = Math.Max(8, compactSpacing * 2);
+            int baseContentWidth = Math.Max(240, this.Font.Height * 15);
+            int dialogMinimumWidth = Math.Max(320, (horizontalPadding * 2) + baseContentWidth);
+            int buttonWidthReserve = Math.Max(28, compactSpacing * 7);
+            int buttonHeightReserve = Math.Max(12, compactSpacing * 3);
+            int buttonHorizontalPadding = Math.Max(10, compactSpacing + 4);
+            int buttonVerticalPadding = Math.Max(4, (compactSpacing / 2) + 1);
+            int buttonTextHorizontalPadding = Math.Max(buttonWidthReserve, (buttonHorizontalPadding * 2) + 4);
+            int buttonTextVerticalPadding = Math.Max(buttonHeightReserve, (buttonVerticalPadding * 2) + 4);
+            int valueLabelWidthReserve = Math.Max(12, compactSpacing * 3);
+            int valueLabelHeightReserve = Math.Max(8, compactSpacing * 2);
+            int trackBarHeightReserve = Math.Max(10, compactSpacing * 3);
+            int minimumButtonWidth = Math.Max(78, (this.Font.Height * 4) + buttonTextHorizontalPadding);
+            int minimumButtonHeight = Math.Max(28, this.Font.Height + buttonTextVerticalPadding);
+            int valueLabelMinimumWidth = Math.Max(90, (this.Font.Height * 5) + valueLabelWidthReserve);
+            int valueLabelMinimumHeight = Math.Max(24, this.Font.Height + valueLabelHeightReserve);
+            int trackBarMinimumHeight = Math.Max(40, this.Font.Height + trackBarHeightReserve);
+            int valueLabelTextHorizontalPadding = valueLabelWidthReserve;
+            int infoTextVerticalPadding = Math.Max(4, compactSpacing + 1);
+            int valueLabelTextVerticalPadding = Math.Max(4, compactSpacing + 1);
+            int contentTop = Math.Max(sectionSpacing, this.Font.Height);
+            int infoMinimumHeight = Math.Max(this.Font.Height + compactSpacing + infoTextVerticalPadding, sectionSpacing + compactSpacing + 2);
+            int contentSectionSpacing = Math.Max(compactSpacing, this.Font.Height / 3);
+            int buttonAreaTopSpacing = Math.Max(sectionSpacing, contentSectionSpacing + compactSpacing);
+            int bottomPadding = Math.Max(12, buttonAreaTopSpacing);
+            int baseContentHeight =
+                contentTop +
+                infoMinimumHeight +
+                contentSectionSpacing +
+                valueLabelMinimumHeight +
+                contentSectionSpacing +
+                trackBarMinimumHeight +
+                buttonAreaTopSpacing +
+                minimumButtonHeight +
+                bottomPadding;
+            int dialogMinimumHeight = Math.Max(176, baseContentHeight);
+            this.ClientSize = new Size(dialogMinimumWidth, dialogMinimumHeight);
+            int contentLeft = horizontalPadding;
+            int contentRight = this.ClientSize.Width - horizontalPadding;
+            int contentWidth = contentRight - contentLeft;
 
             Label infoLabel = new Label();
             infoLabel.AutoSize = false;
             infoLabel.Text = UiLanguage.Get(
                 "Transparency.Info",
-                "Stelle die Transparenz des gesamten Anzeigefelds von 0 % bis 100 % ein.");
-            infoLabel.SetBounds(16, 14, 288, 34);
+                "Transparenz");
+            Size infoTextSize = TextRenderer.MeasureText(
+                infoLabel.Text,
+                infoLabel.Font,
+                new Size(contentWidth, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            int infoHeight = Math.Max(infoMinimumHeight, infoTextSize.Height);
+            infoLabel.SetBounds(contentLeft, contentTop, contentWidth, infoHeight);
 
             this.valueLabel = new Label();
             this.valueLabel.AutoSize = false;
             this.valueLabel.TextAlign = ContentAlignment.MiddleRight;
-            this.valueLabel.SetBounds(214, 52, 90, 24);
+            Size valueLabelTextSize = TextRenderer.MeasureText(
+                "100 %",
+                this.valueLabel.Font ?? this.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            int valueLabelHeight = Math.Max(valueLabelMinimumHeight, valueLabelTextSize.Height + valueLabelTextVerticalPadding);
+            int valueLabelWidth = Math.Max(valueLabelMinimumWidth, valueLabelTextSize.Width + valueLabelTextHorizontalPadding);
+            int valueLabelTop = infoLabel.Bottom + contentSectionSpacing;
+            this.valueLabel.SetBounds(contentRight - valueLabelWidth, valueLabelTop, valueLabelWidth, valueLabelHeight);
 
             this.transparencyTrackBar = new TrackBar();
             this.transparencyTrackBar.Minimum = 0;
@@ -6136,13 +6951,22 @@ namespace TrafficView
             this.transparencyTrackBar.SmallChange = 1;
             this.transparencyTrackBar.LargeChange = 10;
             this.transparencyTrackBar.Value = Math.Max(0, Math.Min(100, transparencyPercent));
-            this.transparencyTrackBar.SetBounds(16, 74, 288, 40);
+            int trackBarHeight = Math.Max(trackBarMinimumHeight, this.transparencyTrackBar.PreferredSize.Height);
+            int trackBarTop = this.valueLabel.Bottom + contentSectionSpacing;
+            this.transparencyTrackBar.SetBounds(contentLeft, trackBarTop, contentWidth, trackBarHeight);
             this.transparencyTrackBar.ValueChanged += this.TransparencyTrackBar_ValueChanged;
 
             Button saveButton = new Button();
             saveButton.Text = UiLanguage.Get("Transparency.Save", "Speichern");
             saveButton.DialogResult = DialogResult.OK;
-            saveButton.SetBounds(142, 120, 78, 28);
+            saveButton.Padding = new Padding(buttonHorizontalPadding, buttonVerticalPadding, buttonHorizontalPadding, buttonVerticalPadding);
+            saveButton.MinimumSize = new Size(minimumButtonWidth, minimumButtonHeight);
+            Size saveButtonTextSize = TextRenderer.MeasureText(
+                saveButton.Text,
+                saveButton.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            int saveButtonWidth = Math.Max(saveButton.MinimumSize.Width, saveButtonTextSize.Width + buttonTextHorizontalPadding);
             saveButton.Click += delegate
             {
                 if (this.previewTransparency != null)
@@ -6152,9 +6976,69 @@ namespace TrafficView
             };
 
             Button cancelButton = new Button();
-            cancelButton.Text = UiLanguage.Get("Transparency.Close", "Schliessen");
+            cancelButton.Text = UiLanguage.Get("Transparency.Close", "Schließen");
             cancelButton.DialogResult = DialogResult.Cancel;
-            cancelButton.SetBounds(226, 120, 78, 28);
+            cancelButton.Padding = new Padding(buttonHorizontalPadding, buttonVerticalPadding, buttonHorizontalPadding, buttonVerticalPadding);
+            cancelButton.MinimumSize = new Size(minimumButtonWidth, minimumButtonHeight);
+            Size cancelButtonTextSize = TextRenderer.MeasureText(
+                cancelButton.Text,
+                cancelButton.Font,
+                new Size(int.MaxValue, int.MaxValue),
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            int cancelButtonWidth = Math.Max(cancelButton.MinimumSize.Width, cancelButtonTextSize.Width + buttonTextHorizontalPadding);
+            Size saveButtonPreferredSize = saveButton.GetPreferredSize(Size.Empty);
+            Size cancelButtonPreferredSize = cancelButton.GetPreferredSize(Size.Empty);
+            int buttonHeight = Math.Max(
+                Math.Max(saveButton.MinimumSize.Height, cancelButton.MinimumSize.Height),
+                Math.Max(saveButtonPreferredSize.Height, cancelButtonPreferredSize.Height));
+            int minimumClientWidth = Math.Max(
+                dialogMinimumWidth,
+                contentLeft + saveButtonWidth + buttonSpacing + cancelButtonWidth + horizontalPadding);
+            int minimumClientHeight = Math.Max(
+                dialogMinimumHeight,
+                this.transparencyTrackBar.Bottom + buttonAreaTopSpacing + buttonHeight + bottomPadding);
+            this.ClientSize = new Size(minimumClientWidth, minimumClientHeight);
+            contentRight = this.ClientSize.Width - horizontalPadding;
+            contentWidth = contentRight - contentLeft;
+            infoLabel.SetBounds(contentLeft, infoLabel.Top, contentWidth, infoLabel.Height);
+            this.valueLabel.SetBounds(contentRight - valueLabelWidth, this.valueLabel.Top, valueLabelWidth, valueLabelHeight);
+            this.transparencyTrackBar.SetBounds(contentLeft, this.transparencyTrackBar.Top, contentWidth, this.transparencyTrackBar.Height);
+            int buttonTop = this.transparencyTrackBar.Bottom + buttonAreaTopSpacing;
+            int cancelButtonLeft = contentRight - cancelButtonWidth;
+            int saveButtonLeft = cancelButtonLeft - buttonSpacing - saveButtonWidth;
+            saveButton.SetBounds(saveButtonLeft, buttonTop, saveButtonWidth, buttonHeight);
+            cancelButton.SetBounds(cancelButtonLeft, buttonTop, cancelButtonWidth, buttonHeight);
+            int requiredClientWidthFromControls = Math.Max(
+                Math.Max(
+                    Math.Max(
+                        this.valueLabel.Right + horizontalPadding,
+                        this.transparencyTrackBar.Right + horizontalPadding),
+                    saveButton.Right + horizontalPadding),
+                cancelButton.Right + horizontalPadding);
+            if (requiredClientWidthFromControls > this.ClientSize.Width)
+            {
+                this.ClientSize = new Size(requiredClientWidthFromControls, this.ClientSize.Height);
+                contentRight = this.ClientSize.Width - horizontalPadding;
+                contentWidth = contentRight - contentLeft;
+                infoLabel.SetBounds(contentLeft, infoLabel.Top, contentWidth, infoLabel.Height);
+                this.valueLabel.SetBounds(contentRight - valueLabelWidth, this.valueLabel.Top, valueLabelWidth, valueLabelHeight);
+                this.transparencyTrackBar.SetBounds(contentLeft, this.transparencyTrackBar.Top, contentWidth, this.transparencyTrackBar.Height);
+                cancelButtonLeft = contentRight - cancelButtonWidth;
+                saveButtonLeft = cancelButtonLeft - buttonSpacing - saveButtonWidth;
+                saveButton.SetBounds(saveButtonLeft, buttonTop, saveButtonWidth, buttonHeight);
+                cancelButton.SetBounds(cancelButtonLeft, buttonTop, cancelButtonWidth, buttonHeight);
+            }
+            int requiredClientHeightFromVisibleControls = Math.Max(
+                Math.Max(
+                    infoLabel.Bottom,
+                    this.valueLabel.Bottom),
+                Math.Max(
+                    this.transparencyTrackBar.Bottom,
+                    cancelButton.Bottom)) + bottomPadding;
+            if (requiredClientHeightFromVisibleControls != this.ClientSize.Height)
+            {
+                this.ClientSize = new Size(this.ClientSize.Width, requiredClientHeightFromVisibleControls);
+            }
 
             this.AcceptButton = saveButton;
             this.CancelButton = cancelButton;
@@ -6319,11 +7203,12 @@ namespace TrafficView
 
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectable(networkInterface))
+                if (!IsSelectableInSetup(networkInterface))
                 {
                     continue;
                 }
 
+                bool isAvailable = IsCapturable(networkInterface);
                 OperationalStatus operationalStatus;
                 string stateText = TryGetOperationalStatus(networkInterface, out operationalStatus) &&
                     operationalStatus == OperationalStatus.Up
@@ -6334,12 +7219,18 @@ namespace TrafficView
                     networkInterface.Id,
                     networkInterface.Name,
                     displayText,
-                    IsCapturable(networkInterface)));
+                    isAvailable));
             }
 
             items.Sort(
                 delegate(AdapterListItem left, AdapterListItem right)
                 {
+                    int availabilityComparison = right.IsAvailable.CompareTo(left.IsAvailable);
+                    if (availabilityComparison != 0)
+                    {
+                        return availabilityComparison;
+                    }
+
                     return string.Compare(left.DisplayText, right.DisplayText, StringComparison.CurrentCultureIgnoreCase);
                 });
 
@@ -6348,6 +7239,11 @@ namespace TrafficView
 
         public static NetworkSnapshot Capture(MonitorSettings settings)
         {
+            if (settings == null || string.IsNullOrWhiteSpace(settings.AdapterId))
+            {
+                return new NetworkSnapshot(0L, 0L, 0, string.Empty);
+            }
+
             NetworkInterface[] interfaces;
 
             try
@@ -6360,19 +7256,19 @@ namespace TrafficView
                 return new NetworkSnapshot(0L, 0L, 0, string.Empty);
             }
 
-            if (settings != null && !string.IsNullOrEmpty(settings.AdapterId))
+            if (settings.UsesAutomaticAdapterSelection())
             {
-                return CaptureSelectedAdapter(interfaces, settings);
+                return CaptureAutomatic(interfaces);
             }
 
-            return CaptureAutomatic(interfaces);
+            return CaptureSelectedAdapter(interfaces, settings);
         }
 
         public static AdapterAvailabilityState GetAdapterAvailabilityState(MonitorSettings settings)
         {
             if (settings == null || string.IsNullOrEmpty(settings.AdapterId))
             {
-                return AdapterAvailabilityState.Automatic;
+                return AdapterAvailabilityState.Missing;
             }
 
             NetworkInterface[] interfaces;
@@ -6387,9 +7283,16 @@ namespace TrafficView
                 return AdapterAvailabilityState.Missing;
             }
 
+            if (settings.UsesAutomaticAdapterSelection())
+            {
+                return SelectAutomaticAdapter(interfaces) != null
+                    ? AdapterAvailabilityState.Available
+                    : AdapterAvailabilityState.Missing;
+            }
+
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectable(networkInterface))
+                if (!IsSelectableInSetup(networkInterface))
                 {
                     continue;
                 }
@@ -6407,49 +7310,62 @@ namespace TrafficView
             return AdapterAvailabilityState.Missing;
         }
 
-        private static NetworkSnapshot CaptureAutomatic(NetworkInterface[] interfaces)
+        public static string ResolveAdapterKey(MonitorSettings settings)
         {
-            long received = 0L;
-            long sent = 0L;
-            int adapterCount = 0;
-            string primaryAdapterName = string.Empty;
-            long fastestAdapterSpeed = long.MinValue;
-
-            foreach (NetworkInterface networkInterface in interfaces)
+            if (settings != null && !string.IsNullOrWhiteSpace(settings.AdapterId))
             {
-                if (!IsCapturable(networkInterface))
+                if (!settings.UsesAutomaticAdapterSelection())
                 {
-                    continue;
+                    return settings.AdapterId.Trim();
                 }
 
-                long bytesReceived;
-                long bytesSent;
-                if (!TryReadStatistics(networkInterface, out bytesReceived, out bytesSent))
+                NetworkInterface[] interfaces;
+
+                try
                 {
-                    continue;
+                    interfaces = NetworkInterface.GetAllNetworkInterfaces();
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce("network-getallnetworkinterfaces-adapterkey", "Failed to enumerate network interfaces for adapter key resolution.", ex);
+                    return MonitorSettings.AutomaticAdapterId;
                 }
 
-                long speed;
-                TryGetInterfaceSpeed(networkInterface, out speed);
-                received += bytesReceived;
-                sent += bytesSent;
-                adapterCount++;
-
-                if (string.IsNullOrEmpty(primaryAdapterName) || speed > fastestAdapterSpeed)
+                NetworkInterface primaryAdapter = SelectAutomaticAdapter(interfaces);
+                if (primaryAdapter == null || string.IsNullOrWhiteSpace(primaryAdapter.Id))
                 {
-                    primaryAdapterName = networkInterface.Name;
-                    fastestAdapterSpeed = speed;
+                    return MonitorSettings.AutomaticAdapterId;
                 }
+
+                return primaryAdapter.Id.Trim();
             }
 
-            return new NetworkSnapshot(received, sent, adapterCount, primaryAdapterName);
+            return string.Empty;
+        }
+
+        private static NetworkSnapshot CaptureAutomatic(NetworkInterface[] interfaces)
+        {
+            NetworkInterface primaryAdapter = SelectAutomaticAdapter(interfaces);
+            if (primaryAdapter == null)
+            {
+                return new NetworkSnapshot(0L, 0L, 0, string.Empty);
+            }
+
+            long bytesReceived;
+            long bytesSent;
+            if (!TryReadStatistics(primaryAdapter, out bytesReceived, out bytesSent))
+            {
+                return new NetworkSnapshot(0L, 0L, 0, primaryAdapter.Name);
+            }
+
+            return new NetworkSnapshot(bytesReceived, bytesSent, 1, primaryAdapter.Name);
         }
 
         private static NetworkSnapshot CaptureSelectedAdapter(NetworkInterface[] interfaces, MonitorSettings settings)
         {
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectable(networkInterface))
+                if (!IsSelectableInSetup(networkInterface))
                 {
                     continue;
                 }
@@ -6501,6 +7417,11 @@ namespace TrafficView
                 return false;
             }
 
+            if (LooksLikeAuxiliaryVirtualAdapter(networkInterface))
+            {
+                return false;
+            }
+
             try
             {
                 if (networkInterface.IsReceiveOnly)
@@ -6516,6 +7437,80 @@ namespace TrafficView
             return SupportsTrafficProtocols(networkInterface);
         }
 
+        private static bool IsSelectableInSetup(NetworkInterface networkInterface)
+        {
+            return IsSelectable(networkInterface) &&
+                !LooksLikeVirtualAdapterForSetup(networkInterface);
+        }
+
+        private static bool LooksLikeAuxiliaryVirtualAdapter(NetworkInterface networkInterface)
+        {
+            string name = SafeInterfaceText(networkInterface != null ? networkInterface.Name : null);
+            string description = SafeInterfaceText(networkInterface != null ? networkInterface.Description : null);
+
+            return ContainsAuxiliaryInterfaceMarker(name) ||
+                ContainsAuxiliaryInterfaceMarker(description);
+        }
+
+        private static bool LooksLikeVirtualAdapterForSetup(NetworkInterface networkInterface)
+        {
+            string name = SafeInterfaceText(networkInterface != null ? networkInterface.Name : null);
+            string description = SafeInterfaceText(networkInterface != null ? networkInterface.Description : null);
+
+            return ContainsVirtualAdapterMarker(name) ||
+                ContainsVirtualAdapterMarker(description);
+        }
+
+        private static string SafeInterfaceText(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? string.Empty
+                : value.Trim().ToLowerInvariant();
+        }
+
+        private static bool ContainsAuxiliaryInterfaceMarker(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            return value.Contains("ndis 6 filter") ||
+                value.Contains("lightweight filter") ||
+                value.Contains("filter driver") ||
+                value.Contains("qos packet scheduler") ||
+                value.Contains("kerneldebugger") ||
+                value.Contains("kernel debugger") ||
+                value.Contains("pseudo-interface") ||
+                value.Contains("wi-fi direct") ||
+                value.Contains("wifi direct") ||
+                value.Contains("virtual wifi");
+        }
+
+        private static bool ContainsVirtualAdapterMarker(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            return value.Contains("virtual") ||
+                value.Contains("vpn") ||
+                value.Contains("tunnel") ||
+                value.Contains("tap-") ||
+                value.Contains("tap ") ||
+                value.Contains("tap-windows") ||
+                value.Contains("wireguard") ||
+                value.Contains("mullvad") ||
+                value.Contains("openvpn") ||
+                value.Contains("hyper-v") ||
+                value.Contains("vethernet") ||
+                value.Contains("wi-fi direct") ||
+                value.Contains("wifi direct") ||
+                value.Contains("pseudo-interface") ||
+                value.Contains("pseudo interface");
+        }
+
         private static bool IsCapturable(NetworkInterface networkInterface)
         {
             OperationalStatus operationalStatus;
@@ -6524,6 +7519,87 @@ namespace TrafficView
                 operationalStatus == OperationalStatus.Up &&
                 HasUsableUnicastAddress(networkInterface);
         }
+
+        private static NetworkInterface SelectAutomaticAdapter(NetworkInterface[] interfaces)
+        {
+            if (interfaces == null || interfaces.Length == 0)
+            {
+                return null;
+            }
+
+            NetworkInterface bestAdapter = null;
+            int bestTypePriority = int.MinValue;
+            long bestSpeed = long.MinValue;
+
+            foreach (NetworkInterface networkInterface in interfaces)
+            {
+                if (!IsSelectableInSetup(networkInterface) || !IsCapturable(networkInterface))
+                {
+                    continue;
+                }
+
+                int typePriority = GetAutomaticAdapterTypePriority(networkInterface);
+                long speed;
+                if (!TryGetInterfaceSpeed(networkInterface, out speed))
+                {
+                    speed = 0L;
+                }
+
+                bool isBetterCandidate = bestAdapter == null;
+                if (!isBetterCandidate && typePriority != bestTypePriority)
+                {
+                    isBetterCandidate = typePriority > bestTypePriority;
+                }
+
+                if (!isBetterCandidate && speed != bestSpeed)
+                {
+                    isBetterCandidate = speed > bestSpeed;
+                }
+
+                if (isBetterCandidate)
+                {
+                    bestAdapter = networkInterface;
+                    bestTypePriority = typePriority;
+                    bestSpeed = speed;
+                }
+            }
+
+            return bestAdapter;
+        }
+
+        private static int GetAutomaticAdapterTypePriority(NetworkInterface networkInterface)
+        {
+            if (networkInterface == null)
+            {
+                return 0;
+            }
+
+            NetworkInterfaceType type;
+            try
+            {
+                type = networkInterface.NetworkInterfaceType;
+            }
+            catch (NetworkInformationException)
+            {
+                return 0;
+            }
+
+            switch (type)
+            {
+                case NetworkInterfaceType.Ethernet:
+                case NetworkInterfaceType.GigabitEthernet:
+                case NetworkInterfaceType.FastEthernetFx:
+                case NetworkInterfaceType.FastEthernetT:
+                    return 300;
+                case NetworkInterfaceType.Wireless80211:
+                    return 250;
+                case NetworkInterfaceType.Ppp:
+                    return 200;
+                default:
+                    return 100;
+            }
+        }
+
 
         private static bool TryGetInterfaceSpeed(NetworkInterface networkInterface, out long speed)
         {
@@ -6762,7 +7838,6 @@ namespace TrafficView
 
             return false;
         }
-
 
         private static bool TryGetIpProperties(NetworkInterface networkInterface, out IPInterfaceProperties properties)
         {

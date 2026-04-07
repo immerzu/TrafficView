@@ -7,6 +7,7 @@ namespace TrafficView
     internal sealed class MonitorSettings
     {
         private const string SettingsFileName = "TrafficView.settings.ini";
+        public const string AutomaticAdapterId = "__AUTO__";
         private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
         public MonitorSettings(
             string adapterId,
@@ -26,9 +27,9 @@ namespace TrafficView
         {
             this.AdapterId = adapterId ?? string.Empty;
             this.AdapterName = adapterName ?? string.Empty;
-            this.CalibrationPeakBytesPerSecond = Math.Max(0D, calibrationPeakBytesPerSecond);
-            this.CalibrationDownloadPeakBytesPerSecond = Math.Max(0D, calibrationDownloadPeakBytesPerSecond);
-            this.CalibrationUploadPeakBytesPerSecond = Math.Max(0D, calibrationUploadPeakBytesPerSecond);
+            this.CalibrationPeakBytesPerSecond = NormalizeCalibrationBytesPerSecond(calibrationPeakBytesPerSecond);
+            this.CalibrationDownloadPeakBytesPerSecond = NormalizeCalibrationBytesPerSecond(calibrationDownloadPeakBytesPerSecond);
+            this.CalibrationUploadPeakBytesPerSecond = NormalizeCalibrationBytesPerSecond(calibrationUploadPeakBytesPerSecond);
             this.InitialCalibrationPromptHandled = initialCalibrationPromptHandled;
             this.InitialLanguagePromptHandled = initialLanguagePromptHandled;
             this.TransparencyPercent = ClampTransparencyPercent(transparencyPercent);
@@ -252,12 +253,17 @@ namespace TrafficView
         {
             if (string.IsNullOrEmpty(this.AdapterId))
             {
+                return UiLanguage.Get("Common.NoAdapter", "Keine Internetverbindung");
+            }
+
+            if (this.UsesAutomaticAdapterSelection())
+            {
                 return UiLanguage.Get("Common.Automatic", "Automatisch");
             }
 
             if (string.IsNullOrEmpty(this.AdapterName))
             {
-                return UiLanguage.Get("Common.Adapter", "Adapter");
+                return UiLanguage.Get("Common.Adapter", "Internetverbindung");
             }
 
             return this.AdapterName;
@@ -265,7 +271,12 @@ namespace TrafficView
 
         public bool HasAdapterSelection()
         {
-            return !string.IsNullOrEmpty(this.AdapterId) || !string.IsNullOrEmpty(this.AdapterName);
+            return !string.IsNullOrWhiteSpace(this.AdapterId);
+        }
+
+        public bool UsesAutomaticAdapterSelection()
+        {
+            return string.Equals(this.AdapterId, AutomaticAdapterId, StringComparison.OrdinalIgnoreCase);
         }
 
         public bool HasCalibrationData()
@@ -292,27 +303,63 @@ namespace TrafficView
             string settingsPath = GetSettingsPath();
             string[] lines;
             bool primarySettingsFileExists = File.Exists(settingsPath);
+            string[] primaryLines = null;
+            bool primaryHasRecognizedSettings = false;
 
             if (TryReadSettingsLines(settingsPath, out lines))
             {
-                return LoadFromLines(lines, settings);
+                if (ContainsRecognizedStoredSetting(lines))
+                {
+                    primaryLines = lines;
+                    primaryHasRecognizedSettings = true;
+                }
             }
 
             string legacySettingsPath = GetLegacySettingsPath();
             bool legacySettingsFileExists = !ArePathsEqual(settingsPath, legacySettingsPath) &&
                 File.Exists(legacySettingsPath);
+            string[] legacyLines = null;
+            bool legacyHasRecognizedSettings = false;
             if (!ArePathsEqual(settingsPath, legacySettingsPath) &&
-                !File.Exists(settingsPath) &&
-                TryReadSettingsLines(legacySettingsPath, out lines))
+                TryReadSettingsLines(legacySettingsPath, out lines) &&
+                ContainsRecognizedStoredSetting(lines))
             {
-                MonitorSettings migratedSettings = LoadFromLines(lines, settings);
+                legacyLines = lines;
+                legacyHasRecognizedSettings = true;
+            }
+
+            if (primaryHasRecognizedSettings)
+            {
+                MonitorSettings primarySettings = LoadFromLines(primaryLines, settings);
+                if (!ContainsStoredValidLanguageSetting(primaryLines) &&
+                    legacyHasRecognizedSettings &&
+                    ContainsStoredValidLanguageSetting(legacyLines))
+                {
+                    MonitorSettings legacySettings = LoadFromLines(legacyLines, settings);
+                    primarySettings = primarySettings.WithLanguageCode(legacySettings.LanguageCode);
+                }
+
+                return primarySettings;
+            }
+
+            if (legacyHasRecognizedSettings)
+            {
+                MonitorSettings migratedSettings = LoadFromLines(legacyLines, settings);
                 AppLog.WarnOnce(
                     "settings-legacy-migration-" + legacySettingsPath,
                     string.Format(
                         "Legacy settings path '{0}' was used and migration to '{1}' was attempted.",
                         legacySettingsPath,
                         settingsPath));
-                TryWriteSettingsFile(settingsPath, migratedSettings.CreateSerializedLines());
+                if (!TryWriteSettingsFile(settingsPath, migratedSettings.CreateSerializedLines()))
+                {
+                    AppLog.WarnOnce(
+                        "settings-legacy-migration-save-failed-" + settingsPath,
+                        string.Format(
+                            "Legacy settings were loaded from '{0}', but migration could not be persisted to '{1}'.",
+                            legacySettingsPath,
+                            settingsPath));
+                }
                 return migratedSettings;
             }
 
@@ -332,6 +379,32 @@ namespace TrafficView
         public static bool SettingsFileExists()
         {
             return File.Exists(GetSettingsPath()) || File.Exists(GetLegacySettingsPath());
+        }
+
+        public static bool HasStoredLanguageSetting()
+        {
+            string[] lines;
+            string settingsPath = GetSettingsPath();
+            if (TryReadSettingsLines(settingsPath, out lines))
+            {
+                if (ContainsRecognizedStoredSetting(lines))
+                {
+                    if (ContainsStoredValidLanguageSetting(lines))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            string legacySettingsPath = GetLegacySettingsPath();
+            if (!ArePathsEqual(settingsPath, legacySettingsPath) &&
+                TryReadSettingsLines(legacySettingsPath, out lines) &&
+                ContainsStoredValidLanguageSetting(lines))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static MonitorSettings LoadFromLines(string[] lines, MonitorSettings defaults)
@@ -523,6 +596,219 @@ namespace TrafficView
                 panelSkinId);
         }
 
+        private static bool ContainsStoredValidLanguageSetting(string[] lines)
+        {
+            string value;
+            return TryGetStoredSettingValue(lines, "LanguageCode", out value) &&
+                IsRecognizedStoredLanguageCode(value);
+        }
+
+        private static bool ContainsRecognizedStoredSetting(string[] lines)
+        {
+            if (lines == null || lines.Length == 0)
+            {
+                return false;
+            }
+
+            if (ContainsStoredSavedPopupLocation(lines))
+            {
+                return true;
+            }
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                int splitIndex = line.IndexOf('=');
+                if (splitIndex <= 0)
+                {
+                    continue;
+                }
+
+                string key = line.Substring(0, splitIndex).Trim();
+                string value = line.Substring(splitIndex + 1).Trim();
+                if (!IsRecognizedStoredSettingValue(key, value))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsStoredSetting(string[] lines, string keyName)
+        {
+            string ignored;
+            return TryGetStoredSettingValue(lines, keyName, out ignored);
+        }
+
+        private static bool IsRecognizedStoredSettingValue(string key, string value)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            if (string.Equals(key, "AdapterId", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (string.Equals(key, "CalibrationPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "CalibrationDownloadPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "CalibrationUploadPeakBytesPerSecond", StringComparison.OrdinalIgnoreCase))
+            {
+                double parsedValue;
+                return double.TryParse(
+                    value,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out parsedValue) &&
+                    NormalizeCalibrationBytesPerSecond(parsedValue) > 0D;
+            }
+
+            if (string.Equals(key, "TransparencyPercent", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(key, "PopupScalePercent", StringComparison.OrdinalIgnoreCase))
+            {
+                int parsedValue;
+                return int.TryParse(value, out parsedValue);
+            }
+
+            if (string.Equals(key, "LanguageCode", StringComparison.OrdinalIgnoreCase))
+            {
+                return IsRecognizedStoredLanguageCode(value);
+            }
+
+            if (string.Equals(key, "PanelSkinId", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(
+                    PanelSkinCatalog.NormalizeSkinId(value),
+                    value.Trim(),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        private static bool ContainsStoredSavedPopupLocation(string[] lines)
+        {
+            string hasSavedPopupLocationValue;
+            if (!TryGetStoredSettingValue(lines, "HasSavedPopupLocation", out hasSavedPopupLocationValue))
+            {
+                return false;
+            }
+
+            bool hasSavedPopupLocation;
+            if (!TryParseStoredBoolean(hasSavedPopupLocationValue, out hasSavedPopupLocation) ||
+                !hasSavedPopupLocation)
+            {
+                return false;
+            }
+
+            string popupLocationXValue;
+            string popupLocationYValue;
+            int popupLocationX;
+            int popupLocationY;
+            return TryGetStoredSettingValue(lines, "PopupLocationX", out popupLocationXValue) &&
+                int.TryParse(popupLocationXValue, out popupLocationX) &&
+                TryGetStoredSettingValue(lines, "PopupLocationY", out popupLocationYValue) &&
+                int.TryParse(popupLocationYValue, out popupLocationY);
+        }
+
+        private static bool TryGetStoredSettingValue(string[] lines, string keyName, out string value)
+        {
+            value = string.Empty;
+
+            if (lines == null || lines.Length == 0 || string.IsNullOrWhiteSpace(keyName))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                int splitIndex = line.IndexOf('=');
+                if (splitIndex <= 0)
+                {
+                    continue;
+                }
+
+                string key = line.Substring(0, splitIndex).Trim();
+                if (!string.Equals(key, keyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                value = line.Substring(splitIndex + 1).Trim();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+
+            return false;
+        }
+
+        private static bool TryParseStoredBoolean(string value, out bool parsedValue)
+        {
+            parsedValue = false;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string normalized = value.Trim();
+            if (string.Equals(normalized, "1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "yes", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedValue = true;
+                return true;
+            }
+
+            if (string.Equals(normalized, "0", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "false", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "no", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedValue = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsRecognizedStoredLanguageCode(string languageCode)
+        {
+            if (string.IsNullOrWhiteSpace(languageCode))
+            {
+                return false;
+            }
+
+            string normalized = languageCode.Trim();
+            LanguageOption[] supportedLanguages = UiLanguage.GetSupportedLanguages();
+
+            for (int i = 0; i < supportedLanguages.Length; i++)
+            {
+                if (string.Equals(supportedLanguages[i].Code, normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return string.Equals(normalized, "zh", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "zh-cn", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "zh-hans", StringComparison.OrdinalIgnoreCase);
+        }
+
         private string[] CreateSerializedLines()
         {
             return new string[]
@@ -586,6 +872,8 @@ namespace TrafficView
 
             try
             {
+                EnsurePortableSettingsPathAllowed(path);
+
                 if (!File.Exists(path))
                 {
                     return false;
@@ -635,6 +923,8 @@ namespace TrafficView
 
             try
             {
+                EnsurePortableSettingsPathAllowed(path);
+
                 string directory = Path.GetDirectoryName(path);
                 if (!string.IsNullOrWhiteSpace(directory))
                 {
@@ -698,6 +988,8 @@ namespace TrafficView
 
             try
             {
+                EnsurePortableSettingsPathAllowed(path);
+
                 if (File.Exists(path))
                 {
                     File.Delete(path);
@@ -721,6 +1013,24 @@ namespace TrafficView
                     "settings-temp-delete-security-" + (path ?? string.Empty),
                     string.Format("Temporary settings file deletion was denied by security policy: {0}", path ?? string.Empty));
             }
+        }
+
+        private static void EnsurePortableSettingsPathAllowed(string path)
+        {
+            if (!AppStorage.IsPortableMode)
+            {
+                return;
+            }
+
+            if (AppStorage.IsPathWithinBaseDirectory(path))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                string.Format(
+                    "Settings-Pfad liegt ausserhalb des Portable-Verzeichnisses: '{0}'.",
+                    path ?? string.Empty));
         }
 
         private static bool ArePathsEqual(string left, string right)
@@ -775,6 +1085,16 @@ namespace TrafficView
         private static int ClampTransparencyPercent(int transparencyPercent)
         {
             return Math.Max(0, Math.Min(100, transparencyPercent));
+        }
+
+        private static double NormalizeCalibrationBytesPerSecond(double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0D)
+            {
+                return 0D;
+            }
+
+            return value;
         }
 
         private static int NormalizePopupScalePercent(int popupScalePercent)

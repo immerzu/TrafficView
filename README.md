@@ -31,6 +31,13 @@ Der Kalibrationsdialog erweitert seine Breite jetzt bei Bedarf passend zur kompl
 - Doppelklick auf `dist\TrafficView.exe`
 - oder `build.ps1` ausfuehren und danach `dist\TrafficView.exe` starten
 
+## Release
+
+- Das aktive Release-Format ist ausschliesslich die Portable-ZIP-Datei.
+- Erzeugung ueber `portable-release.ps1`
+- Ergebnis in `..\Ausgabe\TrafficView.Portable.<Version>.zip`
+- Ein Installer ist nicht Teil des aktiven Release-Ablaufs.
+
 ## Bedienung
 
 - Linksklick auf das Tray-Symbol: Fenster anzeigen oder ausblenden
