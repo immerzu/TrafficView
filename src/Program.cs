@@ -1644,12 +1644,14 @@ namespace TrafficView
         private const int RingSegmentCount = 18;
         private const float RingSegmentGapDegrees = 4.2F;
         private const float MinimumVisibleSegmentSweepDegrees = 0.9F;
-        private const double RingDisplayRiseSmoothingFactor = 0.72D;
-        private const double RingDisplayFallSmoothingFactor = 0.42D;
+        private const double RingDisplayRiseSmoothingFactor = 0.28D;
+        private const double RingDisplayFallSmoothingFactor = 0.14D;
         private const double RingDisplayNoiseFloorBytesPerSecond = 8D * 1024D;
         private const int DisplaySmoothingSampleCount = 3;
         private const int TrafficHistorySampleCount = 60;
         private const int OverlaySparklinePointCount = 24;
+        private const double PeakHoldReleaseDelaySeconds = 0.70D;
+        private const double PeakHoldDecayPerSecond = 0.42D;
         private const string PanelBackgroundAssetFileName = "TrafficView.panel.png";
         private const string PanelBackgroundScaledAssetFileNameFormat = "TrafficView.panel.{0}.png";
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
@@ -1677,10 +1679,17 @@ namespace TrafficView
         private Font formFont;
         private double latestDownloadBytesPerSecond;
         private double latestUploadBytesPerSecond;
+        private double displayedDownloadBytesPerSecond;
+        private double displayedUploadBytesPerSecond;
         private double ringDisplayDownloadBytesPerSecond;
         private double ringDisplayUploadBytesPerSecond;
+        private double peakHoldDownloadBytesPerSecond;
+        private double peakHoldUploadBytesPerSecond;
         private double visualDownloadPeakBytesPerSecond;
         private double visualUploadPeakBytesPerSecond;
+        private DateTime peakHoldDownloadCapturedUtc = DateTime.MinValue;
+        private DateTime peakHoldUploadCapturedUtc = DateTime.MinValue;
+        private DateTime lastAnimationAdvanceUtc = DateTime.MinValue;
         private readonly Queue<double> recentDownloadSamples;
         private readonly Queue<double> recentUploadSamples;
         private readonly Queue<TrafficHistorySample> trafficHistory;
@@ -1835,7 +1844,7 @@ namespace TrafficView
             this.refreshTimer.Start();
 
             this.animationTimer = new Timer();
-            this.animationTimer.Interval = 180;
+            this.animationTimer.Interval = 140;
             this.animationTimer.Tick += this.AnimationTimer_Tick;
             this.animationTimer.Enabled = false;
 
@@ -2427,8 +2436,15 @@ namespace TrafficView
             this.lastSentBytes = 0L;
             this.latestDownloadBytesPerSecond = 0D;
             this.latestUploadBytesPerSecond = 0D;
+            this.displayedDownloadBytesPerSecond = 0D;
+            this.displayedUploadBytesPerSecond = 0D;
             this.ringDisplayDownloadBytesPerSecond = 0D;
             this.ringDisplayUploadBytesPerSecond = 0D;
+            this.peakHoldDownloadBytesPerSecond = 0D;
+            this.peakHoldUploadBytesPerSecond = 0D;
+            this.peakHoldDownloadCapturedUtc = DateTime.MinValue;
+            this.peakHoldUploadCapturedUtc = DateTime.MinValue;
+            this.lastAnimationAdvanceUtc = DateTime.MinValue;
             this.ResetDisplayedRateSmoothing();
             this.trafficHistory.Clear();
             this.trafficHistoryVersion++;
@@ -2852,6 +2868,7 @@ namespace TrafficView
                 return;
             }
 
+            this.AdvanceVisualAnimations();
             this.RefreshVisualSurface();
         }
 
@@ -2881,8 +2898,15 @@ namespace TrafficView
                 this.lastSentBytes = 0L;
                 this.latestDownloadBytesPerSecond = 0D;
                 this.latestUploadBytesPerSecond = 0D;
+                this.displayedDownloadBytesPerSecond = 0D;
+                this.displayedUploadBytesPerSecond = 0D;
                 this.ringDisplayDownloadBytesPerSecond = 0D;
                 this.ringDisplayUploadBytesPerSecond = 0D;
+                this.peakHoldDownloadBytesPerSecond = 0D;
+                this.peakHoldUploadBytesPerSecond = 0D;
+                this.peakHoldDownloadCapturedUtc = DateTime.MinValue;
+                this.peakHoldUploadCapturedUtc = DateTime.MinValue;
+                this.lastAnimationAdvanceUtc = DateTime.MinValue;
                 this.ResetDisplayedRateSmoothing();
                 this.trafficHistory.Clear();
                 this.trafficHistoryVersion++;
@@ -2937,6 +2961,9 @@ namespace TrafficView
             double smoothedDownloadBytesPerSecond = GetSmoothedDisplayRate(this.recentDownloadSamples);
             double smoothedUploadBytesPerSecond = GetSmoothedDisplayRate(this.recentUploadSamples);
 
+            this.displayedDownloadBytesPerSecond = smoothedDownloadBytesPerSecond;
+            this.displayedUploadBytesPerSecond = smoothedUploadBytesPerSecond;
+            this.UpdatePeakHoldRates(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond, nowUtc);
             this.downloadValueLabel.Text = FormatSpeed(smoothedDownloadBytesPerSecond);
             this.uploadValueLabel.Text = FormatSpeed(smoothedUploadBytesPerSecond);
             this.AddTrafficHistorySample(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
@@ -3420,12 +3447,12 @@ namespace TrafficView
             float arrowHeight = Math.Max(5.8F, (iconBounds.Height * 0.58F) - this.ScaleFloat(1F));
             float shaftWidth = Math.Max(1.2F, arrowWidth * 0.34F);
             float glowBaseWidth = Math.Max(1.6F, this.ScaleFloat(1.8F));
-            float bobAmplitude = Math.Max(0.5F, this.ScaleFloat(0.85F));
+            float bobAmplitude = Math.Max(0.4F, this.ScaleFloat(0.55F));
             float horizontalOffset = iconBounds.Width * 0.19F;
             float centerX = centerBounds.Left + (centerBounds.Width / 2F);
             float centerY = centerBounds.Top + (centerBounds.Height / 2F);
-            float rawDownloadPulse = 0.5F + (0.5F * (float)Math.Sin(animationSeconds * 5.4D));
-            float rawUploadPulse = 0.5F + (0.5F * (float)Math.Sin((animationSeconds * 5.4D) + Math.PI));
+            float rawDownloadPulse = 0.5F + (0.5F * (float)Math.Sin(animationSeconds * 3.6D));
+            float rawUploadPulse = 0.5F + (0.5F * (float)Math.Sin((animationSeconds * 3.6D) + Math.PI));
             float downloadMotionRatio = (float)GetArrowMotionRatio(downloadFillRatio);
             float uploadMotionRatio = (float)GetArrowMotionRatio(uploadFillRatio);
             float downloadPulse = 0.5F + ((rawDownloadPulse - 0.5F) * downloadMotionRatio);
@@ -4788,6 +4815,90 @@ namespace TrafficView
                 GetArrowMotionRatio(this.GetCurrentUploadFillRatio()) > 0.001D;
         }
 
+        private bool ShouldAnimateVisualEffects()
+        {
+            double ringMotionThreshold = RingDisplayNoiseFloorBytesPerSecond * 0.25D;
+            double holdMotionThreshold = RingDisplayNoiseFloorBytesPerSecond * 0.20D;
+
+            return Math.Abs(this.ringDisplayDownloadBytesPerSecond - this.latestDownloadBytesPerSecond) > ringMotionThreshold ||
+                Math.Abs(this.ringDisplayUploadBytesPerSecond - this.latestUploadBytesPerSecond) > ringMotionThreshold ||
+                this.peakHoldDownloadBytesPerSecond > this.displayedDownloadBytesPerSecond + holdMotionThreshold ||
+                this.peakHoldUploadBytesPerSecond > this.displayedUploadBytesPerSecond + holdMotionThreshold;
+        }
+
+        private void UpdatePeakHoldRates(double downloadBytesPerSecond, double uploadBytesPerSecond, DateTime nowUtc)
+        {
+            double safeDownloadBytesPerSecond = Math.Max(0D, downloadBytesPerSecond);
+            double safeUploadBytesPerSecond = Math.Max(0D, uploadBytesPerSecond);
+
+            if (safeDownloadBytesPerSecond >= this.peakHoldDownloadBytesPerSecond)
+            {
+                this.peakHoldDownloadBytesPerSecond = safeDownloadBytesPerSecond;
+                this.peakHoldDownloadCapturedUtc = nowUtc;
+            }
+
+            if (safeUploadBytesPerSecond >= this.peakHoldUploadBytesPerSecond)
+            {
+                this.peakHoldUploadBytesPerSecond = safeUploadBytesPerSecond;
+                this.peakHoldUploadCapturedUtc = nowUtc;
+            }
+        }
+
+        private void AdvanceVisualAnimations()
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            double elapsedSeconds = this.lastAnimationAdvanceUtc == DateTime.MinValue
+                ? Math.Max(0.001D, this.animationTimer.Interval / 1000D)
+                : Math.Max(0.001D, (nowUtc - this.lastAnimationAdvanceUtc).TotalSeconds);
+            this.lastAnimationAdvanceUtc = nowUtc;
+
+            this.UpdateRingDisplayRates(this.latestDownloadBytesPerSecond, this.latestUploadBytesPerSecond);
+            this.DecayPeakHoldRates(nowUtc, elapsedSeconds);
+            this.UpdateAnimationTimerState();
+        }
+
+        private void DecayPeakHoldRates(DateTime nowUtc, double elapsedSeconds)
+        {
+            this.peakHoldDownloadBytesPerSecond = this.DecayPeakHoldRate(
+                this.peakHoldDownloadBytesPerSecond,
+                this.displayedDownloadBytesPerSecond,
+                this.peakHoldDownloadCapturedUtc,
+                nowUtc,
+                elapsedSeconds);
+            this.peakHoldUploadBytesPerSecond = this.DecayPeakHoldRate(
+                this.peakHoldUploadBytesPerSecond,
+                this.displayedUploadBytesPerSecond,
+                this.peakHoldUploadCapturedUtc,
+                nowUtc,
+                elapsedSeconds);
+        }
+
+        private double DecayPeakHoldRate(
+            double currentPeakHoldBytesPerSecond,
+            double baselineBytesPerSecond,
+            DateTime capturedUtc,
+            DateTime nowUtc,
+            double elapsedSeconds)
+        {
+            double safePeakHoldBytesPerSecond = Math.Max(0D, currentPeakHoldBytesPerSecond);
+            double safeBaselineBytesPerSecond = Math.Max(0D, baselineBytesPerSecond);
+            if (safePeakHoldBytesPerSecond <= safeBaselineBytesPerSecond)
+            {
+                return safeBaselineBytesPerSecond;
+            }
+
+            if (capturedUtc != DateTime.MinValue &&
+                (nowUtc - capturedUtc).TotalSeconds <= PeakHoldReleaseDelaySeconds)
+            {
+                return safePeakHoldBytesPerSecond;
+            }
+
+            double decayAmount = Math.Max(
+                RingDisplayNoiseFloorBytesPerSecond,
+                safePeakHoldBytesPerSecond * PeakHoldDecayPerSecond * elapsedSeconds);
+            return Math.Max(safeBaselineBytesPerSecond, safePeakHoldBytesPerSecond - decayAmount);
+        }
+
         private void UpdateAnimationTimerState()
         {
             if (this.animationTimer == null)
@@ -4795,7 +4906,8 @@ namespace TrafficView
                 return;
             }
 
-            bool shouldAnimate = this.Visible && this.ShouldAnimateCenterArrows();
+            bool shouldAnimate = this.Visible &&
+                (this.ShouldAnimateCenterArrows() || this.ShouldAnimateVisualEffects());
             if (this.animationTimer.Enabled == shouldAnimate)
             {
                 return;
