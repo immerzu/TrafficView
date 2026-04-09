@@ -1,0 +1,100 @@
+﻿{
+    "prompt":  {
+                   "5":  {
+                             "inputs":  {
+                                            "vae":  [
+                                                        "1",
+                                                        2
+                                                    ],
+                                            "pixels":  [
+                                                           "2",
+                                                           0
+                                                       ]
+                                        },
+                             "class_type":  "VAEEncode"
+                         },
+                   "1":  {
+                             "inputs":  {
+                                            "ckpt_name":  "sd_xl_base_1.0.safetensors"
+                                        },
+                             "class_type":  "CheckpointLoaderSimple"
+                         },
+                   "7":  {
+                             "inputs":  {
+                                            "samples":  [
+                                                            "6",
+                                                            0
+                                                        ],
+                                            "vae":  [
+                                                        "1",
+                                                        2
+                                                    ]
+                                        },
+                             "class_type":  "VAEDecode"
+                         },
+                   "2":  {
+                             "inputs":  {
+                                            "image":  "Tech_Glass_03_base_1536x840_pad.png",
+                                            "upload":  "image"
+                                        },
+                             "class_type":  "LoadImage"
+                         },
+                   "8":  {
+                             "inputs":  {
+                                            "images":  [
+                                                           "7",
+                                                           0
+                                                       ],
+                                            "filename_prefix":  "Tech_Glass_03"
+                                        },
+                             "class_type":  "SaveImage"
+                         },
+                   "4":  {
+                             "inputs":  {
+                                            "clip":  [
+                                                         "1",
+                                                         1
+                                                     ],
+                                            "text":  "cartoon, anime, illustration, concept art, fantasy UI, overdesigned interface, clutter, messy layout, low contrast UI, unreadable text areas, excessive glow, bloom overload, distorted geometry, warped UI, cheap gradients, noisy textures, fake reflections, unrealistic lighting, game HUD chaos"
+                                        },
+                             "class_type":  "CLIPTextEncode"
+                         },
+                   "3":  {
+                             "inputs":  {
+                                            "clip":  [
+                                                         "1",
+                                                         1
+                                                     ],
+                                            "text":  "futuristic traffic overlay UI, dark blue cyan high-tech dashboard panel, translucent glass interface, semi-transparent information panel on the left, subtle gaussian blur background behind glass, layered interface depth, soft shadows, controlled highlights, crisp edges, high readability, modern traffic navigation dashboard UI, clean spacing and alignment, premium software product look, rounded rectangular glossy panel, dark tinted acrylic surface, precise circular HUD element on the right, segmented illuminated blue ring, highly readable metric area, polished glass reflections, restrained glow, professional desktop overlay skin, realistic software interface rendering"
+                                        },
+                             "class_type":  "CLIPTextEncode"
+                         },
+                   "6":  {
+                             "inputs":  {
+                                            "denoise":  0.26,
+                                            "seed":  320044102,
+                                            "negative":  [
+                                                             "4",
+                                                             0
+                                                         ],
+                                            "cfg":  6,
+                                            "sampler_name":  "dpmpp_2m",
+                                            "latent_image":  [
+                                                                 "5",
+                                                                 0
+                                                             ],
+                                            "positive":  [
+                                                             "3",
+                                                             0
+                                                         ],
+                                            "model":  [
+                                                          "1",
+                                                          0
+                                                      ],
+                                            "steps":  28,
+                                            "scheduler":  "karras"
+                                        },
+                             "class_type":  "KSampler"
+                         }
+               }
+}

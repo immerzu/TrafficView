@@ -1,0 +1,140 @@
+{
+  "project": "TrafficView 1.4.16",
+  "updated_at": "2026-04-04",
+  "preferred_tools": [
+    {
+      "name": "ComfyUI",
+      "category": "assistant-installed",
+      "version": "0.18.2",
+      "path": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\ComfyUI\\ComfyUI",
+      "binary": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\ComfyUI\\ComfyUI\\main.py",
+      "runtime": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\ComfyUI\\python_embeded\\python.exe",
+      "usage": "Bevorzugte Skin-Generierung und img2img-Workflows fuer TrafficView",
+      "install_or_usage_context": "Portable ComfyUI-Installation jetzt zentral unter D:\\Codex\\TrafficView_Moi\\Zusatz_Tools; alte Pfade bleiben per Junction kompatibel",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem",
+        "git remote",
+        "http://127.0.0.1:8188/system_stats"
+      ]
+    },
+    {
+      "name": "SDXL Base 1.0 checkpoint",
+      "category": "used-not-installed-confirmed",
+      "version": "unknown",
+      "path": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\Models\\checkpoints\\sd_xl_base_1.0.safetensors",
+      "binary": null,
+      "usage": "Hauptmodell fuer Skin-Rendering in ComfyUI",
+      "install_or_usage_context": "Im zentralen Modellordner vorhanden und in Tech_Glass_03 verwendet",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem"
+      ]
+    },
+    {
+      "name": "SDXL VAE",
+      "category": "used-not-installed-confirmed",
+      "version": "unknown",
+      "path": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\Models\\vae\\sdxl_vae.safetensors",
+      "binary": null,
+      "usage": "VAE fuer SDXL-Decoding in ComfyUI",
+      "install_or_usage_context": "Im zentralen Modellordner vorhanden",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem"
+      ]
+    },
+    {
+      "name": "ControlNet Canny",
+      "category": "assistant-installed",
+      "version": "unknown",
+      "path": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\Models\\controlnet\\control_v11p_sd15_canny_fp16.safetensors",
+      "binary": null,
+      "usage": "Kontur- und Kantenstabilisierung fuer kuenftige Skin-Workflows",
+      "install_or_usage_context": "Im Projektverlauf als zusaetzliches ControlNet-Modell nachinstalliert",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem"
+      ]
+    },
+    {
+      "name": "Inno Setup compiler entrypoint",
+      "category": "configured-wrapper",
+      "version": "6.7.1",
+      "path": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\InnoSetup",
+      "binary": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\InnoSetup\\ISCC.cmd",
+      "usage": "Bevorzugter Einstiegspunkt zum Bauen von Windows-Installern fuer TrafficView",
+      "install_or_usage_context": "Wrapper auf die lokal installierte Inno-Setup-Binary; physische Installation blieb unter %LOCALAPPDATA%",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem",
+        "winget list"
+      ]
+    },
+    {
+      "name": "TrafficView workflow helpers",
+      "category": "assistant-created",
+      "version": "project-internal",
+      "path": "D:\\Codex\\!Grafikhilfen\\Workflows",
+      "binary": null,
+      "usage": "Vorbereitung, Import und Verteilung von Skin-Assets",
+      "install_or_usage_context": "Lokal fuer dieses Projekt angelegte PowerShell- und Workflow-Dateien",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem"
+      ]
+    },
+    {
+      "name": "PowerShell 7",
+      "category": "preinstalled-system",
+      "version": "7.6.0",
+      "path": "C:\\Program Files\\PowerShell\\7",
+      "binary": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      "usage": "Hauptshell fuer Builds, Dateipruefung, Automatisierung und ComfyUI-Steuerung",
+      "install_or_usage_context": "Vorhanden im System, im Projekt aktiv verwendet",
+      "prefer_reuse": true,
+      "checked_by": [
+        "Get-Command",
+        "--version"
+      ]
+    },
+    {
+      "name": ".NET Framework csc.exe",
+      "category": "preinstalled-system",
+      "version": "4.8.9221.0",
+      "path": "C:\\WINDOWS\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe",
+      "binary": "C:\\WINDOWS\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe",
+      "usage": "Bevorzugter Compiler fuer TrafficView via build.ps1",
+      "install_or_usage_context": "Von build.ps1 aktiv bevorzugt, kein dotnet-SDK-Buildpfad",
+      "prefer_reuse": true,
+      "checked_by": [
+        "filesystem",
+        "file version",
+        "build.ps1"
+      ]
+    }
+  ],
+  "missing_or_unknown": [
+    {
+      "name": "IPAdapter models",
+      "status": "missing",
+      "checked_path": "D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\Models\\ipadapter"
+    },
+    {
+      "name": "Model download sources",
+      "status": "unknown",
+      "checked_for": [
+        "sd_xl_base_1.0.safetensors",
+        "sdxl_vae.safetensors",
+        "control_v11p_sd15_canny_fp16.safetensors"
+      ]
+    }
+  ],
+  "rules": [
+    "Vor neuer Tool-Installation zuerst diese Datei und docs/tooling-inventory.md pruefen.",
+    "Fuer Skin-Generierung zuerst ComfyUI unter D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\ComfyUI verwenden.",
+    "Fuer TrafficView-Builds build.ps1 und csc.exe bevorzugen.",
+    "Modelle zuerst unter D:\\Codex\\TrafficView_Moi\\Zusatz_Tools\\Models suchen.",
+    "Zusaetzliche Software fuer dieses Projekt kuenftig bevorzugt unter D:\\Codex\\TrafficView_Moi\\Zusatz_Tools ablegen."
+  ]
+}

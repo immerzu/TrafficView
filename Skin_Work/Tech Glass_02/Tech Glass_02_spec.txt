@@ -1,0 +1,6 @@
+﻿Name: Tech Glass_02
+Basis: Tech Glass
+Methode: ComfyUI Image-to-Image / Post-Processing
+HauptÃ¤nderung: stÃ¤rkere Sonnen-/Glasreflexion
+Zusatz: 4 px Desktop-Schatten
+Rand: gestochen scharf

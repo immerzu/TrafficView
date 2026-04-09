@@ -1,0 +1,100 @@
+﻿{
+    "prompt":  {
+                   "5":  {
+                             "inputs":  {
+                                            "vae":  [
+                                                        "1",
+                                                        2
+                                                    ],
+                                            "pixels":  [
+                                                           "2",
+                                                           0
+                                                       ]
+                                        },
+                             "class_type":  "VAEEncode"
+                         },
+                   "1":  {
+                             "inputs":  {
+                                            "ckpt_name":  "sd_xl_base_1.0.safetensors"
+                                        },
+                             "class_type":  "CheckpointLoaderSimple"
+                         },
+                   "7":  {
+                             "inputs":  {
+                                            "samples":  [
+                                                            "6",
+                                                            0
+                                                        ],
+                                            "vae":  [
+                                                        "1",
+                                                        2
+                                                    ]
+                                        },
+                             "class_type":  "VAEDecode"
+                         },
+                   "2":  {
+                             "inputs":  {
+                                            "image":  "Anzeigentafel_Grundtafel_51x28_v3_controlled_input.png",
+                                            "upload":  "image"
+                                        },
+                             "class_type":  "LoadImage"
+                         },
+                   "8":  {
+                             "inputs":  {
+                                            "images":  [
+                                                           "7",
+                                                           0
+                                                       ],
+                                            "filename_prefix":  "Anzeigentafel_Grundtafel_51x28_v3_controlled"
+                                        },
+                             "class_type":  "SaveImage"
+                         },
+                   "4":  {
+                             "inputs":  {
+                                            "clip":  [
+                                                         "1",
+                                                         1
+                                                     ],
+                                            "text":  "text, letters, numbers, arrows, icons, fake UI widgets, clutter, fantasy interface, anime, cartoon, blur, edge noise, extra panels, overexposed highlights, unreadable overlay zones, pseudo dashboard"
+                                        },
+                             "class_type":  "CLIPTextEncode"
+                         },
+                   "3":  {
+                             "inputs":  {
+                                            "clip":  [
+                                                         "1",
+                                                         1
+                                                     ],
+                                            "text":  "premium desktop overlay baseplate, same layout, polished dark blue cyan glass panel, controlled reflective material, subtle glossy highlights only on background and border, clean left metric carrier plate, empty right circular HUD carrier, no text, no numbers, no arrows, no pseudo widgets, realistic software surface, crisp edges, restrained reflections, professional traffic overlay background"
+                                        },
+                             "class_type":  "CLIPTextEncode"
+                         },
+                   "6":  {
+                             "inputs":  {
+                                            "denoise":  0.18,
+                                            "seed":  320044120,
+                                            "negative":  [
+                                                             "4",
+                                                             0
+                                                         ],
+                                            "cfg":  5.6,
+                                            "sampler_name":  "dpmpp_2m",
+                                            "latent_image":  [
+                                                                 "5",
+                                                                 0
+                                                             ],
+                                            "positive":  [
+                                                             "3",
+                                                             0
+                                                         ],
+                                            "model":  [
+                                                          "1",
+                                                          0
+                                                      ],
+                                            "steps":  24,
+                                            "scheduler":  "karras"
+                                        },
+                             "class_type":  "KSampler"
+                         }
+               }
+}

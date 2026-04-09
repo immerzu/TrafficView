@@ -1,0 +1,12 @@
+POSITIVE PROMPT
+futuristic premium desktop overlay panel, horizontal rounded rectangular tech glass dashboard, translucent acrylic interface, polished dark blue cyan surface, realistic software UI background plate, calm left metric panel area, reserved readable zone for download and upload values, clean right circular HUD carrier area, subtle bottom graph zone, layered interface depth, restrained highlights, crisp edges, soft controlled reflections, realistic glass and polymer finish, premium software product look, high readability, no text baked into panel, no icons baked into panel, clean spacing, modern traffic dashboard baseplate
+
+NEGATIVE PROMPT
+text, letters, numbers, dl label, ul label, arrows, distorted circle, cluttered interface, fantasy ui, anime, cartoon, game hud chaos, fake reflections, overexposed highlights, low contrast text area, noisy border, frayed edges, blurry corners, cheap gradients, muddy colors, overdesigned sci-fi details, lens flare, bloom overload, milky fog overlay
+
+PRODUKTIONSREGELN
+- Endformat immer 1530x840
+- Generationsformat bevorzugt 1224x672
+- Linke Textzone ruhig und dunkler halten
+- Rechte Kreiszone deutlich erkennbar halten
+- Keine festen Live-Daten in das Bild rendern

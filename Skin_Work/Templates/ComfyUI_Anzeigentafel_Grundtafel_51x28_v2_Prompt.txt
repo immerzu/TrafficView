@@ -1,0 +1,12 @@
+POSITIVE PROMPT
+premium desktop software overlay baseplate, empty futuristic traffic dashboard foundation, horizontal rounded rectangular dark blue cyan glass panel, polished acrylic surface, clean left metric carrier plate with calm dark contrast area, empty right circular HUD carrier ring zone, subtle bottom graph carrier strip, no baked data, no fake widgets, no text, no numbers, no icons, no labels, layered material depth, restrained reflections, controlled highlights, crisp edges, realistic software product surface, clean spacing, minimal technical detailing, production ready overlay background plate
+
+NEGATIVE PROMPT
+text, letters, numbers, labels, icons, arrows, readouts, widgets, menus, pseudo ui, fake dashboards, clutter, game hud, anime, cartoon, concept art, fantasy interface, noisy background, extra panels, overdesigned sci-fi details, unreadable busy display, bloom overload, lens flare, frayed borders, blurry corners, cheap gradients, muddy colors
+
+PRODUKTIONSREGELN
+- Endformat immer 1530x840
+- Generationsformat 1224x672
+- Linker Bereich als ruhige dunkle Kontrastplatte
+- Rechter Bereich als leerer klarer Kreis-Träger
+- Keine eingebrannten Zahlen, Texte oder Symbole

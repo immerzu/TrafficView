@@ -1,0 +1,100 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sd_xl_base_1.0.safetensors"
+      }
+    },
+    "2": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "Tech Glass_base_1536x840_pad.png",
+        "upload": "image"
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "futuristic glass UI, polished acrylic surface, strong glossy reflections, sunlight reflections, reflected light streaks, premium high-tech interface, crisp borders, clean sharp edges, subtle realistic highlight bands, readable UI, sharp circular element, high quality sci-fi overlay, clean sharp edges, crisp outline, perfect rounded corners, smooth borders, high quality UI edges, no noise on borders, precise contours, anti-aliased edges"
+      }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "blurry edges, frayed borders, noisy outline, overexposed glare, unreadable text, distorted layout, extra elements, foggy glass, washed out highlights, artifacts, soft border, pixel noise, blurry text, distorted UI, changed composition, low contrast, unreadable numbers, heavy glare, noisy background, deformation, redesign, extra elements"
+      }
+    },
+    "5": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": [
+          "2",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "seed": 320044102,
+        "steps": 24,
+        "cfg": 6.2,
+        "sampler_name": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "denoise": 0.21,
+        "positive": [
+          "3",
+          0
+        ],
+        "negative": [
+          "4",
+          0
+        ],
+        "latent_image": [
+          "5",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "6",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "8": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "Tech_Glass_02_img2img",
+        "images": [
+          "7",
+          0
+        ]
+      }
+    }
+  }
+}

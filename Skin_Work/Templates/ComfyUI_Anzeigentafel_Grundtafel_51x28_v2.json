@@ -1,0 +1,101 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "sd_xl_base_1.0.safetensors"
+      }
+    },
+    "2": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "premium desktop software overlay baseplate, empty futuristic traffic dashboard foundation, horizontal rounded rectangular dark blue cyan glass panel, polished acrylic surface, clean left metric carrier plate with calm dark contrast area, empty right circular HUD carrier ring zone, subtle bottom graph carrier strip, no baked data, no fake widgets, no text, no numbers, no icons, no labels, layered material depth, restrained reflections, controlled highlights, crisp edges, realistic software product surface, clean spacing, minimal technical detailing, production ready overlay background plate"
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "text, letters, numbers, labels, icons, arrows, readouts, widgets, menus, pseudo ui, fake dashboards, clutter, game hud, anime, cartoon, concept art, fantasy interface, noisy background, extra panels, overdesigned sci-fi details, unreadable busy display, bloom overload, lens flare, frayed borders, blurry corners, cheap gradients, muddy colors"
+      }
+    },
+    "4": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 1224,
+        "height": 672,
+        "batch_size": 1
+      }
+    },
+    "5": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "seed": 320044109,
+        "steps": 30,
+        "cfg": 5.8,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 1.0,
+        "positive": [
+          "2",
+          0
+        ],
+        "negative": [
+          "3",
+          0
+        ],
+        "latent_image": [
+          "4",
+          0
+        ]
+      }
+    },
+    "6": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "5",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "7": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "6",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": 1530,
+        "height": 840,
+        "crop": "disabled"
+      }
+    },
+    "8": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "filename_prefix": "Anzeigentafel_Grundtafel_51x28_v2",
+        "images": [
+          "7",
+          0
+        ]
+      }
+    }
+  }
+}

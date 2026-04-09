@@ -1,0 +1,8 @@
+﻿Name: Tech Glass_03
+Resolution: 1530x840
+Ratio: 51:28
+Method: ComfyUI img2img + protected edge composite
+Model: sd_xl_base_1.0.safetensors
+Input base: Tech Glass (Skin 17)
+Reference image: D:\Codex\TrafficView_Moi\Futuristisches Widget mit Geschwindigkeitsanzeige.png
+Output skin folder: D:\Codex\TrafficView_Moi\TrafficView 1.4.12\Skins\19
