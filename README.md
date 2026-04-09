@@ -1,4 +1,4 @@
-# TrafficView 1.2.21
+# TrafficView 1.4.18
 
 Kleine Windows-Tray-App fuer Windows 11, die aktuelle Download- und Upload-Geschwindigkeit anzeigt.
 
@@ -35,7 +35,8 @@ Der Kalibrationsdialog erweitert seine Breite jetzt bei Bedarf passend zur kompl
 
 - Das aktive Release-Format ist ausschliesslich die Portable-ZIP-Datei.
 - Erzeugung ueber `portable-release.ps1`
-- Ergebnis in `..\Ausgabe\TrafficView.Portable.<Version>.zip`
+- Ergebnisse in `..\Ausgabe\TrafficView.Portable.<Version>.zip` und `..\Ausgabe\TrafficView.Portable.<Version>.Standard.zip`
+- Die Standard-Variante enthaelt zusaetzlich eine frische `TrafficView.settings.ini` mit Werkseinstellungen.
 - Ein Installer ist nicht Teil des aktiven Release-Ablaufs.
 
 ## Bedienung

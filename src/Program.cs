@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.17.0")]
-[assembly: AssemblyFileVersion("1.4.17.0")]
+[assembly: AssemblyVersion("1.4.18.0")]
+[assembly: AssemblyFileVersion("1.4.18.0")]
 
 namespace TrafficView
 {
