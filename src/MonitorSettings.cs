@@ -23,7 +23,8 @@ namespace TrafficView
             int popupLocationX = 0,
             int popupLocationY = 0,
             int popupScalePercent = 100,
-            string panelSkinId = "08")
+            string panelSkinId = "08",
+            PopupDisplayMode popupDisplayMode = PopupDisplayMode.Standard)
         {
             this.AdapterId = adapterId ?? string.Empty;
             this.AdapterName = adapterName ?? string.Empty;
@@ -39,6 +40,7 @@ namespace TrafficView
             this.PopupLocationY = popupLocationY;
             this.PopupScalePercent = NormalizePopupScalePercent(popupScalePercent);
             this.PanelSkinId = NormalizePanelSkinId(panelSkinId);
+            this.PopupDisplayMode = NormalizePopupDisplayMode(popupDisplayMode);
         }
 
         public string AdapterId { get; private set; }
@@ -77,6 +79,8 @@ namespace TrafficView
 
         public string PanelSkinId { get; private set; }
 
+        public PopupDisplayMode PopupDisplayMode { get; private set; }
+
         public MonitorSettings Clone()
         {
             return new MonitorSettings(
@@ -93,7 +97,8 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 this.PopupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
@@ -112,7 +117,8 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 this.PopupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
@@ -131,7 +137,8 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 this.PopupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithTransparencyPercent(int transparencyPercent)
@@ -150,7 +157,8 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 this.PopupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithLanguageCode(string languageCode)
@@ -169,7 +177,8 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 this.PopupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithPopupLocation(Point popupLocation)
@@ -188,7 +197,8 @@ namespace TrafficView
                 popupLocation.X,
                 popupLocation.Y,
                 this.PopupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithPopupScalePercent(int popupScalePercent)
@@ -207,7 +217,8 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 popupScalePercent,
-                this.PanelSkinId);
+                this.PanelSkinId,
+                this.PopupDisplayMode);
         }
 
         public MonitorSettings WithPanelSkinId(string panelSkinId)
@@ -226,7 +237,28 @@ namespace TrafficView
                 this.PopupLocationX,
                 this.PopupLocationY,
                 this.PopupScalePercent,
-                panelSkinId);
+                panelSkinId,
+                this.PopupDisplayMode);
+        }
+
+        public MonitorSettings WithPopupDisplayMode(PopupDisplayMode popupDisplayMode)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent,
+                this.PanelSkinId,
+                popupDisplayMode);
         }
 
         public double GetDownloadVisualizationPeak()
@@ -430,6 +462,7 @@ namespace TrafficView
             int popupLocationY = defaults.PopupLocationY;
             int popupScalePercent = defaults.PopupScalePercent;
             string panelSkinId = defaults.PanelSkinId;
+            PopupDisplayMode popupDisplayMode = defaults.PopupDisplayMode;
 
             foreach (string line in lines)
             {
@@ -576,6 +609,12 @@ namespace TrafficView
                 if (string.Equals(key, "PanelSkinId", StringComparison.OrdinalIgnoreCase))
                 {
                     panelSkinId = NormalizePanelSkinId(value);
+                    continue;
+                }
+
+                if (string.Equals(key, "PopupDisplayMode", StringComparison.OrdinalIgnoreCase))
+                {
+                    popupDisplayMode = ParsePopupDisplayMode(value, defaults.PopupDisplayMode);
                 }
             }
 
@@ -593,7 +632,8 @@ namespace TrafficView
                 popupLocationX,
                 popupLocationY,
                 popupScalePercent,
-                panelSkinId);
+                panelSkinId,
+                popupDisplayMode);
         }
 
         private static bool ContainsStoredValidLanguageSetting(string[] lines)
@@ -691,6 +731,12 @@ namespace TrafficView
                     PanelSkinCatalog.NormalizeSkinId(value),
                     value.Trim(),
                     StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (string.Equals(key, "PopupDisplayMode", StringComparison.OrdinalIgnoreCase))
+            {
+                PopupDisplayMode parsedMode;
+                return TryParsePopupDisplayMode(value, out parsedMode);
             }
 
             return false;
@@ -832,7 +878,8 @@ namespace TrafficView
                 string.Format("PopupLocationX={0}", this.PopupLocationX),
                 string.Format("PopupLocationY={0}", this.PopupLocationY),
                 string.Format("PopupScalePercent={0}", this.PopupScalePercent),
-                string.Format("PanelSkinId={0}", this.PanelSkinId)
+                string.Format("PanelSkinId={0}", this.PanelSkinId),
+                string.Format("PopupDisplayMode={0}", this.PopupDisplayMode)
             };
         }
 
@@ -1119,6 +1166,45 @@ namespace TrafficView
         private static string NormalizePanelSkinId(string panelSkinId)
         {
             return PanelSkinCatalog.NormalizeSkinId(panelSkinId);
+        }
+
+        private static PopupDisplayMode NormalizePopupDisplayMode(PopupDisplayMode popupDisplayMode)
+        {
+            return popupDisplayMode == PopupDisplayMode.MiniGraph
+                ? PopupDisplayMode.MiniGraph
+                : PopupDisplayMode.Standard;
+        }
+
+        private static PopupDisplayMode ParsePopupDisplayMode(string value, PopupDisplayMode fallback)
+        {
+            PopupDisplayMode parsedMode;
+            return TryParsePopupDisplayMode(value, out parsedMode)
+                ? parsedMode
+                : NormalizePopupDisplayMode(fallback);
+        }
+
+        private static bool TryParsePopupDisplayMode(string value, out PopupDisplayMode popupDisplayMode)
+        {
+            popupDisplayMode = PopupDisplayMode.Standard;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string normalized = value.Trim();
+            if (string.Equals(normalized, "MiniGraph", StringComparison.OrdinalIgnoreCase))
+            {
+                popupDisplayMode = PopupDisplayMode.MiniGraph;
+                return true;
+            }
+
+            if (string.Equals(normalized, "Standard", StringComparison.OrdinalIgnoreCase))
+            {
+                popupDisplayMode = PopupDisplayMode.Standard;
+                return true;
+            }
+
+            return false;
         }
     }
 }

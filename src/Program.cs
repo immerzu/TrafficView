@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.18.0")]
-[assembly: AssemblyFileVersion("1.4.18.0")]
+[assembly: AssemblyVersion("1.4.19.0")]
+[assembly: AssemblyFileVersion("1.4.19.0")]
 
 namespace TrafficView
 {
@@ -27,6 +27,12 @@ namespace TrafficView
         Available,
         Inactive,
         Missing
+    }
+
+    internal enum PopupDisplayMode
+    {
+        Standard,
+        MiniGraph
     }
 
     internal static class Program
@@ -123,6 +129,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem dataUsageItem;
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
+        private readonly ToolStripMenuItem displayModeItem;
         private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem deleteSkinItem;
         private readonly ToolStripMenuItem languageItem;
@@ -135,6 +142,7 @@ namespace TrafficView
         private Label menuVersionLabel;
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
+        private readonly Dictionary<PopupDisplayMode, ToolStripMenuItem> displayModeMenuItems;
         private readonly Dictionary<string, ToolStripMenuItem> panelSkinMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
         private MonitorSettings settings;
@@ -153,6 +161,7 @@ namespace TrafficView
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
+            this.displayModeMenuItems = new Dictionary<PopupDisplayMode, ToolStripMenuItem>();
             this.panelSkinMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.menuVersionNumber = GetMenuVersionNumber();
 
@@ -174,6 +183,7 @@ namespace TrafficView
             this.dataUsageItem = new ToolStripMenuItem(string.Empty, null, this.DataUsageItem_Click);
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
+            this.displayModeItem = new ToolStripMenuItem(string.Empty);
             this.skinItem = new ToolStripMenuItem(string.Empty);
             this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
             this.languageItem = new ToolStripMenuItem(string.Empty);
@@ -197,6 +207,19 @@ namespace TrafficView
                 this.sizeItem.DropDownItems.Add(item);
             }
 
+            PopupDisplayMode[] popupDisplayModes = new PopupDisplayMode[]
+            {
+                PopupDisplayMode.Standard,
+                PopupDisplayMode.MiniGraph
+            };
+            for (int i = 0; i < popupDisplayModes.Length; i++)
+            {
+                ToolStripMenuItem item = new ToolStripMenuItem(string.Empty, null, this.DisplayModeMenuItem_Click);
+                item.Tag = popupDisplayModes[i];
+                this.displayModeMenuItems[popupDisplayModes[i]] = item;
+                this.displayModeItem.DropDownItems.Add(item);
+            }
+
             this.RebuildPanelSkinMenuItems();
 
             if (this.companyLogoHost != null)
@@ -211,6 +234,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.dataUsageItem);
             this.sharedMenu.Items.Add(this.transparencyItem);
             this.sharedMenu.Items.Add(this.sizeItem);
+            this.sharedMenu.Items.Add(this.displayModeItem);
             this.sharedMenu.Items.Add(this.skinItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
@@ -603,6 +627,26 @@ namespace TrafficView
             }
 
             this.ApplyPopupScalePercent(popupScalePercent);
+        }
+
+        private void DisplayModeMenuItem_Click(object sender, EventArgs e)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            if (item == null || !(item.Tag is PopupDisplayMode))
+            {
+                return;
+            }
+
+            PopupDisplayMode popupDisplayMode = (PopupDisplayMode)item.Tag;
+            if (this.settings.PopupDisplayMode == popupDisplayMode)
+            {
+                return;
+            }
+
+            this.settings = this.settings.WithPopupDisplayMode(popupDisplayMode);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            this.UpdateMenuState();
         }
 
         private void ApplyPopupScalePercent(int popupScalePercent)
@@ -1184,6 +1228,9 @@ namespace TrafficView
                 "Menu.SizeFormat",
                 "Göße ({0} %)",
                 this.settings.PopupScalePercent);
+            this.displayModeItem.Text = UiLanguage.Get(
+                "Menu.DisplayMode",
+                "Anzeige");
             this.skinItem.Text = UiLanguage.Get(
                 "Menu.Skins",
                 "Skins");
@@ -1209,6 +1256,12 @@ namespace TrafficView
             {
                 pair.Value.Text = string.Format("{0} %", pair.Key);
                 pair.Value.Checked = pair.Key == this.settings.PopupScalePercent;
+            }
+
+            foreach (KeyValuePair<PopupDisplayMode, ToolStripMenuItem> pair in this.displayModeMenuItems)
+            {
+                pair.Value.Text = this.GetPopupDisplayModeDisplayName(pair.Key);
+                pair.Value.Checked = pair.Key == this.settings.PopupDisplayMode;
             }
 
             foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.panelSkinMenuItems)
@@ -1289,6 +1342,17 @@ namespace TrafficView
             }
 
             return displayName;
+        }
+
+        private string GetPopupDisplayModeDisplayName(PopupDisplayMode popupDisplayMode)
+        {
+            switch (popupDisplayMode)
+            {
+                case PopupDisplayMode.MiniGraph:
+                    return UiLanguage.Get("Menu.DisplayModeMiniGraph", "MiniGraph");
+                default:
+                    return UiLanguage.Get("Menu.DisplayModeStandard", "Standard");
+            }
         }
 
         private void RebuildPanelSkinMenuItems()
@@ -1581,6 +1645,8 @@ namespace TrafficView
         private const int BaseValueHeight = 14;
         private const int BaseMeterDiameter = 39;
         private const int BaseMeterRightInset = 5;
+        private const int MiniGraphMeterDiameter = 46;
+        private const int MiniGraphMeterRightInset = 3;
         private const int BaseDragThreshold = 4;
         private const int BasePopupVisibleMargin = 8;
         private const float BaseFormFontSize = 7.0F;
@@ -1650,8 +1716,30 @@ namespace TrafficView
         private const int DisplaySmoothingSampleCount = 3;
         private const int TrafficHistorySampleCount = 60;
         private const int OverlaySparklinePointCount = 24;
+        private const int MiniGraphOverlaySparklinePointCount = 40;
+        private const int MiniGraphRingSegmentCount = 16;
+        private const float MiniGraphRingSegmentGapDegrees = 3.2F;
+        private const float MiniGraphDualRingInnerGapFactor = 0.36F;
+        private const double MiniGraphRingDisplayNoiseFloorBytesPerSecond = 2D * 1024D;
+        private const double MiniGraphDownloadLowTrafficVisualizationExponent = 0.50D;
+        private const double MiniGraphUploadLowTrafficVisualizationExponent = 0.58D;
+        private const double MiniGraphDownloadMinimumVisualizationPeakBytesPerSecond = 96D * 1024D;
+        private const double MiniGraphUploadMinimumVisualizationPeakBytesPerSecond = 128D * 1024D;
+        private const float MiniGraphSparklineLeft = 16F;
+        private const float MiniGraphSparklineTop = 45F;
+        private const float MiniGraphSparklineHeight = 8F;
+        private const float MiniGraphSparklineContentLeftInset = 0F;
+        private const float PeakHoldMarkerSweepDegrees = 8.5F;
         private const double PeakHoldReleaseDelaySeconds = 0.70D;
         private const double PeakHoldDecayPerSecond = 0.42D;
+        private const float MiniGraphDownloadRingWeight = 1.12F;
+        private const float MiniGraphUploadRingWeight = 1.00F;
+        private const float MiniGraphDownloadSparklineWidthScale = 1.08F;
+        private const float MiniGraphUploadSparklineWidthScale = 1.00F;
+        private const int MiniGraphDownloadSparklineAreaAlpha = 38;
+        private const int MiniGraphUploadSparklineAreaAlpha = 30;
+        private const int MiniGraphDownloadPeakMarkerAlpha = 188;
+        private const int MiniGraphUploadPeakMarkerAlpha = 176;
         private const string PanelBackgroundAssetFileName = "TrafficView.panel.png";
         private const string PanelBackgroundScaledAssetFileNameFormat = "TrafficView.panel.{0}.png";
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
@@ -2018,8 +2106,8 @@ namespace TrafficView
                 graphics,
                 downloadFillRatio,
                 uploadFillRatio,
-                GetVisualizedFillRatio(downloadFillRatio),
-                GetVisualizedFillRatio(uploadFillRatio));
+                this.GetVisualizedFillRatio(downloadFillRatio, true),
+                this.GetVisualizedFillRatio(uploadFillRatio, false));
         }
 
         private void RenderStaticPopupSurface(Graphics graphics)
@@ -2448,8 +2536,12 @@ namespace TrafficView
             this.ResetDisplayedRateSmoothing();
             this.trafficHistory.Clear();
             this.trafficHistoryVersion++;
-            this.visualDownloadPeakBytesPerSecond = Math.Max(this.settings.GetDownloadVisualizationPeak(), 256D * 1024D);
-            this.visualUploadPeakBytesPerSecond = Math.Max(this.settings.GetUploadVisualizationPeak(), 256D * 1024D);
+            this.visualDownloadPeakBytesPerSecond = Math.Max(
+                this.settings.GetDownloadVisualizationPeak(),
+                this.GetMinimumVisualizationPeakBytesPerSecond(true));
+            this.visualUploadPeakBytesPerSecond = Math.Max(
+                this.settings.GetUploadVisualizationPeak(),
+                this.GetMinimumVisualizationPeakBytesPerSecond(false));
             this.RefreshTraffic();
         }
 
@@ -2950,11 +3042,13 @@ namespace TrafficView
             this.visualDownloadPeakBytesPerSecond = this.GetVisualizationPeak(
                 downloadBytesPerSecond,
                 this.visualDownloadPeakBytesPerSecond,
-                this.settings.GetDownloadVisualizationPeak());
+                this.settings.GetDownloadVisualizationPeak(),
+                true);
             this.visualUploadPeakBytesPerSecond = this.GetVisualizationPeak(
                 uploadBytesPerSecond,
                 this.visualUploadPeakBytesPerSecond,
-                this.settings.GetUploadVisualizationPeak());
+                this.settings.GetUploadVisualizationPeak(),
+                false);
 
             AddDisplaySample(this.recentDownloadSamples, downloadBytesPerSecond);
             AddDisplaySample(this.recentUploadSamples, uploadBytesPerSecond);
@@ -3020,6 +3114,51 @@ namespace TrafficView
             return weightedSum / totalWeight;
         }
 
+        private bool IsMiniGraphDisplayMode()
+        {
+            return this.settings != null && this.settings.PopupDisplayMode == PopupDisplayMode.MiniGraph;
+        }
+
+        private double GetRingDisplayNoiseFloorBytesPerSecond()
+        {
+            return this.IsMiniGraphDisplayMode()
+                ? MiniGraphRingDisplayNoiseFloorBytesPerSecond
+                : RingDisplayNoiseFloorBytesPerSecond;
+        }
+
+        private int GetCurrentOverlaySparklinePointCount()
+        {
+            return this.IsMiniGraphDisplayMode()
+                ? MiniGraphOverlaySparklinePointCount
+                : OverlaySparklinePointCount;
+        }
+
+        private int GetCurrentRingSegmentCount()
+        {
+            return this.IsMiniGraphDisplayMode()
+                ? MiniGraphRingSegmentCount
+                : RingSegmentCount;
+        }
+
+        private float GetCurrentRingSegmentGapDegrees()
+        {
+            return this.IsMiniGraphDisplayMode()
+                ? MiniGraphRingSegmentGapDegrees
+                : RingSegmentGapDegrees;
+        }
+
+        private double GetMinimumVisualizationPeakBytesPerSecond(bool useDownload)
+        {
+            if (!this.IsMiniGraphDisplayMode())
+            {
+                return 256D * 1024D;
+            }
+
+            return useDownload
+                ? MiniGraphDownloadMinimumVisualizationPeakBytesPerSecond
+                : MiniGraphUploadMinimumVisualizationPeakBytesPerSecond;
+        }
+
         private void UpdateRingDisplayRates(double downloadBytesPerSecond, double uploadBytesPerSecond)
         {
             this.ringDisplayDownloadBytesPerSecond = UpdateRingDisplayRate(
@@ -3030,17 +3169,18 @@ namespace TrafficView
                 uploadBytesPerSecond);
         }
 
-        private static double UpdateRingDisplayRate(double currentBytesPerSecond, double targetBytesPerSecond)
+        private double UpdateRingDisplayRate(double currentBytesPerSecond, double targetBytesPerSecond)
         {
             double current = Math.Max(0D, currentBytesPerSecond);
             double target = Math.Max(0D, targetBytesPerSecond);
+            double noiseFloorBytesPerSecond = this.GetRingDisplayNoiseFloorBytesPerSecond();
 
-            if (current <= RingDisplayNoiseFloorBytesPerSecond)
+            if (current <= noiseFloorBytesPerSecond)
             {
                 current = 0D;
             }
 
-            if (target <= RingDisplayNoiseFloorBytesPerSecond)
+            if (target <= noiseFloorBytesPerSecond)
             {
                 target = 0D;
             }
@@ -3050,7 +3190,7 @@ namespace TrafficView
                 : RingDisplayFallSmoothingFactor;
             double next = current + ((target - current) * smoothingFactor);
 
-            if (Math.Abs(next - target) <= (RingDisplayNoiseFloorBytesPerSecond * 0.25D))
+            if (Math.Abs(next - target) <= (noiseFloorBytesPerSecond * 0.25D))
             {
                 return target;
             }
@@ -3098,14 +3238,15 @@ namespace TrafficView
         private double GetVisualizationPeak(
             double currentTrafficBytesPerSecond,
             double previousPeakBytesPerSecond,
-            double configuredPeakBytesPerSecond)
+            double configuredPeakBytesPerSecond,
+            bool useDownload)
         {
             if (configuredPeakBytesPerSecond > 0D)
             {
                 return configuredPeakBytesPerSecond;
             }
 
-            double minimumPeak = 256D * 1024D;
+            double minimumPeak = this.GetMinimumVisualizationPeakBytesPerSecond(useDownload);
             double currentPeak = Math.Max(minimumPeak, currentTrafficBytesPerSecond * 1.15D);
             if (previousPeakBytesPerSecond <= 0D)
             {
@@ -3129,7 +3270,7 @@ namespace TrafficView
             return Math.Max(0D, Math.Min(1D, bytesPerSecond / peak));
         }
 
-        private static double GetVisualizedFillRatio(double fillRatio)
+        private double GetVisualizedFillRatio(double fillRatio, bool useDownload)
         {
             double clamped = Math.Max(0D, Math.Min(1D, fillRatio));
 
@@ -3140,7 +3281,16 @@ namespace TrafficView
 
             // A gentle gamma curve makes low traffic more visible without
             // overdriving medium and high values too aggressively.
-            return Math.Pow(clamped, LowTrafficVisualizationExponent);
+            if (!this.IsMiniGraphDisplayMode())
+            {
+                return Math.Pow(clamped, LowTrafficVisualizationExponent);
+            }
+
+            return Math.Pow(
+                clamped,
+                useDownload
+                    ? MiniGraphDownloadLowTrafficVisualizationExponent
+                    : MiniGraphUploadLowTrafficVisualizationExponent);
         }
 
         private Rectangle GetDownloadMeterBounds()
@@ -3151,12 +3301,16 @@ namespace TrafficView
                 return this.ScaleSkinRectangle(definition.MeterBounds.Value);
             }
 
+            bool miniGraphDisplayMode = this.IsMiniGraphDisplayMode();
+            int baseDiameter = miniGraphDisplayMode ? MiniGraphMeterDiameter : BaseMeterDiameter;
             int diameter = this.ScaleValue(this.IsReadableInfoPanelSkinEnabled()
-                ? BaseMeterDiameter - 3
-                : BaseMeterDiameter);
-            int rightInset = this.ScaleValue(BaseMeterRightInset);
+                ? baseDiameter - 3
+                : baseDiameter);
+            int rightInset = this.ScaleValue(miniGraphDisplayMode ? MiniGraphMeterRightInset : BaseMeterRightInset);
             int x = this.ClientSize.Width - diameter - rightInset;
-            int y = Math.Max(this.ScaleValue(6), (this.ClientSize.Height - diameter) / 2);
+            int y = miniGraphDisplayMode
+                ? Math.Max(0, (this.ClientSize.Height - diameter) / 2)
+                : Math.Max(this.ScaleValue(6), (this.ClientSize.Height - diameter) / 2);
             return new Rectangle(x, y, diameter, diameter);
         }
 
@@ -3212,25 +3366,76 @@ namespace TrafficView
             Color uploadEndColor,
             bool drawTracks)
         {
-            int segmentCount = RingSegmentCount;
-            float slotSweep = 360F / segmentCount;
-            float gapAngle = Math.Min(slotSweep * 0.48F, RingSegmentGapDegrees);
-            float downloadSweep = Math.Max(
+            if (!this.IsMiniGraphDisplayMode())
+            {
+                int segmentCount = this.GetCurrentRingSegmentCount();
+                float slotSweep = 360F / segmentCount;
+                float gapAngle = Math.Min(slotSweep * 0.48F, this.GetCurrentRingSegmentGapDegrees());
+                float downloadSweep = Math.Max(
+                    MinimumVisibleSegmentSweepDegrees,
+                    slotSweep - gapAngle);
+                float uploadSweep = Math.Max(
+                    MinimumVisibleSegmentSweepDegrees,
+                    gapAngle * 0.82F);
+                float uploadOffset = downloadSweep + ((gapAngle - uploadSweep) / 2F);
+
+                this.DrawSegmentedProgressSet(
+                    graphics,
+                    bounds,
+                    strokeWidth,
+                    segmentCount,
+                    slotSweep,
+                    0F,
+                    downloadSweep,
+                    downloadFillRatio,
+                    downloadTrackColor,
+                    downloadStartColor,
+                    downloadEndColor,
+                    drawTracks);
+                this.DrawSegmentedProgressSet(
+                    graphics,
+                    bounds,
+                    strokeWidth,
+                    segmentCount,
+                    slotSweep,
+                    uploadOffset,
+                    uploadSweep,
+                    uploadFillRatio,
+                    uploadTrackColor,
+                    uploadStartColor,
+                    uploadEndColor,
+                    drawTracks);
+                return;
+            }
+
+            int miniGraphSegmentCount = this.GetCurrentRingSegmentCount();
+            float miniGraphSlotSweep = 360F / miniGraphSegmentCount;
+            float miniGraphSegmentSweep = Math.Max(
                 MinimumVisibleSegmentSweepDegrees,
-                slotSweep - gapAngle);
-            float uploadSweep = Math.Max(
-                MinimumVisibleSegmentSweepDegrees,
-                gapAngle * 0.82F);
-            float uploadOffset = downloadSweep + ((gapAngle - uploadSweep) / 2F);
+                miniGraphSlotSweep - Math.Min(miniGraphSlotSweep * 0.42F, this.GetCurrentRingSegmentGapDegrees()));
+            float gapBetweenRings = Math.Max(this.ScaleFloat(1.0F), strokeWidth * MiniGraphDualRingInnerGapFactor);
+            float totalWeight = MiniGraphDownloadRingWeight + MiniGraphUploadRingWeight;
+            float usableBand = Math.Max(2.4F, strokeWidth - gapBetweenRings);
+            float weightUnit = usableBand / Math.Max(0.1F, totalWeight);
+            float downloadStrokeWidth = Math.Max(3.6F, weightUnit * MiniGraphDownloadRingWeight * 2.08F);
+            float uploadStrokeWidth = Math.Max(1.9F, weightUnit * MiniGraphUploadRingWeight * 0.92F);
+
+            RectangleF stableBounds = GetStableArcBounds(bounds);
+            RectangleF downloadBounds = GetStableArcBounds(
+                InflateRectangle(stableBounds, -(downloadStrokeWidth / 2F)));
+            RectangleF uploadBounds = GetStableArcBounds(
+                InflateRectangle(
+                    stableBounds,
+                    -((downloadStrokeWidth / 2F) + gapBetweenRings + (uploadStrokeWidth / 2F))));
 
             this.DrawSegmentedProgressSet(
                 graphics,
-                bounds,
-                strokeWidth,
-                segmentCount,
-                slotSweep,
+                downloadBounds,
+                downloadStrokeWidth,
+                miniGraphSegmentCount,
+                miniGraphSlotSweep,
                 0F,
-                downloadSweep,
+                miniGraphSegmentSweep,
                 downloadFillRatio,
                 downloadTrackColor,
                 downloadStartColor,
@@ -3238,17 +3443,81 @@ namespace TrafficView
                 drawTracks);
             this.DrawSegmentedProgressSet(
                 graphics,
-                bounds,
-                strokeWidth,
-                segmentCount,
-                slotSweep,
-                uploadOffset,
-                uploadSweep,
+                uploadBounds,
+                uploadStrokeWidth,
+                miniGraphSegmentCount,
+                miniGraphSlotSweep,
+                miniGraphSlotSweep * 0.5F,
+                miniGraphSegmentSweep,
                 uploadFillRatio,
                 uploadTrackColor,
                 uploadStartColor,
                 uploadEndColor,
                 drawTracks);
+
+            if (!drawTracks)
+            {
+                this.DrawPeakHoldRingMarker(
+                    graphics,
+                    downloadBounds,
+                    downloadStrokeWidth,
+                    this.GetPeakHoldFillRatio(true),
+                    downloadEndColor,
+                    true);
+                this.DrawPeakHoldRingMarker(
+                    graphics,
+                    uploadBounds,
+                    uploadStrokeWidth,
+                    this.GetPeakHoldFillRatio(false),
+                    uploadEndColor,
+                    false);
+            }
+        }
+
+        private double GetPeakHoldFillRatio(bool useDownload)
+        {
+            double peakHoldBytesPerSecond = useDownload
+                ? this.peakHoldDownloadBytesPerSecond
+                : this.peakHoldUploadBytesPerSecond;
+            double configuredPeakBytesPerSecond = useDownload
+                ? this.settings.GetDownloadVisualizationPeak()
+                : this.settings.GetUploadVisualizationPeak();
+            double visualPeakBytesPerSecond = useDownload
+                ? this.visualDownloadPeakBytesPerSecond
+                : this.visualUploadPeakBytesPerSecond;
+            return this.GetTrafficFillRatio(
+                peakHoldBytesPerSecond,
+                configuredPeakBytesPerSecond,
+                visualPeakBytesPerSecond);
+        }
+
+        private void DrawPeakHoldRingMarker(
+            Graphics graphics,
+            RectangleF bounds,
+            float strokeWidth,
+            double fillRatio,
+            Color color,
+            bool useDownload)
+        {
+            double clampedRatio = Clamp01(fillRatio);
+            if (clampedRatio <= 0.001D)
+            {
+                return;
+            }
+
+            float markerSweep = PeakHoldMarkerSweepDegrees;
+            float centerAngle = -90F + (float)(360D * clampedRatio);
+            float startAngle = centerAngle - (markerSweep / 2F);
+            int alpha = useDownload ? MiniGraphDownloadPeakMarkerAlpha : MiniGraphUploadPeakMarkerAlpha;
+
+            this.DrawRingSegment(
+                graphics,
+                bounds,
+                Math.Max(1.0F, strokeWidth * 0.32F),
+                startAngle,
+                markerSweep,
+                Color.FromArgb(alpha, color),
+                Math.Max(this.ScaleFloat(0.8F), strokeWidth * 0.20F));
         }
 
         private void DrawSegmentedProgressSet(
@@ -4559,22 +4828,89 @@ namespace TrafficView
                     peak = Math.Max(peak, samples[i].DownloadBytesPerSecond);
                     peak = Math.Max(peak, samples[i].UploadBytesPerSecond);
                 }
-
-                PointF[] downloadPoints = CreateSparklinePoints(samples, bounds, peak, true);
-                PointF[] uploadPoints = CreateSparklinePoints(samples, bounds, peak, false);
-
-                float lineWidth = Math.Max(
-                    ultraTransparent ? this.ScaleFloat(1.65F) : this.ScaleFloat(1.15F),
-                    ultraTransparent ? 1.65F : 1.15F);
-                int lineAlpha = ultraTransparent ? 255 : 220;
-                int glowAlpha = ultraTransparent ? 132 : 92;
-                float glowWidth = lineWidth + Math.Max(this.ScaleFloat(0.9F), ultraTransparent ? 0.9F : 0.6F);
-
-                using (Pen downloadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineDownloadColor), glowWidth))
-                using (Pen uploadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineUploadColor), glowWidth))
-                using (Pen downloadPen = new Pen(Color.FromArgb(lineAlpha, SparklineDownloadColor), lineWidth))
-                using (Pen uploadPen = new Pen(Color.FromArgb(lineAlpha, SparklineUploadColor), lineWidth))
+                if (!this.IsMiniGraphDisplayMode())
                 {
+                    PointF[] downloadPoints = CreateSparklinePoints(samples, bounds, peak, true, false);
+                    PointF[] uploadPoints = CreateSparklinePoints(samples, bounds, peak, false, false);
+
+                    float lineWidth = Math.Max(
+                        ultraTransparent ? this.ScaleFloat(1.65F) : this.ScaleFloat(1.15F),
+                        ultraTransparent ? 1.65F : 1.15F);
+                    int lineAlpha = ultraTransparent ? 255 : 220;
+                    int glowAlpha = ultraTransparent ? 132 : 92;
+                    float glowWidth = lineWidth + Math.Max(this.ScaleFloat(0.9F), ultraTransparent ? 0.9F : 0.6F);
+
+                    using (Pen downloadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineDownloadColor), glowWidth))
+                    using (Pen uploadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineUploadColor), glowWidth))
+                    using (Pen downloadPen = new Pen(Color.FromArgb(lineAlpha, SparklineDownloadColor), lineWidth))
+                    using (Pen uploadPen = new Pen(Color.FromArgb(lineAlpha, SparklineUploadColor), lineWidth))
+                    {
+                        downloadGlowPen.LineJoin = LineJoin.Round;
+                        downloadGlowPen.StartCap = LineCap.Round;
+                        downloadGlowPen.EndCap = LineCap.Round;
+                        uploadGlowPen.LineJoin = LineJoin.Round;
+                        uploadGlowPen.StartCap = LineCap.Round;
+                        uploadGlowPen.EndCap = LineCap.Round;
+                        downloadPen.LineJoin = LineJoin.Round;
+                        downloadPen.StartCap = LineCap.Round;
+                        downloadPen.EndCap = LineCap.Round;
+                        uploadPen.LineJoin = LineJoin.Round;
+                        uploadPen.StartCap = LineCap.Round;
+                        uploadPen.EndCap = LineCap.Round;
+
+                        if (downloadPoints.Length >= 2)
+                        {
+                            graphics.DrawLines(downloadGlowPen, downloadPoints);
+                            graphics.DrawLines(downloadPen, downloadPoints);
+                        }
+
+                        if (uploadPoints.Length >= 2)
+                        {
+                            graphics.DrawLines(uploadGlowPen, uploadPoints);
+                            graphics.DrawLines(uploadPen, uploadPoints);
+                        }
+                    }
+
+                    return;
+                }
+
+                peak = Math.Max(peak, this.peakHoldDownloadBytesPerSecond);
+                peak = Math.Max(peak, this.peakHoldUploadBytesPerSecond);
+
+                PointF[] miniGraphDownloadPoints = CreateSparklinePoints(samples, bounds, peak, true, true);
+                PointF[] miniGraphUploadPoints = CreateSparklinePoints(samples, bounds, peak, false, true);
+
+                float baseLineWidth = Math.Max(
+                    ultraTransparent ? this.ScaleFloat(1.55F) : this.ScaleFloat(1.12F),
+                    ultraTransparent ? 1.55F : 1.12F);
+                float downloadLineWidth = baseLineWidth * MiniGraphDownloadSparklineWidthScale;
+                float uploadLineWidth = baseLineWidth * MiniGraphUploadSparklineWidthScale;
+                int baseLineAlpha = ultraTransparent ? 255 : 226;
+                int baseGlowAlpha = ultraTransparent ? 138 : 96;
+
+                using (GraphicsPath downloadFillPath = CreateSparklineFillPath(miniGraphDownloadPoints, bounds))
+                using (GraphicsPath uploadFillPath = CreateSparklineFillPath(miniGraphUploadPoints, bounds))
+                using (SolidBrush downloadFillBrush = new SolidBrush(Color.FromArgb(MiniGraphDownloadSparklineAreaAlpha, SparklineDownloadColor)))
+                using (SolidBrush uploadFillBrush = new SolidBrush(Color.FromArgb(MiniGraphUploadSparklineAreaAlpha, SparklineUploadColor)))
+                using (Pen downloadGlowPen = new Pen(
+                    Color.FromArgb(baseGlowAlpha, SparklineDownloadColor),
+                    downloadLineWidth + Math.Max(this.ScaleFloat(0.85F), ultraTransparent ? 0.85F : 0.55F)))
+                using (Pen uploadGlowPen = new Pen(
+                    Color.FromArgb(baseGlowAlpha, SparklineUploadColor),
+                    uploadLineWidth + Math.Max(this.ScaleFloat(0.85F), ultraTransparent ? 0.85F : 0.55F)))
+                using (Pen downloadPen = new Pen(Color.FromArgb(baseLineAlpha, SparklineDownloadColor), downloadLineWidth))
+                using (Pen uploadPen = new Pen(Color.FromArgb(baseLineAlpha, SparklineUploadColor), uploadLineWidth))
+                {
+                    if (downloadFillPath != null)
+                    {
+                        graphics.FillPath(downloadFillBrush, downloadFillPath);
+                    }
+
+                    if (uploadFillPath != null)
+                    {
+                        graphics.FillPath(uploadFillBrush, uploadFillPath);
+                    }
+
                     downloadGlowPen.LineJoin = LineJoin.Round;
                     downloadGlowPen.StartCap = LineCap.Round;
                     downloadGlowPen.EndCap = LineCap.Round;
@@ -4588,17 +4924,20 @@ namespace TrafficView
                     uploadPen.StartCap = LineCap.Round;
                     uploadPen.EndCap = LineCap.Round;
 
-                    if (downloadPoints.Length >= 2)
+                    if (miniGraphDownloadPoints.Length >= 2)
                     {
-                        graphics.DrawLines(downloadGlowPen, downloadPoints);
-                        graphics.DrawLines(downloadPen, downloadPoints);
+                        graphics.DrawLines(downloadGlowPen, miniGraphDownloadPoints);
+                        graphics.DrawLines(downloadPen, miniGraphDownloadPoints);
                     }
 
-                    if (uploadPoints.Length >= 2)
+                    if (miniGraphUploadPoints.Length >= 2)
                     {
-                        graphics.DrawLines(uploadGlowPen, uploadPoints);
-                        graphics.DrawLines(uploadPen, uploadPoints);
+                        graphics.DrawLines(uploadGlowPen, miniGraphUploadPoints);
+                        graphics.DrawLines(uploadPen, miniGraphUploadPoints);
                     }
+
+                    this.DrawSparklinePeakMarker(graphics, bounds, peak, this.peakHoldDownloadBytesPerSecond, SparklineDownloadColor, true);
+                    this.DrawSparklinePeakMarker(graphics, bounds, peak, this.peakHoldUploadBytesPerSecond, SparklineUploadColor, false);
                 }
             }
             finally
@@ -4615,10 +4954,12 @@ namespace TrafficView
                 return this.ScaleSkinRectangle(definition.SparklineBounds.Value);
             }
 
-            int left = this.ScaleValue(6);
-            int top = this.ScaleValue(46);
+            int left = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineLeft : 6);
+            int top = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineTop : 46);
             int width = Math.Max(12, meterBounds.Left - left - this.ScaleValue(4));
-            int height = Math.Max(4, this.ScaleValue(7));
+            int height = Math.Max(
+                this.IsMiniGraphDisplayMode() ? 8 : 4,
+                this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineHeight : 7));
             return new Rectangle(left, top, width, height);
         }
 
@@ -4636,19 +4977,20 @@ namespace TrafficView
             {
                 snapshot = Array.Empty<TrafficHistorySample>();
             }
-            else if (history.Length <= OverlaySparklinePointCount)
+            else if (history.Length <= this.GetCurrentOverlaySparklinePointCount())
             {
                 snapshot = history;
             }
             else
             {
-                snapshot = new TrafficHistorySample[OverlaySparklinePointCount];
+                int overlaySparklinePointCount = this.GetCurrentOverlaySparklinePointCount();
+                snapshot = new TrafficHistorySample[overlaySparklinePointCount];
                 Array.Copy(
                     history,
-                    history.Length - OverlaySparklinePointCount,
+                    history.Length - overlaySparklinePointCount,
                     snapshot,
                     0,
-                    OverlaySparklinePointCount);
+                    overlaySparklinePointCount);
             }
 
             this.cachedOverlaySparklineHistoryVersion = this.trafficHistoryVersion;
@@ -4660,7 +5002,8 @@ namespace TrafficView
             TrafficHistorySample[] samples,
             Rectangle bounds,
             double peakBytesPerSecond,
-            bool useDownload)
+            bool useDownload,
+            bool useMiniGraphLayout)
         {
             if (samples == null || samples.Length == 0)
             {
@@ -4668,7 +5011,10 @@ namespace TrafficView
             }
 
             PointF[] points = new PointF[samples.Length];
-            float width = Math.Max(1F, bounds.Width - 1F);
+            float leftInset = useMiniGraphLayout
+                ? Math.Min(Math.Max(0F, MiniGraphSparklineContentLeftInset), Math.Max(0F, bounds.Width - 2F))
+                : 0F;
+            float width = Math.Max(1F, bounds.Width - 1F - leftInset);
             float height = Math.Max(1F, bounds.Height - 1F);
             double peak = Math.Max(1D, peakBytesPerSecond);
 
@@ -4678,7 +5024,7 @@ namespace TrafficView
                     ? samples[i].DownloadBytesPerSecond
                     : samples[i].UploadBytesPerSecond;
                 double ratio = Math.Max(0D, Math.Min(1D, value / peak));
-                float x = bounds.Left + ((samples.Length == 1)
+                float x = bounds.Left + leftInset + ((samples.Length == 1)
                     ? 0F
                     : (width * i) / Math.Max(1, samples.Length - 1));
                 float y = bounds.Bottom - 1 - (float)(ratio * height);
@@ -4714,6 +5060,66 @@ namespace TrafficView
             return filteredPoints.Count == points.Length
                 ? points
                 : filteredPoints.ToArray();
+        }
+
+        private static GraphicsPath CreateSparklineFillPath(PointF[] points, Rectangle bounds)
+        {
+            if (points == null || points.Length < 2)
+            {
+                return null;
+            }
+
+            GraphicsPath path = new GraphicsPath();
+            List<PointF> polygonPoints = new List<PointF>(points.Length + 2);
+            polygonPoints.AddRange(points);
+            polygonPoints.Add(new PointF(points[points.Length - 1].X, AlignToHalfPixel(bounds.Bottom - 1F)));
+            polygonPoints.Add(new PointF(points[0].X, AlignToHalfPixel(bounds.Bottom - 1F)));
+            path.AddPolygon(polygonPoints.ToArray());
+            path.CloseFigure();
+            return path;
+        }
+
+        private void DrawSparklinePeakMarker(
+            Graphics graphics,
+            Rectangle bounds,
+            double peakBytesPerSecond,
+            double peakHoldBytesPerSecond,
+            Color color,
+            bool useDownload)
+        {
+            if (peakBytesPerSecond <= 0D || peakHoldBytesPerSecond <= 0D)
+            {
+                return;
+            }
+
+            float y = GetSparklineValueY(bounds, peakHoldBytesPerSecond, peakBytesPerSecond);
+            float right = bounds.Right - this.ScaleFloat(1.5F);
+            float width = Math.Max(this.ScaleFloat(useDownload ? 9F : 7F), useDownload ? 9F : 7F);
+            float left = right - width;
+            float lineWidth = Math.Max(this.ScaleFloat(useDownload ? 1.6F : 1.2F), useDownload ? 1.6F : 1.2F);
+            int alpha = useDownload ? MiniGraphDownloadPeakMarkerAlpha : MiniGraphUploadPeakMarkerAlpha;
+
+            using (Pen markerPen = new Pen(Color.FromArgb(alpha, color), lineWidth))
+            using (Pen glowPen = new Pen(
+                Color.FromArgb(Math.Max(72, alpha / 2), color),
+                lineWidth + this.ScaleFloat(0.8F)))
+            {
+                markerPen.StartCap = LineCap.Round;
+                markerPen.EndCap = LineCap.Round;
+                glowPen.StartCap = LineCap.Round;
+                glowPen.EndCap = LineCap.Round;
+                graphics.DrawLine(glowPen, AlignToHalfPixel(left), AlignToHalfPixel(y), AlignToHalfPixel(right), AlignToHalfPixel(y));
+                graphics.DrawLine(markerPen, AlignToHalfPixel(left), AlignToHalfPixel(y), AlignToHalfPixel(right), AlignToHalfPixel(y));
+            }
+        }
+
+        private static float GetSparklineValueY(Rectangle bounds, double bytesPerSecond, double peakBytesPerSecond)
+        {
+            double peak = Math.Max(1D, peakBytesPerSecond);
+            double ratio = Math.Max(0D, Math.Min(1D, bytesPerSecond / peak));
+            float height = Math.Max(1F, bounds.Height - 1F);
+            float y = bounds.Bottom - 1 - (float)(ratio * height);
+            return AlignToHalfPixel(y);
         }
 
         private void DrawTrafficText(
@@ -4771,12 +5177,12 @@ namespace TrafficView
 
         private double GetVisualizedFillRatioForCurrentDownload()
         {
-            return GetVisualizedFillRatio(this.GetCurrentDownloadFillRatio());
+            return this.GetVisualizedFillRatio(this.GetCurrentDownloadFillRatio(), true);
         }
 
         private double GetVisualizedFillRatioForCurrentUpload()
         {
-            return GetVisualizedFillRatio(this.GetCurrentUploadFillRatio());
+            return this.GetVisualizedFillRatio(this.GetCurrentUploadFillRatio(), false);
         }
 
         private double GetCurrentDownloadFillRatio()
@@ -4817,8 +5223,9 @@ namespace TrafficView
 
         private bool ShouldAnimateVisualEffects()
         {
-            double ringMotionThreshold = RingDisplayNoiseFloorBytesPerSecond * 0.25D;
-            double holdMotionThreshold = RingDisplayNoiseFloorBytesPerSecond * 0.20D;
+            double ringNoiseFloorBytesPerSecond = this.GetRingDisplayNoiseFloorBytesPerSecond();
+            double ringMotionThreshold = ringNoiseFloorBytesPerSecond * 0.25D;
+            double holdMotionThreshold = ringNoiseFloorBytesPerSecond * 0.20D;
 
             return Math.Abs(this.ringDisplayDownloadBytesPerSecond - this.latestDownloadBytesPerSecond) > ringMotionThreshold ||
                 Math.Abs(this.ringDisplayUploadBytesPerSecond - this.latestUploadBytesPerSecond) > ringMotionThreshold ||
@@ -4894,7 +5301,7 @@ namespace TrafficView
             }
 
             double decayAmount = Math.Max(
-                RingDisplayNoiseFloorBytesPerSecond,
+                this.GetRingDisplayNoiseFloorBytesPerSecond(),
                 safePeakHoldBytesPerSecond * PeakHoldDecayPerSecond * elapsedSeconds);
             return Math.Max(safeBaselineBytesPerSecond, safePeakHoldBytesPerSecond - decayAmount);
         }
@@ -4993,8 +5400,8 @@ namespace TrafficView
 
             double downloadFillRatio = this.GetCurrentDownloadFillRatio();
             double uploadFillRatio = this.GetCurrentUploadFillRatio();
-            double visualDownloadFillRatio = GetVisualizedFillRatio(downloadFillRatio);
-            double visualUploadFillRatio = GetVisualizedFillRatio(uploadFillRatio);
+            double visualDownloadFillRatio = this.GetVisualizedFillRatio(downloadFillRatio, true);
+            double visualUploadFillRatio = this.GetVisualizedFillRatio(uploadFillRatio, false);
             int animationFrame = this.GetAnimationFrameIndex();
             bool needCompose =
                 staticWasDirty ||
