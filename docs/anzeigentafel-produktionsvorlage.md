@@ -1,6 +1,6 @@
 # Anzeigentafel-Produktionsvorlage
 
-Projekt: `TrafficView 1.4.12`  
+Projekt: `TrafficView`  
 Zweck: wiederverwendbare Mastervorlage für neue Grundtafeln, auf die später nur noch Overlay-Informationen für `DL`, `UL`, Graph und Kreis gelegt werden.
 
 ## Zielformat
@@ -164,7 +164,5 @@ Nicht fest einbrennen, wenn dynamisches Overlay geplant ist:
 
 ## Zugehörige Vorlagendateien
 
-- Workflow:
-  - [ComfyUI_Anzeigentafel_Grundtafel_51x28.json](D:\Codex\TrafficView_Moi\TrafficView%201.4.12\Skin_Work\Templates\ComfyUI_Anzeigentafel_Grundtafel_51x28.json)
-- Prompt-Set:
-  - [ComfyUI_Anzeigentafel_Grundtafel_Prompt.txt](D:\Codex\TrafficView_Moi\TrafficView%201.4.12\Skin_Work\Templates\ComfyUI_Anzeigentafel_Grundtafel_Prompt.txt)
+- Der frühere Template-Bestand ist im aktuellen Projektordner nicht mehr enthalten.
+- Wenn diese Vorlage erneut produktiv genutzt wird, sollten Workflow-JSON und Prompt-Set zuerst aus Archiv oder externem Workflow-Bestand wiederhergestellt und dann in einen projektlokalen Pfad überführt werden.

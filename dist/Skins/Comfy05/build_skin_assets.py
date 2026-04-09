@@ -7,7 +7,15 @@ from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parents[1]
-COMFY_OUTPUT = Path(r"D:\Codex\!Grafikhilfen\ComfyUI\ComfyUI\output\comfy04_widget_rebuild_00001_.png")
+COMFY_OUTPUT = (
+    PROJECT_ROOT.parent
+    / "Tooling"
+    / "Graphics"
+    / "ComfyUI"
+    / "ComfyUI"
+    / "output"
+    / "comfy04_widget_rebuild_00001_.png"
+)
 FALLBACK_SOURCE = PROJECT_ROOT / "Skin_Work" / "Reference_Inputs" / "Futuristisches Widget mit Geschwindigkeitsanzeige.png"
 
 BASE_WIDTH = 102
