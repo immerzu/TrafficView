@@ -2,7 +2,7 @@
 
 Kleine Windows-Tray-App fuer Windows 11, die aktuelle Download- und Upload-Geschwindigkeit anzeigt.
 
-Diese Version enthaelt zusaetzlich einen waehlbaren Anzeigemodus `MiniGraph`, der ueber das Popup-Menue unter `Anzeige` neben der bisherigen Standardansicht aktiviert und dauerhaft gespeichert werden kann.
+Diese Version enthaelt die waehlbaren Anzeigemodi `Standard`, `MiniGraph` und `MiniSoft` sowie den optionalen `Rotierenden Kernschimmer`; die Auswahl wird ueber das Popup-Menue unter `Anzeige` dauerhaft gespeichert.
 
 Beim ersten Start erscheint jetzt zuerst ein eigenes Fenster zur Sprachauswahl. Nach Auswahl und Speichern der Sprache schliesst sich dieses Fenster, danach laeuft der restliche Programmstart wie gewohnt weiter.
 

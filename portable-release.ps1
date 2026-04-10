@@ -43,7 +43,9 @@ function Get-DefaultSettingsLines {
         'PopupLocationX=0',
         'PopupLocationY=0',
         'PopupScalePercent=100',
-        'PanelSkinId=08'
+        'PanelSkinId=08',
+        'PopupDisplayMode=Standard',
+        'RotatingMeterGlossEnabled=1'
     )
 }
 
