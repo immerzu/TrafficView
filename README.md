@@ -1,4 +1,4 @@
-# TrafficView 1.4.19
+# TrafficView 1.4.20
 
 Kleine Windows-Tray-App fuer Windows 11, die aktuelle Download- und Upload-Geschwindigkeit anzeigt.
 
