@@ -1170,9 +1170,17 @@ namespace TrafficView
 
         private static PopupDisplayMode NormalizePopupDisplayMode(PopupDisplayMode popupDisplayMode)
         {
-            return popupDisplayMode == PopupDisplayMode.MiniGraph
-                ? PopupDisplayMode.MiniGraph
-                : PopupDisplayMode.Standard;
+            if (popupDisplayMode == PopupDisplayMode.MiniGraph)
+            {
+                return PopupDisplayMode.MiniGraph;
+            }
+
+            if (popupDisplayMode == PopupDisplayMode.MiniSoft)
+            {
+                return PopupDisplayMode.MiniSoft;
+            }
+
+            return PopupDisplayMode.Standard;
         }
 
         private static PopupDisplayMode ParsePopupDisplayMode(string value, PopupDisplayMode fallback)
@@ -1195,6 +1203,12 @@ namespace TrafficView
             if (string.Equals(normalized, "MiniGraph", StringComparison.OrdinalIgnoreCase))
             {
                 popupDisplayMode = PopupDisplayMode.MiniGraph;
+                return true;
+            }
+
+            if (string.Equals(normalized, "MiniSoft", StringComparison.OrdinalIgnoreCase))
+            {
+                popupDisplayMode = PopupDisplayMode.MiniSoft;
                 return true;
             }
 

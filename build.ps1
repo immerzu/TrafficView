@@ -47,6 +47,34 @@ $invalidSkinFolderCharacters = [System.IO.Path]::GetInvalidFileNameChars()
 
 Add-Type -AssemblyName System.Drawing
 
+function Read-ExistingTextFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return $null
+    }
+
+    return Get-Content -LiteralPath $Path
+}
+
+function Restore-TextFileIfAvailable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [string[]]$Lines
+    )
+
+    if ($null -eq $Lines) {
+        return
+    }
+
+    Set-Content -LiteralPath $Path -Value $Lines -Encoding ASCII
+}
+
 function Remove-DeleteStagingDirectory {
     param(
         [Parameter(Mandatory = $true)]
@@ -316,6 +344,13 @@ function Copy-SkinDirectoriesToOutput {
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
+$preservedSettingsLines = Read-ExistingTextFile -Path $settingsOutputFile
+$preservedSettingsBackupLines = Read-ExistingTextFile -Path $settingsBackupOutputFile
+$preservedUsageLines = Read-ExistingTextFile -Path $usageOutputFile
+$preservedUsageBackupLines = Read-ExistingTextFile -Path $usageBackupOutputFile
+$preservedUsageArchiveLines = Read-ExistingTextFile -Path $usageArchiveOutputFile
+$preservedUsageArchiveBackupLines = Read-ExistingTextFile -Path $usageArchiveBackupOutputFile
+
 if (Test-Path $settingsOutputFile) {
     Remove-Item -LiteralPath $settingsOutputFile -Force
 }
@@ -417,6 +452,13 @@ foreach ($menuAssetFile in $menuAssetFiles) {
         Copy-Item $menuAssetSourceFile $menuAssetOutputFile -Force
     }
 }
+
+Restore-TextFileIfAvailable -Path $settingsOutputFile -Lines $preservedSettingsLines
+Restore-TextFileIfAvailable -Path $settingsBackupOutputFile -Lines $preservedSettingsBackupLines
+Restore-TextFileIfAvailable -Path $usageOutputFile -Lines $preservedUsageLines
+Restore-TextFileIfAvailable -Path $usageBackupOutputFile -Lines $preservedUsageBackupLines
+Restore-TextFileIfAvailable -Path $usageArchiveOutputFile -Lines $preservedUsageArchiveLines
+Restore-TextFileIfAvailable -Path $usageArchiveBackupOutputFile -Lines $preservedUsageArchiveBackupLines
 
 Write-Host ""
 Write-Host "Fertig:" $outputFile
