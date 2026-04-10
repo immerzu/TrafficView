@@ -131,6 +131,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem displayModeItem;
+        private readonly ToolStripMenuItem rotatingGlossItem;
         private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem deleteSkinItem;
         private readonly ToolStripMenuItem languageItem;
@@ -185,6 +186,7 @@ namespace TrafficView
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.displayModeItem = new ToolStripMenuItem(string.Empty);
+            this.rotatingGlossItem = new ToolStripMenuItem(string.Empty, null, this.RotatingGlossItem_Click);
             this.skinItem = new ToolStripMenuItem(string.Empty);
             this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
             this.languageItem = new ToolStripMenuItem(string.Empty);
@@ -221,6 +223,8 @@ namespace TrafficView
                 this.displayModeMenuItems[popupDisplayModes[i]] = item;
                 this.displayModeItem.DropDownItems.Add(item);
             }
+            this.displayModeItem.DropDownItems.Add(new ToolStripSeparator());
+            this.displayModeItem.DropDownItems.Add(this.rotatingGlossItem);
 
             if (this.companyLogoHost != null)
             {
@@ -643,6 +647,15 @@ namespace TrafficView
             }
 
             this.settings = this.settings.WithPopupDisplayMode(popupDisplayMode);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            this.UpdateMenuState();
+        }
+
+        private void RotatingGlossItem_Click(object sender, EventArgs e)
+        {
+            bool nextValue = !this.settings.RotatingMeterGlossEnabled;
+            this.settings = this.settings.WithRotatingMeterGlossEnabled(nextValue);
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
             this.UpdateMenuState();
@@ -1248,6 +1261,11 @@ namespace TrafficView
                 pair.Value.Checked = pair.Key == this.settings.PopupDisplayMode;
             }
 
+            this.rotatingGlossItem.Text = UiLanguage.Get(
+                "Menu.RotatingGloss",
+                "Rotierender Kernschimmer");
+            this.rotatingGlossItem.Checked = this.settings.RotatingMeterGlossEnabled;
+
             AdapterAvailabilityState adapterAvailabilityState = GetAdapterAvailabilityState(this.settings);
 
             if (this.settings.HasCalibrationData() &&
@@ -1715,6 +1733,10 @@ namespace TrafficView
         private const float PeakHoldMarkerSweepDegrees = 8.5F;
         private const double PeakHoldReleaseDelaySeconds = 0.70D;
         private const double PeakHoldDecayPerSecond = 0.42D;
+        private const double MeterGlossAnimationThresholdRatio = 0.02D;
+        private const double MeterGlossClockwiseMaxRotationDegreesPerSecond = 138D;
+        private const double MeterGlossCounterClockwiseMaxRotationDegreesPerSecond = 110D;
+        private const float StandardMeterGlossExtraInset = 2.3F;
         private const float MiniGraphDownloadRingWeight = 1.12F;
         private const float MiniGraphUploadRingWeight = 1.00F;
         private const float MiniGraphDownloadSparklineWidthScale = 1.08F;
@@ -1761,6 +1783,7 @@ namespace TrafficView
         private DateTime peakHoldDownloadCapturedUtc = DateTime.MinValue;
         private DateTime peakHoldUploadCapturedUtc = DateTime.MinValue;
         private DateTime lastAnimationAdvanceUtc = DateTime.MinValue;
+        private double meterGlossRotationDegrees;
         private readonly Queue<double> recentDownloadSamples;
         private readonly Queue<double> recentUploadSamples;
         private readonly Queue<TrafficHistorySample> trafficHistory;
@@ -2406,6 +2429,23 @@ namespace TrafficView
                     uploadRingEndColor,
                     false);
             }
+
+            RectangleF glossBounds = centerBounds;
+            if (!this.IsMiniSoftDisplayMode())
+            {
+                float glossInset = this.ScaleFloat(StandardMeterGlossExtraInset);
+                glossBounds = new RectangleF(
+                    centerBounds.Left + glossInset,
+                    centerBounds.Top + glossInset,
+                    Math.Max(2F, centerBounds.Width - (glossInset * 2F)),
+                    Math.Max(2F, centerBounds.Height - (glossInset * 2F)));
+            }
+
+            this.DrawRotatingMeterGloss(
+                graphics,
+                glossBounds,
+                visualDownloadFillRatio,
+                visualUploadFillRatio);
 
             if (this.ShouldDrawCenterTrafficArrows())
             {
@@ -4299,6 +4339,121 @@ namespace TrafficView
             }
         }
 
+        private void DrawRotatingMeterGloss(
+            Graphics graphics,
+            RectangleF centerBounds,
+            double visualDownloadFillRatio,
+            double visualUploadFillRatio)
+        {
+            if (!this.settings.RotatingMeterGlossEnabled ||
+                Math.Max(visualDownloadFillRatio, visualUploadFillRatio) <= MeterGlossAnimationThresholdRatio)
+            {
+                return;
+            }
+
+            GraphicsState state = graphics.Save();
+
+            try
+            {
+                using (GraphicsPath centerPath = new GraphicsPath())
+                {
+                    centerPath.AddEllipse(centerBounds);
+                    graphics.SetClip(centerPath, CombineMode.Intersect);
+                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    graphics.CompositingQuality = CompositingQuality.HighQuality;
+
+                    float centerX = centerBounds.Left + (centerBounds.Width / 2F);
+                    float centerY = centerBounds.Top + (centerBounds.Height / 2F);
+                    float size = Math.Min(centerBounds.Width, centerBounds.Height);
+
+                    graphics.TranslateTransform(centerX, centerY);
+                    graphics.RotateTransform((float)this.meterGlossRotationDegrees);
+                    graphics.TranslateTransform(-centerX, -centerY);
+
+                    RectangleF upperSheenBounds = new RectangleF(
+                        centerX - (size * 0.44F),
+                        centerY - (size * 0.47F),
+                        size * 0.88F,
+                        size * 0.30F);
+                    using (GraphicsPath upperSheenPath = new GraphicsPath())
+                    {
+                        upperSheenPath.AddEllipse(upperSheenBounds);
+                        using (PathGradientBrush upperSheenBrush = new PathGradientBrush(upperSheenPath))
+                        {
+                            upperSheenBrush.CenterPoint = new PointF(
+                                upperSheenBounds.Left + (upperSheenBounds.Width * 0.64F),
+                                upperSheenBounds.Top + (upperSheenBounds.Height * 0.18F));
+                            upperSheenBrush.CenterColor = Color.FromArgb(110, 255, 255, 255);
+                            upperSheenBrush.SurroundColors = new Color[] { Color.Transparent };
+                            graphics.FillEllipse(upperSheenBrush, upperSheenBounds);
+                        }
+                    }
+
+                    RectangleF topRightHighlightBounds = new RectangleF(
+                        centerX + (size * 0.14F),
+                        centerY - (size * 0.28F),
+                        size * 0.22F,
+                        size * 0.22F);
+                    using (GraphicsPath topRightHighlightPath = new GraphicsPath())
+                    {
+                        topRightHighlightPath.AddEllipse(topRightHighlightBounds);
+                        using (PathGradientBrush topRightHighlightBrush = new PathGradientBrush(topRightHighlightPath))
+                        {
+                            topRightHighlightBrush.CenterPoint = new PointF(
+                                topRightHighlightBounds.Left + (topRightHighlightBounds.Width * 0.60F),
+                                topRightHighlightBounds.Top + (topRightHighlightBounds.Height * 0.44F));
+                            topRightHighlightBrush.CenterColor = Color.FromArgb(122, 255, 255, 255);
+                            topRightHighlightBrush.SurroundColors = new Color[] { Color.Transparent };
+                            graphics.FillEllipse(topRightHighlightBrush, topRightHighlightBounds);
+                        }
+                    }
+
+                    RectangleF lowerBlueGlowBounds = new RectangleF(
+                        centerX - (size * 0.37F),
+                        centerY + (size * 0.16F),
+                        size * 0.48F,
+                        size * 0.25F);
+                    using (GraphicsPath lowerBlueGlowPath = new GraphicsPath())
+                    {
+                        lowerBlueGlowPath.AddEllipse(lowerBlueGlowBounds);
+                        using (PathGradientBrush lowerBlueGlowBrush = new PathGradientBrush(lowerBlueGlowPath))
+                        {
+                            lowerBlueGlowBrush.CenterPoint = new PointF(
+                                lowerBlueGlowBounds.Left + (lowerBlueGlowBounds.Width * 0.38F),
+                                lowerBlueGlowBounds.Top + (lowerBlueGlowBounds.Height * 0.58F));
+                            lowerBlueGlowBrush.CenterColor = Color.FromArgb(112, 78, 176, 255);
+                            lowerBlueGlowBrush.SurroundColors = new Color[] { Color.Transparent };
+                            graphics.FillEllipse(lowerBlueGlowBrush, lowerBlueGlowBounds);
+                        }
+                    }
+
+                    RectangleF counterGlossBounds = new RectangleF(
+                        centerX - (size * 0.34F),
+                        centerY - (size * 0.09F),
+                        size * 0.15F,
+                        size * 0.15F);
+                    using (GraphicsPath counterGlossPath = new GraphicsPath())
+                    {
+                        counterGlossPath.AddEllipse(counterGlossBounds);
+                        using (PathGradientBrush counterGlossBrush = new PathGradientBrush(counterGlossPath))
+                        {
+                            counterGlossBrush.CenterPoint = new PointF(
+                                counterGlossBounds.Left + (counterGlossBounds.Width * 0.46F),
+                                counterGlossBounds.Top + (counterGlossBounds.Height * 0.46F));
+                            counterGlossBrush.CenterColor = Color.FromArgb(68, 220, 242, 255);
+                            counterGlossBrush.SurroundColors = new Color[] { Color.Transparent };
+                            graphics.FillEllipse(counterGlossBrush, counterGlossBounds);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
         private float GetDisplayedSweepAngle(double clampedRatio)
         {
             float sweepAngle = (float)(clampedRatio * 360D);
@@ -5352,7 +5507,15 @@ namespace TrafficView
             return Math.Abs(this.ringDisplayDownloadBytesPerSecond - this.latestDownloadBytesPerSecond) > ringMotionThreshold ||
                 Math.Abs(this.ringDisplayUploadBytesPerSecond - this.latestUploadBytesPerSecond) > ringMotionThreshold ||
                 this.peakHoldDownloadBytesPerSecond > this.displayedDownloadBytesPerSecond + holdMotionThreshold ||
-                this.peakHoldUploadBytesPerSecond > this.displayedUploadBytesPerSecond + holdMotionThreshold;
+                this.peakHoldUploadBytesPerSecond > this.displayedUploadBytesPerSecond + holdMotionThreshold ||
+                this.ShouldAnimateMeterGloss();
+        }
+
+        private bool ShouldAnimateMeterGloss()
+        {
+            return this.settings.RotatingMeterGlossEnabled &&
+                (this.GetCurrentDownloadFillRatio() > MeterGlossAnimationThresholdRatio ||
+                 this.GetCurrentUploadFillRatio() > MeterGlossAnimationThresholdRatio);
         }
 
         private void UpdatePeakHoldRates(double downloadBytesPerSecond, double uploadBytesPerSecond, DateTime nowUtc)
@@ -5383,7 +5546,38 @@ namespace TrafficView
 
             this.UpdateRingDisplayRates(this.latestDownloadBytesPerSecond, this.latestUploadBytesPerSecond);
             this.DecayPeakHoldRates(nowUtc, elapsedSeconds);
+            this.AdvanceMeterGlossRotation(elapsedSeconds);
             this.UpdateAnimationTimerState();
+        }
+
+        private void AdvanceMeterGlossRotation(double elapsedSeconds)
+        {
+            if (!this.settings.RotatingMeterGlossEnabled)
+            {
+                return;
+            }
+
+            double downloadInfluence = this.GetVisualizedFillRatioForCurrentDownload();
+            double uploadInfluence = this.GetVisualizedFillRatioForCurrentUpload();
+            double netInfluence = downloadInfluence - uploadInfluence;
+            if (Math.Abs(netInfluence) <= 0.0001D)
+            {
+                return;
+            }
+
+            double degreesPerSecond = netInfluence >= 0D
+                ? MeterGlossClockwiseMaxRotationDegreesPerSecond
+                : MeterGlossCounterClockwiseMaxRotationDegreesPerSecond;
+            this.meterGlossRotationDegrees += netInfluence * degreesPerSecond * elapsedSeconds;
+            while (this.meterGlossRotationDegrees >= 360D)
+            {
+                this.meterGlossRotationDegrees -= 360D;
+            }
+
+            while (this.meterGlossRotationDegrees < 0D)
+            {
+                this.meterGlossRotationDegrees += 360D;
+            }
         }
 
         private void DecayPeakHoldRates(DateTime nowUtc, double elapsedSeconds)
