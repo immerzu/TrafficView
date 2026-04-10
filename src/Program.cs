@@ -2211,6 +2211,18 @@ namespace TrafficView
             return PanelSkinCatalog.GetSkinById(this.settings.PanelSkinId);
         }
 
+        private string GetCurrentMeterCenterAssetPath()
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            if (definition == null || string.IsNullOrWhiteSpace(definition.DirectoryPath))
+            {
+                return null;
+            }
+
+            string assetPath = Path.Combine(definition.DirectoryPath, "TrafficView.center_core.png");
+            return File.Exists(assetPath) ? assetPath : null;
+        }
+
         private bool IsHudOnlyTransparencyMode()
         {
             return this.settings != null && this.settings.TransparencyPercent >= 100;
@@ -4231,6 +4243,35 @@ namespace TrafficView
                     centerPath.AddEllipse(centerBounds);
                     graphics.SetClip(centerPath, CombineMode.Intersect);
 
+                    string meterCenterAssetPath = this.GetCurrentMeterCenterAssetPath();
+                    if (!string.IsNullOrWhiteSpace(meterCenterAssetPath))
+                    {
+                        try
+                        {
+                            GraphicsState imageState = graphics.Save();
+                            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                            graphics.CompositingQuality = CompositingQuality.HighQuality;
+
+                            using (Image meterCenterImage = Image.FromFile(meterCenterAssetPath))
+                            {
+                                graphics.DrawImage(meterCenterImage, centerBounds);
+                            }
+
+                            graphics.Restore(imageState);
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLog.WarnOnce(
+                                "meter-center-asset-load-failed-" + meterCenterAssetPath,
+                                string.Format(
+                                    "The meter center asset could not be loaded from '{0}'. Procedural rendering will be used instead.",
+                                    meterCenterAssetPath),
+                                ex);
+                        }
+                    }
+
                     using (LinearGradientBrush centerBrush = new LinearGradientBrush(
                         new PointF(centerBounds.Left, centerBounds.Top),
                         new PointF(centerBounds.Right, centerBounds.Bottom),
@@ -4250,33 +4291,6 @@ namespace TrafficView
                         graphics.FillEllipse(centerBrush, centerBounds);
                     }
 
-                    RectangleF highlightBounds = new RectangleF(
-                        centerBounds.Left + (centerBounds.Width * 0.12F),
-                        centerBounds.Top + (centerBounds.Height * 0.10F),
-                        centerBounds.Width * 0.58F,
-                        centerBounds.Height * 0.34F);
-                    using (GraphicsPath highlightPath = CreateRoundedPath(
-                        highlightBounds,
-                        Math.Max(2, (int)Math.Round(Math.Min(highlightBounds.Width, highlightBounds.Height) * 0.45F, MidpointRounding.AwayFromZero))))
-                    using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
-                        new PointF(highlightBounds.Left, highlightBounds.Top),
-                        new PointF(highlightBounds.Left, highlightBounds.Bottom),
-                        Color.FromArgb(54, 232, 240, 255),
-                        Color.FromArgb(0, 232, 240, 255)))
-                    {
-                        graphics.FillPath(highlightBrush, highlightPath);
-                    }
-
-                    float rimWidth = Math.Max(0.8F, this.ScaleFloat(1F));
-                    using (Pen innerHighlightPen = new Pen(Color.FromArgb(76, 176, 204, 248), rimWidth))
-                    using (Pen innerShadowPen = new Pen(Color.FromArgb(84, 6, 10, 24), rimWidth))
-                    {
-                        RectangleF rimBounds = InflateRectangle(centerBounds, -Math.Max(1F, this.ScaleFloat(1.4F)));
-                        innerHighlightPen.Alignment = PenAlignment.Center;
-                        innerShadowPen.Alignment = PenAlignment.Center;
-                        graphics.DrawArc(innerHighlightPen, rimBounds, 214F, 108F);
-                        graphics.DrawArc(innerShadowPen, rimBounds, 26F, 120F);
-                    }
                 }
             }
             finally
