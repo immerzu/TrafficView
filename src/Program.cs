@@ -222,8 +222,6 @@ namespace TrafficView
                 this.displayModeItem.DropDownItems.Add(item);
             }
 
-            this.RebuildPanelSkinMenuItems();
-
             if (this.companyLogoHost != null)
             {
                 this.sharedMenu.Items.Add(this.companyLogoHost);
@@ -237,7 +235,6 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.transparencyItem);
             this.sharedMenu.Items.Add(this.sizeItem);
             this.sharedMenu.Items.Add(this.displayModeItem);
-            this.sharedMenu.Items.Add(this.skinItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
             this.sharedMenu.Items.Add(this.exitItem);
@@ -1211,12 +1208,6 @@ namespace TrafficView
 
         private void UpdateMenuState()
         {
-            bool selectedSkinAdjusted = this.EnsureValidSelectedSkin();
-            if (selectedSkinAdjusted)
-            {
-                this.RebuildPanelSkinMenuItems();
-            }
-
             this.toggleItem.Text = this.popupForm.Visible
                 ? UiLanguage.Get("Menu.Hide", "Ausblenden")
                 : UiLanguage.Get("Menu.Show", "Anzeigen");
@@ -1233,15 +1224,6 @@ namespace TrafficView
             this.displayModeItem.Text = UiLanguage.Get(
                 "Menu.DisplayMode",
                 "Anzeige");
-            this.skinItem.Text = UiLanguage.Get(
-                "Menu.Skins",
-                "Skins");
-            this.skinItem.Enabled = this.panelSkinMenuItems.Count > 0;
-            this.deleteSkinItem.Text = UiLanguage.Get(
-                "Menu.DeleteSkin",
-                "Skin löschen");
-            this.deleteSkinItem.Enabled = this.panelSkinMenuItems.Count > 1 &&
-                !PanelSkinCatalog.IsProtectedSkinId(this.settings.PanelSkinId);
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
             if (this.menuVersionLabel != null)
@@ -1264,12 +1246,6 @@ namespace TrafficView
             {
                 pair.Value.Text = this.GetPopupDisplayModeDisplayName(pair.Key);
                 pair.Value.Checked = pair.Key == this.settings.PopupDisplayMode;
-            }
-
-            foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.panelSkinMenuItems)
-            {
-                pair.Value.Text = this.GetPanelSkinDisplayName(pair.Key);
-                pair.Value.Checked = string.Equals(pair.Key, this.settings.PanelSkinId, StringComparison.OrdinalIgnoreCase);
             }
 
             AdapterAvailabilityState adapterAvailabilityState = GetAdapterAvailabilityState(this.settings);

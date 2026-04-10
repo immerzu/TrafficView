@@ -1165,7 +1165,7 @@ namespace TrafficView
 
         private static string NormalizePanelSkinId(string panelSkinId)
         {
-            return PanelSkinCatalog.NormalizeSkinId(panelSkinId);
+            return PanelSkinCatalog.DefaultSkinId;
         }
 
         private static PopupDisplayMode NormalizePopupDisplayMode(PopupDisplayMode popupDisplayMode)
