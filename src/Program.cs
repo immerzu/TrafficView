@@ -201,6 +201,7 @@ namespace TrafficView
         public TrafficViewContext()
         {
             this.settings = MonitorSettings.Load();
+            this.PersistCurrentSettings(false);
             this.trafficUsageLog = new TrafficUsageLog();
             UiLanguage.Initialize(this.settings.LanguageCode);
             this.popupForm = new TrafficPopupForm(this.settings);
@@ -322,6 +323,7 @@ namespace TrafficView
 
         protected override void ExitThreadCore()
         {
+            this.PersistCurrentSettings(true);
             this.trafficUsageLog.FlushPending();
             this.notifyIcon.Visible = false;
             this.notifyIcon.Dispose();
@@ -333,6 +335,37 @@ namespace TrafficView
             this.popupForm.Dispose();
             this.notifyIconHandle.Dispose();
             base.ExitThreadCore();
+        }
+
+        private void PersistCurrentSettings(bool includePopupLocation)
+        {
+            if (this.settings == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (includePopupLocation &&
+                    this.popupForm != null &&
+                    !this.popupForm.IsDisposed)
+                {
+                    this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                }
+
+                this.settings.Save();
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    includePopupLocation
+                        ? "settings-persist-on-exit-failed"
+                        : "settings-persist-on-startup-failed",
+                    includePopupLocation
+                        ? "Die aktuellen Einstellungen konnten beim Beenden nicht gesichert werden."
+                        : "Die aktuellen Einstellungen konnten beim Start nicht materialisiert werden.",
+                    ex);
+            }
         }
 
         private static Image LoadCompanyLogoImage()
