@@ -67,6 +67,10 @@ function Remove-PortableNoise {
         }
     }
 
+    Get-ChildItem -LiteralPath $TargetDirectory -Recurse -Force -File -Filter 'Verbrauch.archiv.*.txt.gz' -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
+
     $excludedDirectories = @(
         (Join-Path $TargetDirectory 'TrafficView'),
         (Join-Path $TargetDirectory 'Logs')

@@ -41,6 +41,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
@@ -56,6 +57,7 @@
     <Compile Include="src\UsageSummaryForm.cs" />
     <None Include="TrafficView.exe.config" />
     <None Include="TrafficView.languages.ini" />
+    <None Include="Manual.txt" />
     <None Include="TrafficView.manifest" />
     <Content Include="TrafficView.ico" />
     <Content Include="Skins\**\*">
@@ -69,6 +71,7 @@
   <Target Name="CopySupportFiles" AfterTargets="Build">
     <Copy SourceFiles="TrafficView.exe.config" DestinationFiles="$(TargetDir)TrafficView.exe.config" SkipUnchangedFiles="true" />
     <Copy SourceFiles="TrafficView.languages.ini" DestinationFiles="$(TargetDir)TrafficView.languages.ini" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="Manual.txt" DestinationFiles="$(TargetDir)Manual.txt" SkipUnchangedFiles="true" />
     <Copy SourceFiles="LOLO-SOFT_00_SW.png" DestinationFiles="$(TargetDir)LOLO-SOFT_00_SW.png" SkipUnchangedFiles="true" Condition="Exists('LOLO-SOFT_00_SW.png')" />
 
   </Target>

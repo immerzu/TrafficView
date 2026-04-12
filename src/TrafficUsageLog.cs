@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 
 namespace TrafficView
@@ -55,6 +56,8 @@ namespace TrafficView
     {
         private const string UsageFileName = "Verbrauch.txt";
         private const string UsageArchiveFileName = "Verbrauch.archiv.txt";
+        private const string CompressedArchiveFileNamePrefix = "Verbrauch.archiv.";
+        private const string CompressedArchiveFileNameSuffix = ".txt.gz";
         private readonly object syncRoot = new object();
         private readonly List<string> pendingLines = new List<string>();
         private DateTime lastMaintenanceUtc = DateTime.MinValue;
@@ -230,24 +233,18 @@ namespace TrafficView
 
             try
             {
+                AppendSummariesFromCompressedArchives(adapterKey, nowLocal, currentWeekStart, summaries);
+
+                string archivePath = GetUsageArchiveFilePath();
+                if (File.Exists(archivePath))
+                {
+                    AppendSummariesFromFile(archivePath, adapterKey, nowLocal, currentWeekStart, summaries);
+                }
+
                 string path = GetUsageFilePath();
                 if (File.Exists(path))
                 {
-                    foreach (string line in File.ReadLines(path))
-                    {
-                        TrafficUsageRecord record;
-                        if (!TryParseRecord(line, out record))
-                        {
-                            continue;
-                        }
-
-                        if (!string.Equals(record.AdapterKey, adapterKey, StringComparison.OrdinalIgnoreCase))
-                        {
-                            continue;
-                        }
-
-                        AccumulateSummaries(record, nowLocal, currentWeekStart, summaries);
-                    }
+                    AppendSummariesFromFile(path, adapterKey, nowLocal, currentWeekStart, summaries);
                 }
             }
             catch (Exception ex)
@@ -322,6 +319,7 @@ namespace TrafficView
             try
             {
                 this.RunMaintenanceIfNeeded();
+                AppendCsvLinesFromCompressedArchives(adapterKey, adapterDisplayName, lines);
                 AppendCsvLinesFromFile(GetUsageArchiveFilePath(), adapterKey, adapterDisplayName, lines);
                 AppendCsvLinesFromFile(GetUsageFilePath(), adapterKey, adapterDisplayName, lines);
 
@@ -461,7 +459,7 @@ namespace TrafficView
                 return;
             }
 
-            if (this.RotateActiveUsageFile())
+            if (this.RotateActiveUsageFile() && this.CompressArchiveUsageFiles())
             {
                 this.lastMaintenanceUtc = nowUtc;
             }
@@ -554,6 +552,132 @@ namespace TrafficView
             }
         }
 
+        private bool CompressArchiveUsageFiles()
+        {
+            string archivePath = GetUsageArchiveFilePath();
+            if (!File.Exists(archivePath))
+            {
+                return true;
+            }
+
+            Dictionary<string, List<string>> monthlyLinesByTargetPath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            List<string> retainedArchiveLines = new List<string>();
+
+            try
+            {
+                foreach (string line in File.ReadLines(archivePath))
+                {
+                    TrafficUsageRecord record;
+                    if (!TryParseRecord(line, out record))
+                    {
+                        retainedArchiveLines.Add(line);
+                        continue;
+                    }
+
+                    string targetPath = GetCompressedArchiveFilePath(record.TimestampUtc.ToLocalTime());
+                    List<string> targetLines;
+                    if (!monthlyLinesByTargetPath.TryGetValue(targetPath, out targetLines))
+                    {
+                        targetLines = new List<string>();
+                        monthlyLinesByTargetPath[targetPath] = targetLines;
+                    }
+
+                    targetLines.Add(line);
+                }
+
+                if (monthlyLinesByTargetPath.Count == 0)
+                {
+                    return true;
+                }
+
+                EnsureUsageDirectoryExists();
+
+                Dictionary<string, string> backupPathsByTargetPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, bool> targetExistedByPath = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                string archiveBackupPath = CreateDeleteBackupPath(archivePath);
+
+                try
+                {
+                    File.Copy(archivePath, archiveBackupPath, true);
+
+                    foreach (KeyValuePair<string, List<string>> entry in monthlyLinesByTargetPath)
+                    {
+                        string targetPath = entry.Key;
+                        bool targetExists = File.Exists(targetPath);
+                        targetExistedByPath[targetPath] = targetExists;
+
+                        string backupPath = CreateDeleteBackupPath(targetPath);
+                        backupPathsByTargetPath[targetPath] = backupPath;
+
+                        if (targetExists)
+                        {
+                            File.Copy(targetPath, backupPath, true);
+                        }
+                    }
+
+                    foreach (KeyValuePair<string, List<string>> entry in monthlyLinesByTargetPath)
+                    {
+                        List<string> existingLines = ReadCompressedArchiveLines(entry.Key);
+                        List<string> mergedLines = MergeUniqueLines(existingLines, entry.Value);
+                        WriteCompressedArchiveLines(entry.Key, mergedLines);
+                    }
+
+                    if (retainedArchiveLines.Count > 0)
+                    {
+                        File.WriteAllLines(archivePath, retainedArchiveLines);
+                    }
+                    else
+                    {
+                        DeleteIfExists(archivePath);
+                    }
+
+                    return true;
+                }
+                catch
+                {
+                    if (File.Exists(archiveBackupPath))
+                    {
+                        File.Copy(archiveBackupPath, archivePath, true);
+                    }
+
+                    foreach (KeyValuePair<string, string> entry in backupPathsByTargetPath)
+                    {
+                        bool targetExisted;
+                        if (targetExistedByPath.TryGetValue(entry.Key, out targetExisted) && targetExisted)
+                        {
+                            if (File.Exists(entry.Value))
+                            {
+                                File.Copy(entry.Value, entry.Key, true);
+                            }
+                        }
+                        else
+                        {
+                            DeleteIfExists(entry.Key);
+                        }
+                    }
+
+                    throw;
+                }
+                finally
+                {
+                    DeleteIfExists(archiveBackupPath);
+
+                    foreach (string backupPath in backupPathsByTargetPath.Values)
+                    {
+                        DeleteIfExists(backupPath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-archive-compress-failed",
+                    string.Format("Verbrauchsarchiv konnte nicht komprimiert werden. Datei='{0}'.", archivePath),
+                    ex);
+                return false;
+            }
+        }
+
         private static void AppendCsvLinesFromFile(
             string path,
             string adapterKey,
@@ -579,6 +703,81 @@ namespace TrafficView
                 }
 
                 lines.Add(ToCsvLine(record, adapterDisplayName));
+            }
+        }
+
+        private static void AppendCsvLinesFromCompressedArchives(
+            string adapterKey,
+            string adapterDisplayName,
+            List<string> lines)
+        {
+            foreach (string path in EnumerateCompressedArchiveFilePaths())
+            {
+                foreach (string line in ReadCompressedArchiveLines(path))
+                {
+                    TrafficUsageRecord record;
+                    if (!TryParseRecord(line, out record))
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(record.AdapterKey, adapterKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    lines.Add(ToCsvLine(record, adapterDisplayName));
+                }
+            }
+        }
+
+        private static void AppendSummariesFromFile(
+            string path,
+            string adapterKey,
+            DateTime nowLocal,
+            DateTime currentWeekStart,
+            TrafficUsageSummaries summaries)
+        {
+            foreach (string line in File.ReadLines(path))
+            {
+                TrafficUsageRecord record;
+                if (!TryParseRecord(line, out record))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(record.AdapterKey, adapterKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                AccumulateSummaries(record, nowLocal, currentWeekStart, summaries);
+            }
+        }
+
+        private static void AppendSummariesFromCompressedArchives(
+            string adapterKey,
+            DateTime nowLocal,
+            DateTime currentWeekStart,
+            TrafficUsageSummaries summaries)
+        {
+            foreach (string path in EnumerateCompressedArchiveFilePaths())
+            {
+                foreach (string line in ReadCompressedArchiveLines(path))
+                {
+                    TrafficUsageRecord record;
+                    if (!TryParseRecord(line, out record))
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(record.AdapterKey, adapterKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    AccumulateSummaries(record, nowLocal, currentWeekStart, summaries);
+                }
             }
         }
 
@@ -642,6 +841,121 @@ namespace TrafficView
         {
             DateTime currentMonthStart = new DateTime(nowLocal.Year, nowLocal.Month, 1);
             return currentMonthStart.AddDays(-7);
+        }
+
+        private static string GetCompressedArchiveFilePath(DateTime localTimestamp)
+        {
+            string fileName = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}{1:yyyy-MM}{2}",
+                CompressedArchiveFileNamePrefix,
+                localTimestamp,
+                CompressedArchiveFileNameSuffix);
+            return Path.Combine(GetUsageBaseDirectory(), fileName);
+        }
+
+        private static IEnumerable<string> EnumerateCompressedArchiveFilePaths()
+        {
+            string directoryPath = GetUsageBaseDirectory();
+            if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+            {
+                yield break;
+            }
+
+            string[] paths = Directory.GetFiles(
+                directoryPath,
+                CompressedArchiveFileNamePrefix + "*" + CompressedArchiveFileNameSuffix,
+                SearchOption.TopDirectoryOnly);
+            Array.Sort(paths, StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < paths.Length; i++)
+            {
+                yield return paths[i];
+            }
+        }
+
+        private static List<string> ReadCompressedArchiveLines(string path)
+        {
+            List<string> lines = new List<string>();
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return lines;
+            }
+
+            using (FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (GZipStream gzipStream = new GZipStream(fileStream, CompressionMode.Decompress))
+            using (StreamReader reader = new StreamReader(gzipStream, Encoding.UTF8, true))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    lines.Add(line);
+                }
+            }
+
+            return lines;
+        }
+
+        private static void WriteCompressedArchiveLines(string path, List<string> lines)
+        {
+            EnsurePortablePathAllowed(path, "Komprimiertes Verbrauchsarchiv");
+
+            string tempPath = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}.{1}.tmp",
+                path,
+                Guid.NewGuid().ToString("N"));
+
+            try
+            {
+                using (FileStream fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (GZipStream gzipStream = new GZipStream(fileStream, CompressionMode.Compress))
+                using (StreamWriter writer = new StreamWriter(gzipStream, new UTF8Encoding(false)))
+                {
+                    for (int i = 0; i < lines.Count; i++)
+                    {
+                        writer.WriteLine(lines[i]);
+                    }
+                }
+
+                File.Copy(tempPath, path, true);
+            }
+            finally
+            {
+                DeleteIfExists(tempPath);
+            }
+        }
+
+        private static List<string> MergeUniqueLines(List<string> existingLines, List<string> newLines)
+        {
+            List<string> mergedLines = new List<string>();
+            HashSet<string> seenLines = new HashSet<string>(StringComparer.Ordinal);
+
+            if (existingLines != null)
+            {
+                for (int i = 0; i < existingLines.Count; i++)
+                {
+                    string line = existingLines[i];
+                    if (seenLines.Add(line))
+                    {
+                        mergedLines.Add(line);
+                    }
+                }
+            }
+
+            if (newLines != null)
+            {
+                for (int i = 0; i < newLines.Count; i++)
+                {
+                    string line = newLines[i];
+                    if (seenLines.Add(line))
+                    {
+                        mergedLines.Add(line);
+                    }
+                }
+            }
+
+            return mergedLines;
         }
 
         private static string GetUsageBaseDirectory()

@@ -7,6 +7,7 @@ namespace TrafficView
     internal sealed class MonitorSettings
     {
         private const string SettingsFileName = "TrafficView.settings.ini";
+        private const string SettingsBackupFileName = "TrafficView.settings.ini_";
         public const string AutomaticAdapterId = "__AUTO__";
         private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
         public MonitorSettings(
@@ -355,11 +356,22 @@ namespace TrafficView
         public void Save()
         {
             string settingsPath = GetSettingsPath();
-            if (!TryWriteSettingsFile(settingsPath, this.CreateSerializedLines()))
+            string backupSettingsPath = GetSettingsBackupPath();
+            string[] serializedLines = this.CreateSerializedLines();
+
+            if (!TryWriteSettingsFile(settingsPath, serializedLines))
             {
                 AppLog.WarnOnce(
                     "settings-save-failed-" + settingsPath,
                     string.Format("Settings save failed; current values could not be persisted to '{0}'.", settingsPath));
+                return;
+            }
+
+            if (!TryWriteSettingsFile(backupSettingsPath, serializedLines))
+            {
+                AppLog.WarnOnce(
+                    "settings-backup-save-failed-" + backupSettingsPath,
+                    string.Format("Settings backup could not be persisted to '{0}'.", backupSettingsPath));
             }
         }
 
@@ -367,10 +379,15 @@ namespace TrafficView
         {
             MonitorSettings settings = new MonitorSettings(string.Empty, string.Empty, 0D);
             string settingsPath = GetSettingsPath();
+            string backupSettingsPath = GetSettingsBackupPath();
             string[] lines;
             bool primarySettingsFileExists = File.Exists(settingsPath);
+            bool backupSettingsFileExists = !ArePathsEqual(settingsPath, backupSettingsPath) &&
+                File.Exists(backupSettingsPath);
             string[] primaryLines = null;
             bool primaryHasRecognizedSettings = false;
+            string[] backupLines = null;
+            bool backupHasRecognizedSettings = false;
 
             if (TryReadSettingsLines(settingsPath, out lines))
             {
@@ -379,6 +396,14 @@ namespace TrafficView
                     primaryLines = lines;
                     primaryHasRecognizedSettings = true;
                 }
+            }
+
+            if (!ArePathsEqual(settingsPath, backupSettingsPath) &&
+                TryReadSettingsLines(backupSettingsPath, out lines) &&
+                ContainsRecognizedStoredSetting(lines))
+            {
+                backupLines = lines;
+                backupHasRecognizedSettings = true;
             }
 
             string legacySettingsPath = GetLegacySettingsPath();
@@ -408,6 +433,25 @@ namespace TrafficView
                 return primarySettings;
             }
 
+            if (backupHasRecognizedSettings)
+            {
+                MonitorSettings backupSettings = LoadFromLines(backupLines, settings);
+                AppLog.WarnOnce(
+                    "settings-backup-recovery-" + backupSettingsPath,
+                    string.Format(
+                        "Settings backup path '{0}' was used because the primary settings were unavailable or invalid.",
+                        backupSettingsPath));
+                if (!TryWriteSettingsFile(settingsPath, backupSettings.CreateSerializedLines()))
+                {
+                    AppLog.WarnOnce(
+                        "settings-backup-recovery-save-failed-" + settingsPath,
+                        string.Format(
+                            "Recovered backup settings could not be persisted to '{0}'.",
+                            settingsPath));
+                }
+                return backupSettings;
+            }
+
             if (legacyHasRecognizedSettings)
             {
                 MonitorSettings migratedSettings = LoadFromLines(legacyLines, settings);
@@ -429,13 +473,14 @@ namespace TrafficView
                 return migratedSettings;
             }
 
-            if (primarySettingsFileExists || legacySettingsFileExists)
+            if (primarySettingsFileExists || backupSettingsFileExists || legacySettingsFileExists)
             {
                 AppLog.WarnOnce(
                     "settings-load-defaults",
                     string.Format(
-                        "Settings could not be loaded from available path(s); defaults are being used. Primary='{0}', Legacy='{1}'.",
+                        "Settings could not be loaded from available path(s); defaults are being used. Primary='{0}', Backup='{1}', Legacy='{2}'.",
                         settingsPath,
+                        backupSettingsPath,
                         legacySettingsPath));
             }
 
@@ -444,13 +489,16 @@ namespace TrafficView
 
         public static bool SettingsFileExists()
         {
-            return File.Exists(GetSettingsPath()) || File.Exists(GetLegacySettingsPath());
+            return File.Exists(GetSettingsPath()) ||
+                File.Exists(GetSettingsBackupPath()) ||
+                File.Exists(GetLegacySettingsPath());
         }
 
         public static bool HasStoredLanguageSetting()
         {
             string[] lines;
             string settingsPath = GetSettingsPath();
+            string backupSettingsPath = GetSettingsBackupPath();
             if (TryReadSettingsLines(settingsPath, out lines))
             {
                 if (ContainsRecognizedStoredSetting(lines))
@@ -459,6 +507,16 @@ namespace TrafficView
                     {
                         return true;
                     }
+                }
+            }
+
+            if (!ArePathsEqual(settingsPath, backupSettingsPath) &&
+                TryReadSettingsLines(backupSettingsPath, out lines))
+            {
+                if (ContainsRecognizedStoredSetting(lines) &&
+                    ContainsStoredValidLanguageSetting(lines))
+                {
+                    return true;
                 }
             }
 
@@ -947,6 +1005,11 @@ namespace TrafficView
         private static string GetSettingsPath()
         {
             return Path.Combine(GetSettingsDirectoryPath(), SettingsFileName);
+        }
+
+        private static string GetSettingsBackupPath()
+        {
+            return Path.Combine(GetSettingsDirectoryPath(), SettingsBackupFileName);
         }
 
         private static string GetLegacySettingsPath()

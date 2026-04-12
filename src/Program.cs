@@ -38,11 +38,40 @@ namespace TrafficView
 
     internal static class Program
     {
+        private const string SingleInstanceMutexName = @"Local\TrafficView.SingleInstance";
+
         [STAThread]
         private static void Main()
         {
+            System.Threading.Mutex singleInstanceMutex = null;
+            bool ownsSingleInstanceMutex = false;
+
             try
             {
+                singleInstanceMutex = new System.Threading.Mutex(false, SingleInstanceMutexName);
+
+                try
+                {
+                    ownsSingleInstanceMutex = singleInstanceMutex.WaitOne(0, false);
+                }
+                catch (System.Threading.AbandonedMutexException)
+                {
+                    ownsSingleInstanceMutex = true;
+                }
+
+                if (!ownsSingleInstanceMutex)
+                {
+                    AppLog.WarnOnce(
+                        "single-instance-already-running",
+                        "Ein zweiter Start von TrafficView wurde blockiert, weil bereits eine Instanz aktiv ist.");
+                    MessageBox.Show(
+                        "TrafficView ist bereits gestartet.\r\n\r\nBitte verwende die bereits laufende Instanz im Infobereich von Windows.",
+                        "TrafficView",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+
                 AppLog.Info(string.Format(
                     "Session started. Version={0}; OS={1}; 64BitOS={2}; Machine={3}",
                     typeof(Program).Assembly.GetName().Version,
@@ -58,6 +87,24 @@ namespace TrafficView
             {
                 AppLog.Error("Application terminated during startup/bootstrap.", ex);
                 throw;
+            }
+            finally
+            {
+                if (singleInstanceMutex != null)
+                {
+                    if (ownsSingleInstanceMutex)
+                    {
+                        try
+                        {
+                            singleInstanceMutex.ReleaseMutex();
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    singleInstanceMutex.Dispose();
+                }
             }
         }
     }

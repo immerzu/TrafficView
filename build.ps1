@@ -16,6 +16,8 @@ $configSourceFile = Join-Path $root "TrafficView.exe.config"
 $configOutputFile = Join-Path $outputDir "TrafficView.exe.config"
 $languageSourceFile = Join-Path $root "TrafficView.languages.ini"
 $languageOutputFile = Join-Path $outputDir "TrafficView.languages.ini"
+$manualSourceFile = Join-Path $root "Manual.txt"
+$manualOutputFile = Join-Path $outputDir "Manual.txt"
 $skinsSourceDirectory = Join-Path $root "Skins"
 $skinsOutputDirectory = Join-Path $outputDir "Skins"
 $legacyPanelAssetFiles = @(
@@ -413,6 +415,10 @@ if (-not (Test-Path $languageSourceFile)) {
     throw "Sprachdatei nicht gefunden: $languageSourceFile"
 }
 
+if (-not (Test-Path $manualSourceFile)) {
+    throw "Manual-Datei nicht gefunden: $manualSourceFile"
+}
+
 if (-not (Test-Path $skinsSourceDirectory)) {
     throw "Skin-Ordner nicht gefunden: $skinsSourceDirectory"
 }
@@ -433,6 +439,7 @@ $skinMetadataList = Test-AllSkinDirectories -SkinsDirectoryPath $skinsSourceDire
     /out:$outputFile `
     /reference:System.dll `
     /reference:System.Core.dll `
+    /reference:System.IO.Compression.dll `
     /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll `
     $sourceFiles
@@ -443,6 +450,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Copy-Item $configSourceFile $configOutputFile -Force
 Copy-Item $languageSourceFile $languageOutputFile -Force
+Copy-Item $manualSourceFile $manualOutputFile -Force
 Copy-SkinDirectoriesToOutput -SkinMetadataList $skinMetadataList -OutputDirectoryPath $skinsOutputDirectory
 
 foreach ($menuAssetFile in $menuAssetFiles) {
