@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.21.0")]
-[assembly: AssemblyFileVersion("1.4.21.0")]
+[assembly: AssemblyVersion("1.4.22.0")]
+[assembly: AssemblyFileVersion("1.4.22.0")]
 
 namespace TrafficView
 {
@@ -41,6 +41,14 @@ namespace TrafficView
         Both,
         LeftOnly,
         RightOnly
+    }
+
+    internal enum AppBarEdge : uint
+    {
+        Left = 0,
+        Top = 1,
+        Right = 2,
+        Bottom = 3
     }
 
     internal static class Program
@@ -156,6 +164,17 @@ namespace TrafficView
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct AppBarData
+    {
+        public int CbSize;
+        public IntPtr HWnd;
+        public uint CallbackMessage;
+        public AppBarEdge UEdge;
+        public NativeRect Rc;
+        public IntPtr LParam;
+    }
+
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     internal struct BlendFunction
     {
@@ -163,6 +182,41 @@ namespace TrafficView
         public byte BlendFlags;
         public byte SourceConstantAlpha;
         public byte AlphaFormat;
+    }
+
+    internal struct TaskbarVisualTheme
+    {
+        public Color TaskbarColor;
+        public Color BaseColor;
+        public Color BorderColor;
+        public Color DividerColor;
+        public byte OverlayAlpha;
+    }
+
+    internal sealed class TaskbarIntegrationSnapshot
+    {
+        public IntPtr TaskbarHandle { get; set; }
+
+        public AppBarEdge Edge { get; set; }
+
+        public Rectangle Bounds { get; set; }
+
+        public Rectangle ScreenBounds { get; set; }
+
+        public Rectangle[] OccupiedBounds { get; set; }
+
+        public bool AutoHide { get; set; }
+
+        public bool IsHidden { get; set; }
+
+        public bool UsesCustomTaskListHeuristic { get; set; }
+
+        public TaskbarVisualTheme Theme { get; set; }
+
+        public bool IsVertical
+        {
+            get { return this.Edge == AppBarEdge.Left || this.Edge == AppBarEdge.Right; }
+        }
     }
 
     internal sealed class TrafficViewContext : ApplicationContext
@@ -186,6 +240,9 @@ namespace TrafficView
         private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem displayModeItem;
         private readonly ToolStripMenuItem sectionModeItem;
+        private readonly ToolStripMenuItem taskbarIntegrationItem;
+        private readonly ToolStripMenuItem taskbarIntegrationOnItem;
+        private readonly ToolStripMenuItem taskbarIntegrationOffItem;
         private readonly ToolStripMenuItem rotatingGlossItem;
         private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem deleteSkinItem;
@@ -218,6 +275,7 @@ namespace TrafficView
             this.popupForm.TrafficUsageMeasured += this.PopupForm_TrafficUsageMeasured;
             this.popupForm.OverlayMenuRequested += this.PopupForm_OverlayMenuRequested;
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
+            this.popupForm.TaskbarIntegrationNoSpaceAcknowledged += this.PopupForm_TaskbarIntegrationNoSpaceAcknowledged;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
             this.displayModeMenuItems = new Dictionary<PopupDisplayMode, ToolStripMenuItem>();
@@ -245,6 +303,13 @@ namespace TrafficView
             this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.displayModeItem = new ToolStripMenuItem(string.Empty);
             this.sectionModeItem = new ToolStripMenuItem(string.Empty);
+            this.taskbarIntegrationItem = new ToolStripMenuItem(string.Empty);
+            this.taskbarIntegrationOnItem = new ToolStripMenuItem(string.Empty, null, this.TaskbarIntegrationMenuItem_Click);
+            this.taskbarIntegrationOffItem = new ToolStripMenuItem(string.Empty, null, this.TaskbarIntegrationMenuItem_Click);
+            this.taskbarIntegrationOnItem.Tag = true;
+            this.taskbarIntegrationOffItem.Tag = false;
+            this.taskbarIntegrationItem.DropDownItems.Add(this.taskbarIntegrationOnItem);
+            this.taskbarIntegrationItem.DropDownItems.Add(this.taskbarIntegrationOffItem);
             this.rotatingGlossItem = new ToolStripMenuItem(string.Empty, null, this.RotatingGlossItem_Click);
             this.skinItem = new ToolStripMenuItem(string.Empty);
             this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
@@ -313,6 +378,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.sizeItem);
             this.sharedMenu.Items.Add(this.displayModeItem);
             this.sharedMenu.Items.Add(this.sectionModeItem);
+            this.sharedMenu.Items.Add(this.taskbarIntegrationItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
             this.sharedMenu.Items.Add(this.exitItem);
@@ -372,7 +438,8 @@ namespace TrafficView
 
             try
             {
-                if (includePopupLocation &&
+                if (!this.settings.TaskbarIntegrationEnabled &&
+                    includePopupLocation &&
                     this.popupForm != null &&
                     !this.popupForm.IsDisposed)
                 {
@@ -778,8 +845,11 @@ namespace TrafficView
 
             if (this.popupForm.Visible)
             {
-                this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
-                this.settings.Save();
+                if (!this.settings.TaskbarIntegrationEnabled)
+                {
+                    this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                    this.settings.Save();
+                }
                 this.popupForm.BringToFrontOnly();
             }
 
@@ -795,6 +865,53 @@ namespace TrafficView
             this.UpdateMenuState();
         }
 
+        private void TaskbarIntegrationMenuItem_Click(object sender, EventArgs e)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            if (item == null || !(item.Tag is bool))
+            {
+                return;
+            }
+
+            bool enableTaskbarIntegration = (bool)item.Tag;
+            this.SetTaskbarIntegrationEnabled(enableTaskbarIntegration);
+        }
+
+        private void PopupForm_TaskbarIntegrationNoSpaceAcknowledged(object sender, EventArgs e)
+        {
+            this.SetTaskbarIntegrationEnabled(false, true);
+        }
+
+        private void SetTaskbarIntegrationEnabled(bool enableTaskbarIntegration)
+        {
+            this.SetTaskbarIntegrationEnabled(enableTaskbarIntegration, true);
+        }
+
+        private void SetTaskbarIntegrationEnabled(bool enableTaskbarIntegration, bool restorePopupAfterChange)
+        {
+            if (this.settings.TaskbarIntegrationEnabled == enableTaskbarIntegration)
+            {
+                return;
+            }
+
+            if (enableTaskbarIntegration)
+            {
+                this.popupForm.ClearTaskbarIntegrationPreferredLocation();
+            }
+
+            this.settings = this.settings.WithTaskbarIntegrationEnabled(enableTaskbarIntegration);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+
+            if (restorePopupAfterChange &&
+                (this.popupForm.Visible || this.popupForm.HasDeferredVisibilityRequest))
+            {
+                this.ShowPopupAtPreferredOrSavedLocation(null, false);
+            }
+
+            this.UpdateMenuState();
+        }
+
         private void ApplyPopupScalePercent(int popupScalePercent)
         {
             if (this.settings.PopupScalePercent == popupScalePercent)
@@ -807,7 +924,10 @@ namespace TrafficView
 
             if (this.popupForm.Visible)
             {
-                this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                if (!this.settings.TaskbarIntegrationEnabled)
+                {
+                    this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                }
                 this.popupForm.BringToFrontOnly();
             }
 
@@ -1049,6 +1169,35 @@ namespace TrafficView
 
         private void PopupForm_OverlayLocationCommitted(object sender, EventArgs e)
         {
+            bool enableTaskbarIntegration;
+            Point desktopLocation;
+            if (this.popupForm.TryGetAutomaticTaskbarIntegrationStateChange(out enableTaskbarIntegration, out desktopLocation))
+            {
+                if (enableTaskbarIntegration)
+                {
+                    this.SetTaskbarIntegrationEnabled(true, false);
+                    this.popupForm.ShowAtRightBiasedTaskbarPlacement(false, true);
+                    return;
+                }
+
+                this.SetTaskbarIntegrationEnabled(false, false);
+                this.popupForm.ShowAtLocation(desktopLocation, false);
+
+                if (!this.settings.HasSavedPopupLocation ||
+                    this.settings.PopupLocation != this.popupForm.Location)
+                {
+                    this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                    this.settings.Save();
+                }
+
+                return;
+            }
+
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                return;
+            }
+
             Point popupLocation = this.popupForm.Location;
             if (this.settings.HasSavedPopupLocation &&
                 this.settings.PopupLocation == popupLocation)
@@ -1102,7 +1251,7 @@ namespace TrafficView
 
         private void ToggleWindow(bool fromTrayLeftClick = false)
         {
-            if (this.popupForm.Visible)
+            if (this.popupForm.Visible || this.popupForm.HasDeferredVisibilityRequest)
             {
                 this.popupForm.Hide();
                 return;
@@ -1233,16 +1382,18 @@ namespace TrafficView
             }
 
             Point? effectiveLocation = restoreLocation;
-            if (!effectiveLocation.HasValue &&
+            if (!this.settings.TaskbarIntegrationEnabled &&
+                !effectiveLocation.HasValue &&
                 this.settings.HasSavedPopupLocation)
             {
                 effectiveLocation = this.settings.PopupLocation;
             }
 
-            if (effectiveLocation.HasValue)
+            if (effectiveLocation.HasValue && !this.settings.TaskbarIntegrationEnabled)
             {
                 this.popupForm.ShowAtLocation(effectiveLocation.Value, activateWindow);
-                if (this.settings.HasSavedPopupLocation &&
+                if (!this.settings.TaskbarIntegrationEnabled &&
+                    this.settings.HasSavedPopupLocation &&
                     this.popupForm.Location != this.settings.PopupLocation)
                 {
                     this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
@@ -1355,7 +1506,7 @@ namespace TrafficView
 
         private void UpdateMenuState()
         {
-            this.toggleItem.Text = this.popupForm.Visible
+            this.toggleItem.Text = (this.popupForm.Visible || this.popupForm.HasDeferredVisibilityRequest)
                 ? UiLanguage.Get("Menu.Hide", "Ausblenden")
                 : UiLanguage.Get("Menu.Show", "Anzeigen");
             this.calibrationItem.Text = UiLanguage.Get("Menu.Calibration", "Kalibration (30 s)...");
@@ -1374,6 +1525,17 @@ namespace TrafficView
             this.sectionModeItem.Text = UiLanguage.Get(
                 "Menu.SectionMode",
                 "Bereich");
+            this.taskbarIntegrationItem.Text = UiLanguage.Get(
+                "Menu.TaskbarIntegration",
+                "Taskleistenintegration");
+            this.taskbarIntegrationOnItem.Text = UiLanguage.Get(
+                "Menu.TaskbarIntegrationOn",
+                "ein");
+            this.taskbarIntegrationOffItem.Text = UiLanguage.Get(
+                "Menu.TaskbarIntegrationOff",
+                "aus");
+            this.taskbarIntegrationOnItem.Checked = this.settings.TaskbarIntegrationEnabled;
+            this.taskbarIntegrationOffItem.Checked = !this.settings.TaskbarIntegrationEnabled;
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
             if (this.menuVersionLabel != null)
@@ -1805,6 +1967,26 @@ namespace TrafficView
         private const int MiniGraphMeterRightInset = 3;
         private const int BaseDragThreshold = 4;
         private const int BasePopupVisibleMargin = 8;
+        private const int TaskbarMonitorIntervalMs = 350;
+        private const int TaskbarInsetThickness = 2;
+        private const int MinimumVisibleTaskbarThickness = 8;
+        private const int TaskbarPlacementMargin = 2;
+        private const int TaskbarOccupiedSafetyPadding = 4;
+        private const int TaskbarProtectedEdgeProbe = 96;
+        private const int TaskbarCompactRestoreHysteresis = 12;
+        private const int TaskbarDesktopSnapHoldDistance = 12;
+        private const int NoSpaceMessageCooldownMs = 1800;
+        private const int TaskbarTransientFailureGraceMs = 900;
+        private const int DesktopToTaskbarBlinkSuppressionMs = 1200;
+        private const byte TaskbarIntegratedPanelMaxBackgroundAlpha = 122;
+        private const byte TaskbarIntegratedPanelTintAlpha = 34;
+        private const byte TaskbarIntegratedPanelInnerOpacityBoostAlpha = 108;
+        private const byte TaskbarIntegratedInfoPlateFillAlpha = 112;
+        private const byte TaskbarIntegratedInfoPlateHighlightAlpha = 44;
+        private const byte TaskbarIntegratedEdgeGradientOuterAlpha = 255;
+        private const byte TaskbarIntegratedEdgeGradientLipAlpha = 255;
+        private const float TaskbarIntegratedEdgeGradientWidth = 10.0F;
+        private const float TaskbarIntegratedEdgeGradientLipWidth = 4.0F;
         private const float BaseFormFontSize = 7.0F;
         private const float BaseCaptionFontSize = 6.0F;
         private const float BaseValueFontSize = 10.4F;
@@ -1815,15 +1997,23 @@ namespace TrafficView
         private const int WmDisplayChange = 0x007E;
         private const int WmSettingChange = 0x001A;
         private const int WsExLayered = 0x00080000;
+        private const uint AbmGetTaskbarPos = 0x00000005;
+        private const uint AbmGetState = 0x00000004;
+        private const int AbsAutoHide = 0x1;
         private const uint SwpNoSize = 0x0001;
         private const uint SwpNoMove = 0x0002;
         private const uint SwpShowWindow = 0x0040;
         private const uint SwpNoActivate = 0x0010;
+        private const uint SwpNoRedraw = 0x0008;
+        private const uint SwpNoOwnerZOrder = 0x0200;
+        private const uint SwpNoSendChanging = 0x0400;
+        private const int GwlStyle = -16;
         private const uint LwaAlpha = 0x2;
         private const int UlwAlpha = 0x2;
         private const byte AcSrcOver = 0x00;
         private const byte AcSrcAlpha = 0x01;
         private const int KeepTopMostRefreshIntervalMs = 1600;
+        private static readonly IntPtr HwndTop = IntPtr.Zero;
         private static readonly IntPtr HwndTopMost = new IntPtr(-1);
         private static readonly Color BackgroundBlue = Color.FromArgb(18, 34, 82);
         private static readonly Color BorderColor = Color.FromArgb(18, 34, 82);
@@ -1879,6 +2069,7 @@ namespace TrafficView
         private const float MiniGraphUploadRingSegmentGapDegrees = 1.2F;
         private const float MiniGraphDualRingInnerGapFactor = 0.36F;
         private const float MiniSoftDualRingInnerGapFactor = 0.46F;
+        private const float TaskbarIntegratedDownloadRingOutwardExpansion = 1.5F;
         private const double MiniGraphRingDisplayNoiseFloorBytesPerSecond = 2D * 1024D;
         private const double MiniGraphDownloadLowTrafficVisualizationExponent = 0.50D;
         private const double MiniGraphUploadLowTrafficVisualizationExponent = 0.58D;
@@ -1919,6 +2110,7 @@ namespace TrafficView
         private readonly Timer refreshTimer;
         private readonly Timer animationTimer;
         private readonly Timer topMostGuardTimer;
+        private readonly Timer taskbarMonitorTimer;
         private readonly Label downloadCaptionLabel;
         private readonly Label uploadCaptionLabel;
         private readonly Label downloadValueLabel;
@@ -1969,16 +2161,57 @@ namespace TrafficView
         private int cachedOverlaySparklineHistoryVersion = -1;
         private TrafficHistorySample[] cachedOverlaySparklineSamples = Array.Empty<TrafficHistorySample>();
         private DateTime suppressMenuUntilUtc = DateTime.MinValue;
+        private bool taskbarIntegrationDisplayRequested;
+        private bool taskbarIntegrationVisibilityChange;
+        private bool taskbarNoSpaceMessageShown;
+        private bool taskbarNoSpaceMessageVisible;
+        private bool taskbarIntegrationRefreshInProgress;
+        private bool taskbarIntegrationRefreshPending;
+        private bool taskbarIntegrationPendingActivateWindow;
+        private bool taskbarIntegrationPendingShowNoSpaceMessage;
+        private bool taskbarIntegrationForceRightOnlySection;
+        private Point? taskbarIntegrationPreferredLocation;
+        private DateTime lastNoSpaceMessageUtc = DateTime.MinValue;
+        private DateTime lastDesktopShellForegroundUtc = DateTime.MinValue;
+        private DateTime lastSuccessfulTaskbarPlacementUtc = DateTime.MinValue;
+        private Rectangle lastSuccessfulTaskbarPlacementBounds = Rectangle.Empty;
+        private int lastAppliedTaskbarThickness = -1;
+        private TaskbarIntegrationSnapshot activeTaskbarSnapshot;
+        private IntPtr taskbarIntegrationHostHandle = IntPtr.Zero;
         
         public event EventHandler OverlayMenuRequested;
         public event EventHandler OverlayLocationCommitted;
+        public event EventHandler TaskbarIntegrationNoSpaceAcknowledged;
         public event EventHandler<TrafficUsageMeasuredEventArgs> TrafficUsageMeasured;
+
+        public bool HasDeferredVisibilityRequest
+        {
+            get { return this.taskbarIntegrationDisplayRequested; }
+        }
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetParent(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(
@@ -1989,6 +2222,19 @@ namespace TrafficView
             int cx,
             int cy,
             uint uFlags);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
+        private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
+        private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetLayeredWindowAttributes(
@@ -2018,6 +2264,26 @@ namespace TrafficView
         [DllImport("gdi32.dll", SetLastError = true)]
         private static extern IntPtr CreateCompatibleDC(IntPtr hDc);
 
+        private static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+        {
+            if (IntPtr.Size == 8)
+            {
+                return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+            }
+
+            return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
+        }
+
+        private static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex)
+        {
+            if (IntPtr.Size == 8)
+            {
+                return GetWindowLongPtr64(hWnd, nIndex);
+            }
+
+            return new IntPtr(GetWindowLong32(hWnd, nIndex));
+        }
+
         [DllImport("gdi32.dll", SetLastError = true)]
         private static extern bool DeleteDC(IntPtr hDc);
 
@@ -2032,6 +2298,14 @@ namespace TrafficView
 
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+        [DllImport("shell32.dll", SetLastError = true)]
+        private static extern uint SHAppBarMessage(uint dwMessage, ref AppBarData pData);
+
+        [DllImport("dwmapi.dll", PreserveSig = true)]
+        private static extern int DwmGetColorizationColor(out uint pcrColorization, out bool pfOpaqueBlend);
+
+        private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
         public event EventHandler<RatesUpdatedEventArgs> RatesUpdated;
 
@@ -2108,6 +2382,11 @@ namespace TrafficView
             this.topMostGuardTimer.Tick += this.TopMostGuardTimer_Tick;
             this.topMostGuardTimer.Enabled = false;
 
+            this.taskbarMonitorTimer = new Timer();
+            this.taskbarMonitorTimer.Interval = TaskbarMonitorIntervalMs;
+            this.taskbarMonitorTimer.Tick += this.TaskbarMonitorTimer_Tick;
+            this.taskbarMonitorTimer.Enabled = false;
+
             this.ApplyDpiLayout(this.currentDpi);
             this.ApplySettings(this.settings);
         }
@@ -2131,11 +2410,24 @@ namespace TrafficView
             base.OnVisibleChanged(e);
             this.UpdateAnimationTimerState();
             this.UpdateTopMostGuardState();
+            this.UpdateTaskbarMonitorState();
+
+            if (!this.taskbarIntegrationVisibilityChange)
+            {
+                this.taskbarIntegrationDisplayRequested = this.Visible;
+            }
 
             if (this.Visible)
             {
                 this.lastRenderedAnimationFrame = -1;
                 this.lastPresentedLocation = new Point(int.MinValue, int.MinValue);
+
+                if (this.settings.TaskbarIntegrationEnabled)
+                {
+                    this.RefreshTaskbarIntegration(false, false);
+                    return;
+                }
+
                 this.EnsureVisiblePopupLocation(null, null);
                 this.EnsureTopMostPlacement(false);
                 this.RefreshVisualSurface();
@@ -2146,7 +2438,24 @@ namespace TrafficView
         {
             base.OnDeactivate(e);
 
-            if (this.Visible)
+            if (!this.Visible)
+            {
+                return;
+            }
+
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                this.TryBeginInvokeSafely(new Action(delegate
+                {
+                    if (!this.IsDisposed && this.IsDesktopShellForegroundWindow())
+                    {
+                        this.lastDesktopShellForegroundUtc = DateTime.UtcNow;
+                    }
+                }));
+                return;
+            }
+
+            if (!this.settings.TaskbarIntegrationEnabled)
             {
                 this.TryBeginInvokeSafely(new Action(delegate
                 {
@@ -2217,11 +2526,21 @@ namespace TrafficView
             {
                 base.WndProc(ref m);
 
-                if (this.Visible && this.IsHandleCreated)
+                if (this.IsHandleCreated &&
+                    (this.Visible || this.taskbarIntegrationDisplayRequested))
                 {
                     this.TryBeginInvokeSafely(new Action(delegate
                     {
-                        if (!this.IsDisposed && this.Visible)
+                        if (this.IsDisposed)
+                        {
+                            return;
+                        }
+
+                        if (this.settings.TaskbarIntegrationEnabled)
+                        {
+                            this.RefreshTaskbarIntegration(false, false);
+                        }
+                        else if (this.Visible)
                         {
                             this.EnsureVisiblePopupLocation(
                                 "popup-location-workarea-clamped",
@@ -2283,14 +2602,16 @@ namespace TrafficView
             graphics.PixelOffsetMode = PixelOffsetMode.Half;
             graphics.CompositingQuality = CompositingQuality.HighQuality;
 
-            int outerInset = this.ScaleValue(BaseOuterInset);
+            int outerInset = this.ScaleValue(this.GetPanelOuterInset());
             int separatorY = this.ScaleValue(BaseSeparatorY);
             int separatorInset = this.ScaleValue(BaseSeparatorInset);
             int cornerRadius = this.ScaleValue(BaseWindowCornerRadius);
             float strokeWidth = Math.Max(1F, this.ScaleFloat(1F));
             float sharedRingWidth = Math.Max(2F, this.ScaleFloat(6.2F));
             float centerInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftDisplayMode() ? 4.6F : 2.3F));
-            byte backgroundAlpha = MonitorSettings.ToOpacityByte(this.settings.TransparencyPercent);
+            byte backgroundAlpha = this.GetStaticPanelBackgroundAlpha();
+            Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
+            Color panelBorderColor = this.GetPanelBorderBaseColor();
 
             if (!this.ShouldDrawStaticBackgroundLayer())
             {
@@ -2330,8 +2651,8 @@ namespace TrafficView
                     using (GraphicsPath innerStrokePath = CreateRoundedPath(
                         innerBounds,
                         Math.Max(2F, cornerRadius - outerInset)))
-                    using (SolidBrush borderBrush = new SolidBrush(ApplyAlpha(BorderColor, backgroundAlpha)))
-                    using (SolidBrush fillBrush = new SolidBrush(ApplyAlpha(BackgroundBlue, backgroundAlpha)))
+                    using (SolidBrush borderBrush = new SolidBrush(ApplyAlpha(panelBorderColor, backgroundAlpha)))
+                    using (SolidBrush fillBrush = new SolidBrush(ApplyAlpha(panelBackgroundColor, backgroundAlpha)))
                     using (Pen outerPen = new Pen(ApplyAlpha(EdgeSmoothingColor, backgroundAlpha), strokeWidth))
                     using (Pen innerPen = new Pen(ApplyAlpha(Color.FromArgb(60, 86, 144), backgroundAlpha), strokeWidth))
                     {
@@ -2349,12 +2670,42 @@ namespace TrafficView
                     }
                 }
 
+                byte overlayAlpha = this.GetTaskbarBackgroundOverlayAlpha();
+                if (overlayAlpha > 0)
+                {
+                    using (GraphicsPath tintPath = CreateRoundedPath(innerBounds, Math.Max(2F, cornerRadius - outerInset)))
+                    using (SolidBrush tintBrush = new SolidBrush(ApplyAlpha(panelBackgroundColor, overlayAlpha)))
+                    {
+                        graphics.FillPath(tintBrush, tintPath);
+                    }
+                }
+
                 if (this.IsGlassPanelSkinEnabled())
                 {
                     this.DrawPanelGlassSurface(
                         graphics,
                         innerBounds,
                         Math.Max(2F, cornerRadius - outerInset),
+                        backgroundAlpha);
+                }
+
+                if (this.IsTaskbarIntegrationActive())
+                {
+                    this.DrawTaskbarIntegratedInnerOpacityBoost(
+                        graphics,
+                        innerBounds,
+                        Math.Max(2F, cornerRadius - outerInset),
+                        drawRightSection);
+                    this.DrawTaskbarIntegratedInfoOpacityPlate(graphics, meterBounds);
+                }
+
+                if (this.IsTaskbarIntegrationActive())
+                {
+                    RectangleF fullPanelBounds = new RectangleF(0F, 0F, this.Width, this.Height);
+                    this.DrawTaskbarIntegratedPanelEdgeGradient(
+                        graphics,
+                        fullPanelBounds,
+                        cornerRadius,
                         backgroundAlpha);
                 }
 
@@ -2425,29 +2776,56 @@ namespace TrafficView
             return this.settings != null && this.settings.TransparencyPercent >= 100;
         }
 
+        private byte GetStaticPanelBackgroundAlpha()
+        {
+            byte configuredAlpha = MonitorSettings.ToOpacityByte(this.settings.TransparencyPercent);
+            return this.IsTaskbarIntegrationActive()
+                ? Math.Min(configuredAlpha, TaskbarIntegratedPanelMaxBackgroundAlpha)
+                : configuredAlpha;
+        }
+
         private bool ShouldDrawStaticBackgroundLayer()
         {
             return !this.IsHudOnlyTransparencyMode()
-                && MonitorSettings.ToOpacityByte(this.settings.TransparencyPercent) > 0;
+                && this.GetStaticPanelBackgroundAlpha() > 0;
         }
 
         private bool IsLeftSectionVisible()
         {
-            return this.settings == null ||
-                this.settings.PopupSectionMode == PopupSectionMode.Both ||
-                this.settings.PopupSectionMode == PopupSectionMode.LeftOnly;
+            PopupSectionMode popupSectionMode = this.GetEffectivePopupSectionMode();
+            return popupSectionMode == PopupSectionMode.Both ||
+                popupSectionMode == PopupSectionMode.LeftOnly;
         }
 
         private bool IsRightSectionVisible()
         {
-            return this.settings == null ||
-                this.settings.PopupSectionMode == PopupSectionMode.Both ||
-                this.settings.PopupSectionMode == PopupSectionMode.RightOnly;
+            PopupSectionMode popupSectionMode = this.GetEffectivePopupSectionMode();
+            return popupSectionMode == PopupSectionMode.Both ||
+                popupSectionMode == PopupSectionMode.RightOnly;
         }
 
         private bool IsBothSectionsVisible()
         {
-            return this.settings == null || this.settings.PopupSectionMode == PopupSectionMode.Both;
+            return this.GetEffectivePopupSectionMode() == PopupSectionMode.Both;
+        }
+
+        private PopupSectionMode GetConfiguredPopupSectionMode()
+        {
+            return this.settings != null
+                ? this.settings.PopupSectionMode
+                : PopupSectionMode.Both;
+        }
+
+        private PopupSectionMode GetEffectivePopupSectionMode()
+        {
+            if (this.taskbarIntegrationForceRightOnlySection &&
+                this.settings != null &&
+                this.settings.TaskbarIntegrationEnabled)
+            {
+                return PopupSectionMode.RightOnly;
+            }
+
+            return this.GetConfiguredPopupSectionMode();
         }
 
         private bool ShouldDrawDynamicRing()
@@ -2734,6 +3112,11 @@ namespace TrafficView
                     this.topMostGuardTimer.Dispose();
                 }
 
+                if (this.taskbarMonitorTimer != null)
+                {
+                    this.taskbarMonitorTimer.Dispose();
+                }
+
                 this.DisposeSurfaceBitmaps();
                 ReleaseCachedMeterCenterAsset();
 
@@ -2749,14 +3132,22 @@ namespace TrafficView
         {
             bool popupScaleChanged = this.settings.PopupScalePercent != newSettings.PopupScalePercent;
             bool sectionModeChanged = this.settings.PopupSectionMode != newSettings.PopupSectionMode;
+            bool taskbarIntegrationChanged = this.settings.TaskbarIntegrationEnabled != newSettings.TaskbarIntegrationEnabled;
             Rectangle previousBounds = new Rectangle(this.Location, this.Size);
             this.settings = newSettings.Clone();
+            if (!this.settings.TaskbarIntegrationEnabled)
+            {
+                this.activeTaskbarSnapshot = null;
+                this.taskbarNoSpaceMessageShown = false;
+                this.taskbarIntegrationForceRightOnlySection = false;
+                this.lastAppliedTaskbarThickness = -1;
+            }
 
-            if (popupScaleChanged || sectionModeChanged)
+            if (popupScaleChanged || sectionModeChanged || taskbarIntegrationChanged)
             {
                 this.ApplyDpiLayout(this.currentDpi, false);
 
-                if (this.Visible)
+                if (this.Visible && !this.settings.TaskbarIntegrationEnabled)
                 {
                     Point preferredLocation = this.GetPopupScaleAdjustedLocation(previousBounds);
                     this.Location = this.GetVisiblePopupLocation(
@@ -2796,11 +3187,20 @@ namespace TrafficView
                 this.settings.GetUploadVisualizationPeak(),
                 this.GetMinimumVisualizationPeakBytesPerSecond(false));
             this.RefreshTraffic();
+            this.UpdateTaskbarMonitorState();
+
+            if (this.settings.TaskbarIntegrationEnabled &&
+                (this.Visible || this.taskbarIntegrationDisplayRequested))
+            {
+                this.taskbarIntegrationDisplayRequested = true;
+                this.RefreshTaskbarIntegration(false, false);
+            }
         }
 
         private void ApplyWindowTransparency()
         {
             this.Opacity = 1D;
+            this.BackColor = this.GetPanelBackgroundBaseColor();
             this.downloadCaptionLabel.ForeColor = DownloadCaptionColor;
             this.downloadValueLabel.ForeColor = DownloadValueColor;
             this.uploadCaptionLabel.ForeColor = UploadCaptionColor;
@@ -2818,8 +3218,43 @@ namespace TrafficView
             }
         }
 
+        private Color GetPanelBackgroundBaseColor()
+        {
+            return this.activeTaskbarSnapshot != null
+                ? this.activeTaskbarSnapshot.Theme.BaseColor
+                : BackgroundBlue;
+        }
+
+        private Color GetPanelBorderBaseColor()
+        {
+            return this.activeTaskbarSnapshot != null
+                ? this.activeTaskbarSnapshot.Theme.BorderColor
+                : BorderColor;
+        }
+
+        private Color GetPanelDividerBaseColor()
+        {
+            return this.activeTaskbarSnapshot != null
+                ? this.activeTaskbarSnapshot.Theme.DividerColor
+                : DividerColor;
+        }
+
+        private byte GetTaskbarBackgroundOverlayAlpha()
+        {
+            return this.activeTaskbarSnapshot != null
+                ? this.activeTaskbarSnapshot.Theme.OverlayAlpha
+                : (byte)0;
+        }
+
         public void ShowNearTray(bool activateWindow = true)
         {
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                this.taskbarIntegrationDisplayRequested = true;
+                this.RefreshTaskbarIntegration(activateWindow, true);
+                return;
+            }
+
             Rectangle workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
             int popupMargin = this.ScaleValue(BasePopupMargin);
             Point preferredLocation = new Point(
@@ -2838,6 +3273,13 @@ namespace TrafficView
 
         public void ShowAtLocation(Point preferredLocation, bool activateWindow)
         {
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                this.taskbarIntegrationDisplayRequested = true;
+                this.RefreshTaskbarIntegration(activateWindow, true);
+                return;
+            }
+
             this.Location = this.GetVisiblePopupLocation(
                 preferredLocation,
                 null,
@@ -2865,6 +3307,13 @@ namespace TrafficView
 
         public void BringToFrontOnly()
         {
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                this.taskbarIntegrationDisplayRequested = true;
+                this.RefreshTaskbarIntegration(false, false);
+                return;
+            }
+
             if (!this.Visible)
             {
                 return;
@@ -2874,6 +3323,61 @@ namespace TrafficView
             this.EnsureTopMostPlacement(false);
         }
 
+        public bool TryGetAutomaticTaskbarIntegrationStateChange(out bool enableTaskbarIntegration, out Point desktopLocation)
+        {
+            enableTaskbarIntegration = false;
+            desktopLocation = Point.Empty;
+
+            TaskbarIntegrationSnapshot snapshot;
+            if (!this.TryCaptureTaskbarIntegrationSnapshot(out snapshot) || snapshot.IsHidden)
+            {
+                return false;
+            }
+
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                Point preferredLocation = this.taskbarIntegrationPreferredLocation ?? this.Location;
+                Rectangle preferredBounds = new Rectangle(preferredLocation, this.Size);
+                if (this.ShouldAutoIntegrateWithTaskbar(preferredBounds, snapshot))
+                {
+                    return false;
+                }
+
+                this.taskbarIntegrationPreferredLocation = null;
+                desktopLocation = this.GetVisiblePopupLocation(
+                    preferredLocation,
+                    GetRectangleCenter(preferredBounds),
+                    null,
+                    null);
+                return true;
+            }
+
+            Rectangle popupBounds = new Rectangle(this.Location, this.Size);
+            if (!this.ShouldAutoIntegrateWithTaskbar(popupBounds, snapshot))
+            {
+                return false;
+            }
+
+            enableTaskbarIntegration = true;
+            // When the popup is dropped onto the taskbar from the desktop,
+            // start with the deterministic right-biased placement instead of
+            // preserving the transient drag location inside the free band.
+            this.taskbarIntegrationPreferredLocation = null;
+            return true;
+        }
+
+        private void UpdateTaskbarMonitorState()
+        {
+            if (this.taskbarMonitorTimer == null)
+            {
+                return;
+            }
+
+            this.taskbarMonitorTimer.Enabled = this.settings != null &&
+                this.settings.TaskbarIntegrationEnabled &&
+                (this.Visible || this.taskbarIntegrationDisplayRequested);
+        }
+
         private void UpdateTopMostGuardState()
         {
             if (this.topMostGuardTimer == null)
@@ -2881,7 +3385,124 @@ namespace TrafficView
                 return;
             }
 
-            this.topMostGuardTimer.Enabled = this.Visible && !this.IsTopMostEnforcementPaused;
+            this.topMostGuardTimer.Enabled = this.Visible &&
+                !this.IsTopMostEnforcementPaused &&
+                (this.settings == null || !this.settings.TaskbarIntegrationEnabled);
+        }
+
+        public void ClearTaskbarIntegrationPreferredLocation()
+        {
+            this.taskbarIntegrationPreferredLocation = null;
+        }
+
+        public void ShowAtRightBiasedTaskbarPlacement(bool activateWindow, bool showNoSpaceMessage)
+        {
+            if (!this.settings.TaskbarIntegrationEnabled)
+            {
+                this.ShowNearTray(activateWindow);
+                return;
+            }
+
+            this.taskbarIntegrationDisplayRequested = true;
+            this.taskbarIntegrationPreferredLocation = null;
+            this.lastDesktopShellForegroundUtc = DateTime.MinValue;
+
+            TaskbarIntegrationSnapshot snapshot;
+            if (!this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+            {
+                this.RefreshTaskbarIntegration(activateWindow, showNoSpaceMessage);
+                return;
+            }
+
+            this.activeTaskbarSnapshot = snapshot;
+            this.ApplyTaskbarHostBinding(IntPtr.Zero);
+            if (this.NeedsTaskbarIntegrationLayoutRefresh(snapshot) || this.NeedsCurrentDpiLayout())
+            {
+                this.ApplyDpiLayout(this.currentDpi, false);
+            }
+
+            Rectangle placementBounds;
+            if (this.TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(snapshot, out placementBounds))
+            {
+                this.taskbarNoSpaceMessageShown = false;
+                this.lastSuccessfulTaskbarPlacementUtc = DateTime.UtcNow;
+                this.lastSuccessfulTaskbarPlacementBounds = placementBounds;
+                this.ShowAtTaskbarPlacement(placementBounds, activateWindow);
+                this.UpdateTaskbarMonitorState();
+                return;
+            }
+
+            if (this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds))
+            {
+                this.taskbarNoSpaceMessageShown = false;
+                this.lastSuccessfulTaskbarPlacementUtc = DateTime.UtcNow;
+                this.lastSuccessfulTaskbarPlacementBounds = placementBounds;
+                this.ShowAtTaskbarPlacement(placementBounds, activateWindow);
+                this.UpdateTaskbarMonitorState();
+                return;
+            }
+
+            this.HideForTaskbarIntegrationCondition();
+            this.ShowNoSpaceMessageIfNeeded(showNoSpaceMessage);
+            this.UpdateTaskbarMonitorState();
+        }
+
+        private void TaskbarMonitorTimer_Tick(object sender, EventArgs e)
+        {
+            if (!this.settings.TaskbarIntegrationEnabled ||
+                (!this.Visible && !this.taskbarIntegrationDisplayRequested) ||
+                this.IsDisposed)
+            {
+                this.UpdateTaskbarMonitorState();
+                return;
+            }
+
+            if (this.IsOverlayDragInProgress())
+            {
+                return;
+            }
+
+            if (this.IsDesktopShellForegroundWindow())
+            {
+                this.TryRestoreTaskbarPresenceDuringDesktopShell();
+                return;
+            }
+
+            if (this.IsTaskbarForegroundWindow())
+            {
+                if (this.TryRefreshTaskbarPlacementDuringTaskbarFocus())
+                {
+                    this.EnsureLightweightTaskbarForegroundPresence();
+                }
+
+                return;
+            }
+
+            this.RefreshTaskbarIntegration(false, false);
+        }
+
+        private void TryRestoreTaskbarPresenceDuringDesktopShell()
+        {
+            if (!this.taskbarIntegrationDisplayRequested ||
+                this.lastSuccessfulTaskbarPlacementBounds.Width <= 0 ||
+                this.lastSuccessfulTaskbarPlacementBounds.Height <= 0)
+            {
+                return;
+            }
+
+            if (!this.Visible)
+            {
+                this.ShowAtTaskbarPlacement(this.lastSuccessfulTaskbarPlacementBounds, false);
+                return;
+            }
+
+            if (this.GetCurrentPopupScreenBounds() != this.lastSuccessfulTaskbarPlacementBounds)
+            {
+                this.ShowAtTaskbarPlacement(this.lastSuccessfulTaskbarPlacementBounds, false);
+                return;
+            }
+
+            this.EnsureLightweightTaskbarForegroundPresence();
         }
 
         public void SuspendTopMostEnforcement()
@@ -2907,6 +3528,283 @@ namespace TrafficView
             this.EnsureTopMostPlacement(activateWindow);
         }
 
+        private void RefreshTaskbarIntegration(bool activateWindow, bool showNoSpaceMessage)
+        {
+            if (this.taskbarIntegrationRefreshInProgress)
+            {
+                this.taskbarIntegrationRefreshPending = true;
+                this.taskbarIntegrationPendingActivateWindow = this.taskbarIntegrationPendingActivateWindow || activateWindow;
+                this.taskbarIntegrationPendingShowNoSpaceMessage = this.taskbarIntegrationPendingShowNoSpaceMessage || showNoSpaceMessage;
+                return;
+            }
+
+            this.taskbarIntegrationRefreshInProgress = true;
+            try
+            {
+                if (!this.settings.TaskbarIntegrationEnabled)
+                {
+                    this.ApplyTaskbarHostBinding(IntPtr.Zero);
+                    this.activeTaskbarSnapshot = null;
+                    this.taskbarNoSpaceMessageShown = false;
+                    this.SetTaskbarIntegrationForcedRightOnly(false);
+                    this.taskbarIntegrationPreferredLocation = null;
+                    this.lastAppliedTaskbarThickness = -1;
+                    this.lastSuccessfulTaskbarPlacementUtc = DateTime.MinValue;
+                    this.lastSuccessfulTaskbarPlacementBounds = Rectangle.Empty;
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                if (!this.taskbarIntegrationDisplayRequested && !this.Visible)
+                {
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                TaskbarIntegrationSnapshot snapshot;
+                if (!this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+                {
+                    this.activeTaskbarSnapshot = null;
+                    if (this.TryPreserveTaskbarPlacement(activateWindow, !showNoSpaceMessage))
+                    {
+                        this.UpdateTaskbarMonitorState();
+                        return;
+                    }
+
+                    this.HideForTaskbarIntegrationCondition();
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                this.activeTaskbarSnapshot = snapshot;
+                this.ApplyTaskbarHostBinding(IntPtr.Zero);
+                if (this.NeedsTaskbarIntegrationLayoutRefresh(snapshot) || this.NeedsCurrentDpiLayout())
+                {
+                    this.ApplyDpiLayout(this.currentDpi, false);
+                }
+
+                bool shouldYieldToFullscreen = this.ShouldYieldToFullscreenForegroundWindow(snapshot.ScreenBounds);
+                if (snapshot.IsHidden || shouldYieldToFullscreen)
+                {
+                    if (!shouldYieldToFullscreen &&
+                        this.TryPreserveTaskbarPlacement(activateWindow, !showNoSpaceMessage))
+                    {
+                        this.UpdateTaskbarMonitorState();
+                        return;
+                    }
+
+                    this.HideForTaskbarIntegrationCondition();
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                Rectangle placementBounds;
+                if (!this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds) &&
+                    !this.TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(snapshot, out placementBounds))
+                {
+                    if (this.TryPreserveRightAnchoredTaskbarPlacement(snapshot, activateWindow))
+                    {
+                        this.UpdateTaskbarMonitorState();
+                        return;
+                    }
+
+                    this.HideForTaskbarIntegrationCondition();
+                    this.ShowNoSpaceMessageIfNeeded(showNoSpaceMessage);
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                this.taskbarNoSpaceMessageShown = false;
+                this.lastSuccessfulTaskbarPlacementUtc = DateTime.UtcNow;
+                this.lastSuccessfulTaskbarPlacementBounds = placementBounds;
+                Rectangle currentBounds = this.GetCurrentPopupScreenBounds();
+                if (!activateWindow &&
+                    this.Visible &&
+                    this.WindowState == FormWindowState.Normal &&
+                    currentBounds == placementBounds &&
+                    this.IsDesktopShellForegroundWindow())
+                {
+                    this.lastDesktopShellForegroundUtc = DateTime.UtcNow;
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                if (this.TryHandleFirstTaskbarRefreshAfterDesktop(placementBounds, activateWindow))
+                {
+                    this.UpdateTaskbarMonitorState();
+                    return;
+                }
+
+                this.ShowAtTaskbarPlacement(placementBounds, activateWindow);
+                this.UpdateTaskbarMonitorState();
+            }
+            finally
+            {
+                this.taskbarIntegrationRefreshInProgress = false;
+            }
+
+            if (this.taskbarIntegrationRefreshPending && !this.IsDisposed)
+            {
+                bool pendingActivateWindow = this.taskbarIntegrationPendingActivateWindow;
+                bool pendingShowNoSpaceMessage = this.taskbarIntegrationPendingShowNoSpaceMessage;
+                this.taskbarIntegrationRefreshPending = false;
+                this.taskbarIntegrationPendingActivateWindow = false;
+                this.taskbarIntegrationPendingShowNoSpaceMessage = false;
+                this.TryBeginInvokeSafely(new Action(delegate
+                {
+                    if (!this.IsDisposed)
+                    {
+                        this.RefreshTaskbarIntegration(pendingActivateWindow, pendingShowNoSpaceMessage);
+                    }
+                }));
+            }
+        }
+
+        private void SetTaskbarIntegrationForcedRightOnly(bool forceRightOnly)
+        {
+            if (this.taskbarIntegrationForceRightOnlySection == forceRightOnly)
+            {
+                return;
+            }
+
+            this.taskbarIntegrationForceRightOnlySection = forceRightOnly;
+            this.ApplyDpiLayout(this.currentDpi, false);
+            this.lastPresentedLocation = new Point(int.MinValue, int.MinValue);
+            this.lastPresentedSize = Size.Empty;
+            this.staticSurfaceDirty = true;
+        }
+
+        private void HideForTaskbarIntegrationCondition()
+        {
+            if (!this.Visible)
+            {
+                return;
+            }
+
+            this.taskbarIntegrationVisibilityChange = true;
+            try
+            {
+                base.Hide();
+            }
+            finally
+            {
+                this.taskbarIntegrationVisibilityChange = false;
+            }
+        }
+
+        private void ShowAtTaskbarPlacement(Rectangle placementBounds, bool activateWindow)
+        {
+            bool wasVisible = this.Visible;
+            bool locationChanged = this.Location != placementBounds.Location;
+            bool windowStateChanged = this.WindowState != FormWindowState.Normal;
+
+            if (locationChanged)
+            {
+                this.Location = placementBounds.Location;
+            }
+
+            if (!wasVisible)
+            {
+                this.taskbarIntegrationVisibilityChange = true;
+                try
+                {
+                    this.Show();
+                }
+                finally
+                {
+                    this.taskbarIntegrationVisibilityChange = false;
+                }
+            }
+
+            if (windowStateChanged)
+            {
+                this.WindowState = FormWindowState.Normal;
+            }
+
+            // Keep visibility reliable, but avoid unnecessary property churn.
+            // The TopMost reassertion stays active so the overlay does not drop
+            // behind the taskbar after shell/taskbar focus changes.
+            this.EnsureTopMostPlacement(activateWindow);
+            this.RefreshVisualSurface();
+        }
+
+        private bool TryPreserveTaskbarPlacement(bool activateWindow, bool allowExpiredPlacement)
+        {
+            if (this.lastSuccessfulTaskbarPlacementBounds.Width <= 0 ||
+                this.lastSuccessfulTaskbarPlacementBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            if (!allowExpiredPlacement &&
+                (DateTime.UtcNow - this.lastSuccessfulTaskbarPlacementUtc).TotalMilliseconds > TaskbarTransientFailureGraceMs)
+            {
+                return false;
+            }
+
+            Rectangle currentBounds = this.GetCurrentPopupScreenBounds();
+            if (!activateWindow &&
+                this.Visible &&
+                this.WindowState == FormWindowState.Normal &&
+                currentBounds == this.lastSuccessfulTaskbarPlacementBounds &&
+                this.IsDesktopShellForegroundWindow())
+            {
+                this.lastDesktopShellForegroundUtc = DateTime.UtcNow;
+                return true;
+            }
+
+            if (this.TryHandleFirstTaskbarRefreshAfterDesktop(this.lastSuccessfulTaskbarPlacementBounds, activateWindow))
+            {
+                return true;
+            }
+
+            this.ShowAtTaskbarPlacement(this.lastSuccessfulTaskbarPlacementBounds, activateWindow);
+            return true;
+        }
+
+        private void ShowNoSpaceMessageIfNeeded(bool requestedByUser)
+        {
+            if (this.taskbarNoSpaceMessageVisible)
+            {
+                return;
+            }
+
+            if (!requestedByUser &&
+                this.taskbarNoSpaceMessageShown &&
+                (DateTime.UtcNow - this.lastNoSpaceMessageUtc).TotalMilliseconds < NoSpaceMessageCooldownMs)
+            {
+                return;
+            }
+
+            this.taskbarNoSpaceMessageShown = true;
+            this.lastNoSpaceMessageUtc = DateTime.UtcNow;
+            this.taskbarNoSpaceMessageVisible = true;
+            try
+            {
+                MessageBox.Show(
+                    "Kein Platz auf der Taskleiste",
+                    "TrafficView",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                EventHandler handler = this.TaskbarIntegrationNoSpaceAcknowledged;
+                if (handler != null)
+                {
+                    handler(this, EventArgs.Empty);
+                }
+            }
+            finally
+            {
+                this.taskbarNoSpaceMessageVisible = false;
+            }
+        }
+
+        public new void Hide()
+        {
+            this.taskbarIntegrationDisplayRequested = false;
+            base.Hide();
+        }
+
         private void EnsureTopMostPlacement(bool activateWindow)
         {
             if (!this.IsHandleCreated || this.IsTopMostEnforcementPaused)
@@ -2914,9 +3812,20 @@ namespace TrafficView
                 return;
             }
 
-            this.TopMost = true;
+            if (!this.TopMost)
+            {
+                this.TopMost = true;
+            }
 
-            uint flags = SwpShowWindow | SwpNoMove | SwpNoSize;
+            uint flags = SwpNoMove | SwpNoSize | SwpNoOwnerZOrder | SwpNoSendChanging;
+            if (!this.Visible)
+            {
+                flags |= SwpShowWindow;
+            }
+            else
+            {
+                flags |= SwpNoRedraw;
+            }
             if (!activateWindow)
             {
                 flags |= SwpNoActivate;
@@ -2935,6 +3844,1415 @@ namespace TrafficView
             {
                 this.TryActivatePopupWindow();
             }
+        }
+
+        private Rectangle GetCurrentPopupScreenBounds()
+        {
+            return new Rectangle(this.Location, this.Size);
+        }
+
+        private void ApplyTaskbarHostBinding(IntPtr hostHandle)
+        {
+            this.taskbarIntegrationHostHandle = hostHandle;
+        }
+
+        private bool TryCaptureTaskbarIntegrationSnapshot(out TaskbarIntegrationSnapshot snapshot)
+        {
+            snapshot = null;
+
+            // Intentionally limited to the primary taskbar window. This keeps
+            // the implementation robust and avoids guessing on secondary taskbars.
+            IntPtr taskbarHandle = FindWindow("Shell_TrayWnd", null);
+            if (taskbarHandle == IntPtr.Zero || !IsWindowVisible(taskbarHandle))
+            {
+                return false;
+            }
+
+            NativeRect windowRect;
+            if (!GetWindowRect(taskbarHandle, out windowRect))
+            {
+                return false;
+            }
+
+            Rectangle visibleBounds = windowRect.ToRectangle();
+            Rectangle primaryScreenBounds = Screen.PrimaryScreen.Bounds;
+            visibleBounds = Rectangle.Intersect(visibleBounds, primaryScreenBounds);
+            if (visibleBounds.Width <= 0 || visibleBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            AppBarData appBarData = new AppBarData();
+            appBarData.CbSize = Marshal.SizeOf(typeof(AppBarData));
+            appBarData.HWnd = taskbarHandle;
+
+            AppBarEdge edge = DetermineTaskbarEdge(visibleBounds, primaryScreenBounds);
+            if (SHAppBarMessage(AbmGetTaskbarPos, ref appBarData) != 0)
+            {
+                edge = appBarData.UEdge;
+            }
+
+            uint state = SHAppBarMessage(AbmGetState, ref appBarData);
+            bool autoHide = (state & AbsAutoHide) == AbsAutoHide;
+            int visibleThickness = edge == AppBarEdge.Left || edge == AppBarEdge.Right
+                ? visibleBounds.Width
+                : visibleBounds.Height;
+            bool hidden = visibleThickness < Math.Max(1, DpiHelper.Scale(MinimumVisibleTaskbarThickness, this.currentDpi));
+
+            bool usesCustomTaskListHeuristic =
+                HasVisibleDescendantWindowClass(taskbarHandle, "SIBTrayButton") ||
+                HasVisibleDescendantWindowClass(taskbarHandle, "MSTaskListWClass");
+
+            Rectangle[] occupiedBounds = GetTaskbarOccupiedLeafBounds(
+                taskbarHandle,
+                visibleBounds,
+                usesCustomTaskListHeuristic);
+            occupiedBounds = this.GetAugmentedTaskbarOccupiedBounds(
+                visibleBounds,
+                edge,
+                occupiedBounds);
+
+            snapshot = new TaskbarIntegrationSnapshot
+            {
+                TaskbarHandle = taskbarHandle,
+                Edge = edge,
+                Bounds = visibleBounds,
+                ScreenBounds = primaryScreenBounds,
+                AutoHide = autoHide,
+                IsHidden = hidden,
+                UsesCustomTaskListHeuristic = usesCustomTaskListHeuristic,
+                OccupiedBounds = occupiedBounds,
+                Theme = this.CreateTaskbarVisualTheme(visibleBounds, occupiedBounds)
+            };
+
+            return true;
+        }
+
+        private static AppBarEdge DetermineTaskbarEdge(Rectangle bounds, Rectangle screenBounds)
+        {
+            if (bounds.Left <= screenBounds.Left && bounds.Width <= Math.Max(1, screenBounds.Width / 5))
+            {
+                return AppBarEdge.Left;
+            }
+
+            if (bounds.Right >= screenBounds.Right && bounds.Width <= Math.Max(1, screenBounds.Width / 5))
+            {
+                return AppBarEdge.Right;
+            }
+
+            if (bounds.Top <= screenBounds.Top)
+            {
+                return AppBarEdge.Top;
+            }
+
+            return AppBarEdge.Bottom;
+        }
+
+        private Rectangle[] GetTaskbarOccupiedLeafBounds(IntPtr taskbarHandle, Rectangle taskbarBounds, bool usesCustomTaskListHeuristic)
+        {
+            List<Rectangle> bounds = new List<Rectangle>();
+            EnumChildWindows(taskbarHandle, delegate(IntPtr childHandle, IntPtr lParam)
+            {
+                if (!IsWindowVisible(childHandle))
+                {
+                    return true;
+                }
+
+                NativeRect childRect;
+                if (!GetWindowRect(childHandle, out childRect))
+                {
+                    return true;
+                }
+
+                Rectangle childBounds = Rectangle.Intersect(childRect.ToRectangle(), taskbarBounds);
+                if (childBounds.Width <= 0 || childBounds.Height <= 0)
+                {
+                    return true;
+                }
+
+                string className = GetWindowClassName(childHandle);
+                if (IsProtectedTaskbarRegionWindowClass(className))
+                {
+                    bounds.Add(childBounds);
+                    return true;
+                }
+
+                if (IsCustomTaskListPlaceholderWindow(childHandle, taskbarHandle, className, usesCustomTaskListHeuristic))
+                {
+                    return true;
+                }
+
+                if (HasVisibleIntersectingChildWindow(childHandle, taskbarBounds))
+                {
+                    return true;
+                }
+
+                bounds.Add(childBounds);
+                return true;
+            }, IntPtr.Zero);
+
+            return bounds.ToArray();
+        }
+
+        private Rectangle[] GetAugmentedTaskbarOccupiedBounds(
+            Rectangle taskbarBounds,
+            AppBarEdge edge,
+            Rectangle[] structuralBounds)
+        {
+            Color taskbarBackgroundColor;
+            if (!this.TrySampleTaskbarBackgroundColor(taskbarBounds, structuralBounds, out taskbarBackgroundColor))
+            {
+                return structuralBounds;
+            }
+
+            Rectangle[] visualBounds;
+            if (!this.TryDetectTaskbarVisualOccupiedBounds(
+                taskbarBounds,
+                edge,
+                structuralBounds,
+                taskbarBackgroundColor,
+                out visualBounds) ||
+                visualBounds.Length <= 0)
+            {
+                return structuralBounds;
+            }
+
+            List<Rectangle> augmentedBounds = new List<Rectangle>(structuralBounds);
+            augmentedBounds.AddRange(visualBounds);
+            return augmentedBounds.ToArray();
+        }
+
+        private bool TryDetectTaskbarVisualOccupiedBounds(
+            Rectangle taskbarBounds,
+            AppBarEdge edge,
+            Rectangle[] structuralBounds,
+            Color taskbarBackgroundColor,
+            out Rectangle[] visualBounds)
+        {
+            visualBounds = Array.Empty<Rectangle>();
+            Rectangle sampleBounds = Rectangle.Intersect(taskbarBounds, Screen.PrimaryScreen.Bounds);
+            if (sampleBounds.Width <= 0 || sampleBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                using (Bitmap bitmap = new Bitmap(sampleBounds.Width, sampleBounds.Height, PixelFormat.Format32bppArgb))
+                using (Graphics graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.CopyFromScreen(sampleBounds.Location, Point.Empty, sampleBounds.Size);
+                    visualBounds = DetectTaskbarVisualOccupiedBoundsFromBitmap(
+                        bitmap,
+                        sampleBounds.Location,
+                        edge,
+                        structuralBounds,
+                        this.Visible ? this.GetCurrentPopupScreenBounds() : Rectangle.Empty,
+                        this.ScaleValue(TaskbarOccupiedSafetyPadding),
+                        taskbarBackgroundColor);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "taskbar-visual-occupied-detection-failed",
+                    "Die visuelle Erkennung belegter Taskleistenbereiche konnte nicht ausgefuehrt werden.",
+                    ex);
+                return false;
+            }
+        }
+
+        private static Rectangle[] DetectTaskbarVisualOccupiedBoundsFromBitmap(
+            Bitmap bitmap,
+            Point screenOrigin,
+            AppBarEdge edge,
+            Rectangle[] structuralBounds,
+            Rectangle ownWindowBounds,
+            int safetyPadding,
+            Color taskbarBackgroundColor)
+        {
+            bool isVertical = edge == AppBarEdge.Left || edge == AppBarEdge.Right;
+            int mainLength = isVertical ? bitmap.Height : bitmap.Width;
+            int crossLength = isVertical ? bitmap.Width : bitmap.Height;
+            int crossInset = Math.Max(2, crossLength / 7);
+            int crossStart = Math.Min(crossLength - 1, crossInset);
+            int crossEnd = Math.Max(crossStart, crossLength - crossInset - 1);
+            int requiredHits = Math.Max(3, (crossEnd - crossStart + 1) / 7);
+            int allowedGap = Math.Max(2, safetyPadding / 2);
+            int minimumVisualRun = Math.Max(8, safetyPadding * 2);
+            List<Rectangle> detectedBounds = new List<Rectangle>();
+            int runStart = -1;
+            int lastHit = -1;
+
+            for (int main = 0; main < mainLength; main++)
+            {
+                int hitCount = 0;
+                for (int cross = crossStart; cross <= crossEnd; cross++)
+                {
+                    int localX = isVertical ? cross : main;
+                    int localY = isVertical ? main : cross;
+                    Point screenPoint = new Point(screenOrigin.X + localX, screenOrigin.Y + localY);
+                    if ((!ownWindowBounds.IsEmpty && IsPointInPaddedRectangle(ownWindowBounds, screenPoint, safetyPadding)) ||
+                        IsPointInAnyPaddedRectangle(structuralBounds, screenPoint, safetyPadding))
+                    {
+                        continue;
+                    }
+
+                    if (IsTaskbarForegroundPixel(bitmap.GetPixel(localX, localY), taskbarBackgroundColor))
+                    {
+                        hitCount++;
+                    }
+                }
+
+                if (hitCount >= requiredHits)
+                {
+                    if (runStart < 0)
+                    {
+                        runStart = main;
+                    }
+
+                    lastHit = main;
+                    continue;
+                }
+
+                if (runStart >= 0 && main - lastHit > allowedGap)
+                {
+                    AddDetectedTaskbarVisualRun(
+                        detectedBounds,
+                        screenOrigin,
+                        isVertical,
+                        runStart,
+                        lastHit,
+                        crossLength,
+                        safetyPadding,
+                        minimumVisualRun);
+                    runStart = -1;
+                    lastHit = -1;
+                }
+            }
+
+            if (runStart >= 0)
+            {
+                AddDetectedTaskbarVisualRun(
+                    detectedBounds,
+                    screenOrigin,
+                    isVertical,
+                    runStart,
+                    lastHit,
+                    crossLength,
+                    safetyPadding,
+                    minimumVisualRun);
+            }
+
+            return detectedBounds.ToArray();
+        }
+
+        private static void AddDetectedTaskbarVisualRun(
+            List<Rectangle> detectedBounds,
+            Point screenOrigin,
+            bool isVertical,
+            int runStart,
+            int runEnd,
+            int crossLength,
+            int safetyPadding,
+            int minimumVisualRun)
+        {
+            if (runEnd < runStart || runEnd - runStart + 1 < minimumVisualRun)
+            {
+                return;
+            }
+
+            int start = Math.Max(0, runStart - safetyPadding);
+            int length = Math.Max(1, runEnd - runStart + 1 + (2 * safetyPadding));
+            detectedBounds.Add(isVertical
+                ? new Rectangle(screenOrigin.X, screenOrigin.Y + start, crossLength, length)
+                : new Rectangle(screenOrigin.X + start, screenOrigin.Y, length, crossLength));
+        }
+
+        private static bool IsTaskbarForegroundPixel(Color pixel, Color taskbarBackgroundColor)
+        {
+            int colorDistance =
+                Math.Abs(pixel.R - taskbarBackgroundColor.R) +
+                Math.Abs(pixel.G - taskbarBackgroundColor.G) +
+                Math.Abs(pixel.B - taskbarBackgroundColor.B);
+            double luminanceDelta = Math.Abs(GetRelativeLuminance(pixel) - GetRelativeLuminance(taskbarBackgroundColor));
+            return colorDistance >= 72 || luminanceDelta >= 0.20D;
+        }
+
+        private static bool HasVisibleDescendantWindowClass(IntPtr rootHandle, string className)
+        {
+            bool found = false;
+            EnumChildWindows(rootHandle, delegate(IntPtr childHandle, IntPtr lParam)
+            {
+                if (!IsWindowVisible(childHandle))
+                {
+                    return true;
+                }
+
+                if (string.Equals(GetWindowClassName(childHandle), className, StringComparison.Ordinal))
+                {
+                    found = true;
+                    return false;
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            return found;
+        }
+
+        private static string GetWindowClassName(IntPtr handle)
+        {
+            System.Text.StringBuilder className = new System.Text.StringBuilder(256);
+            int length = GetClassName(handle, className, className.Capacity);
+            return length > 0 ? className.ToString() : string.Empty;
+        }
+
+        private bool IsDesktopShellForegroundWindow()
+        {
+            IntPtr foregroundWindow = GetForegroundWindow();
+            if (foregroundWindow == IntPtr.Zero || foregroundWindow == this.Handle)
+            {
+                return false;
+            }
+
+            string className = GetWindowClassName(foregroundWindow);
+            return string.Equals(className, "Progman", StringComparison.Ordinal) ||
+                string.Equals(className, "WorkerW", StringComparison.Ordinal);
+        }
+
+        private bool IsTaskbarForegroundWindow()
+        {
+            IntPtr foregroundWindow = GetForegroundWindow();
+            if (foregroundWindow == IntPtr.Zero || foregroundWindow == this.Handle)
+            {
+                return false;
+            }
+
+            IntPtr taskbarHandle = FindWindow("Shell_TrayWnd", null);
+            if (taskbarHandle == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            IntPtr currentHandle = foregroundWindow;
+            while (currentHandle != IntPtr.Zero)
+            {
+                if (currentHandle == taskbarHandle)
+                {
+                    return true;
+                }
+
+                currentHandle = GetParent(currentHandle);
+            }
+
+            return false;
+        }
+
+        private bool TryHandleFirstTaskbarRefreshAfterDesktop(Rectangle targetBounds, bool activateWindow)
+        {
+            if (activateWindow ||
+                !this.Visible ||
+                this.WindowState != FormWindowState.Normal ||
+                this.GetCurrentPopupScreenBounds() != targetBounds)
+            {
+                return false;
+            }
+
+            if (!this.IsTaskbarForegroundWindow())
+            {
+                return false;
+            }
+
+            if ((DateTime.UtcNow - this.lastDesktopShellForegroundUtc).TotalMilliseconds > DesktopToTaskbarBlinkSuppressionMs)
+            {
+                return false;
+            }
+
+            this.lastDesktopShellForegroundUtc = DateTime.MinValue;
+            this.EnsureLightweightTaskbarForegroundPresence();
+            return true;
+        }
+
+        private void EnsureLightweightTaskbarForegroundPresence()
+        {
+            if (!this.IsHandleCreated || !this.Visible || this.IsTopMostEnforcementPaused)
+            {
+                return;
+            }
+
+            if (!this.TopMost)
+            {
+                this.TopMost = true;
+            }
+
+            this.BringToFront();
+        }
+
+        private bool TryRefreshTaskbarPlacementDuringTaskbarFocus()
+        {
+            if (this.IsOverlayDragInProgress())
+            {
+                return true;
+            }
+
+            TaskbarIntegrationSnapshot snapshot;
+            if (!this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+            {
+                return false;
+            }
+
+            if (snapshot.IsHidden)
+            {
+                this.activeTaskbarSnapshot = snapshot;
+                this.HideForTaskbarIntegrationCondition();
+                this.UpdateTaskbarMonitorState();
+                return false;
+            }
+
+            this.activeTaskbarSnapshot = snapshot;
+            if (this.NeedsCurrentDpiLayout())
+            {
+                this.ApplyDpiLayout(this.currentDpi, false);
+            }
+
+            Rectangle placementBounds;
+            if (!this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds) &&
+                !this.TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(snapshot, out placementBounds))
+            {
+                if (this.TryPreserveRightAnchoredTaskbarPlacement(snapshot, false))
+                {
+                    this.UpdateTaskbarMonitorState();
+                    return true;
+                }
+
+                this.HideForTaskbarIntegrationCondition();
+                this.ShowNoSpaceMessageIfNeeded(false);
+                this.UpdateTaskbarMonitorState();
+                return false;
+            }
+
+            this.taskbarNoSpaceMessageShown = false;
+            this.lastSuccessfulTaskbarPlacementUtc = DateTime.UtcNow;
+            this.lastSuccessfulTaskbarPlacementBounds = placementBounds;
+            if (this.GetCurrentPopupScreenBounds() == placementBounds)
+            {
+                return true;
+            }
+
+            this.Location = placementBounds.Location;
+            this.OnOverlayLocationCommitted();
+            this.RefreshVisualSurface();
+            return true;
+        }
+
+        private bool IsOverlayDragInProgress()
+        {
+            return this.leftMousePressed && this.dragControl != null;
+        }
+
+        private static bool IsTaskbarShellWindowClass(string className)
+        {
+            return string.Equals(className, "Progman", StringComparison.Ordinal) ||
+                string.Equals(className, "WorkerW", StringComparison.Ordinal) ||
+                string.Equals(className, "Shell_TrayWnd", StringComparison.Ordinal);
+        }
+
+        private static bool IsProtectedTaskbarRegionWindowClass(string className)
+        {
+            return string.Equals(className, "TrayNotifyWnd", StringComparison.Ordinal) ||
+                string.Equals(className, "TrayClockWClass", StringComparison.Ordinal) ||
+                string.Equals(className, "TrayShowDesktopButtonWClass", StringComparison.Ordinal) ||
+                string.Equals(className, "SIBTrayButton", StringComparison.Ordinal) ||
+                string.Equals(className, "Start", StringComparison.Ordinal);
+        }
+
+        private static bool IsCustomTaskListPlaceholderWindow(
+            IntPtr windowHandle,
+            IntPtr taskbarHandle,
+            string className,
+            bool usesCustomTaskListHeuristic)
+        {
+            if (!usesCustomTaskListHeuristic)
+            {
+                return false;
+            }
+
+            if (string.Equals(className, "MSTaskListWClass", StringComparison.Ordinal) ||
+                string.Equals(className, "MSTaskSwWClass", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (!string.Equals(className, "ToolbarWindow32", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return HasAncestorWindowClass(windowHandle, taskbarHandle, "ReBarWindow32");
+        }
+
+        private static bool HasAncestorWindowClass(IntPtr windowHandle, IntPtr stopHandle, string className)
+        {
+            IntPtr currentHandle = GetParent(windowHandle);
+            while (currentHandle != IntPtr.Zero)
+            {
+                if (currentHandle == stopHandle)
+                {
+                    return false;
+                }
+
+                if (string.Equals(GetWindowClassName(currentHandle), className, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                currentHandle = GetParent(currentHandle);
+            }
+
+            return false;
+        }
+
+        private static bool HasVisibleIntersectingChildWindow(IntPtr parentHandle, Rectangle taskbarBounds)
+        {
+            bool hasVisibleChild = false;
+            EnumChildWindows(parentHandle, delegate(IntPtr childHandle, IntPtr lParam)
+            {
+                if (!IsWindowVisible(childHandle))
+                {
+                    return true;
+                }
+
+                NativeRect childRect;
+                if (!GetWindowRect(childHandle, out childRect))
+                {
+                    return true;
+                }
+
+                Rectangle childBounds = Rectangle.Intersect(childRect.ToRectangle(), taskbarBounds);
+                if (childBounds.Width <= 0 || childBounds.Height <= 0)
+                {
+                    return true;
+                }
+
+                hasVisibleChild = true;
+                return false;
+            }, IntPtr.Zero);
+            return hasVisibleChild;
+        }
+
+        private bool TryGetTaskbarPlacementBounds(TaskbarIntegrationSnapshot snapshot, out Rectangle placementBounds)
+        {
+            return this.TryGetTaskbarPlacementBoundsForSize(snapshot, this.ClientSize, out placementBounds);
+        }
+
+        private bool TryGetTaskbarPlacementBoundsWithCompactFallback(TaskbarIntegrationSnapshot snapshot, out Rectangle placementBounds)
+        {
+            placementBounds = Rectangle.Empty;
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            if (this.taskbarIntegrationForceRightOnlySection)
+            {
+                Size regularSize = this.GetScaledClientSizeForSection(this.GetConfiguredPopupSectionMode());
+                if (this.ShouldHoldCompactTaskbarSectionNearProtectedEdge(snapshot, regularSize))
+                {
+                    Size heldCompactSize = this.GetScaledClientSizeForSection(PopupSectionMode.RightOnly);
+                    return this.TryGetTaskbarPlacementBoundsForSize(snapshot, heldCompactSize, out placementBounds);
+                }
+
+                Size restoreProbeSize = regularSize;
+                int restoreHysteresis = this.ScaleValue(TaskbarCompactRestoreHysteresis);
+                if (snapshot.IsVertical)
+                {
+                    restoreProbeSize.Height += restoreHysteresis;
+                }
+                else
+                {
+                    restoreProbeSize.Width += restoreHysteresis;
+                }
+
+                Rectangle restoreProbeBounds;
+                if (this.TryGetTaskbarPlacementBoundsForSize(snapshot, restoreProbeSize, out restoreProbeBounds) &&
+                    this.TryGetTaskbarPlacementBoundsForSize(snapshot, regularSize, out placementBounds))
+                {
+                    this.SetTaskbarIntegrationForcedRightOnly(false);
+                    return true;
+                }
+            }
+
+            if (this.TryGetTaskbarPlacementBounds(snapshot, out placementBounds))
+            {
+                return true;
+            }
+
+            if (this.GetEffectivePopupSectionMode() == PopupSectionMode.RightOnly)
+            {
+                return false;
+            }
+
+            Size compactSize = this.GetScaledClientSizeForSection(PopupSectionMode.RightOnly);
+            if (!this.TryGetTaskbarPlacementBoundsForSize(snapshot, compactSize, out placementBounds))
+            {
+                return false;
+            }
+
+            // The compact fallback is taskbar-local: it preserves the user's saved section mode.
+            this.SetTaskbarIntegrationForcedRightOnly(true);
+            return true;
+        }
+
+        private bool TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(TaskbarIntegrationSnapshot snapshot, out Rectangle placementBounds)
+        {
+            placementBounds = Rectangle.Empty;
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            if (this.taskbarIntegrationForceRightOnlySection)
+            {
+                Size forcedCompactSize = this.GetScaledClientSizeForSection(PopupSectionMode.RightOnly);
+                return this.TryGetTaskbarRightAnchoredPlacementBoundsForSizeIgnoringQuickLaunch(snapshot, forcedCompactSize, out placementBounds);
+            }
+
+            if (this.TryGetTaskbarRightAnchoredPlacementBoundsForSizeIgnoringQuickLaunch(snapshot, this.ClientSize, out placementBounds))
+            {
+                return true;
+            }
+
+            if (this.GetEffectivePopupSectionMode() == PopupSectionMode.RightOnly)
+            {
+                return false;
+            }
+
+            Size compactSize = this.GetScaledClientSizeForSection(PopupSectionMode.RightOnly);
+            if (!this.TryGetTaskbarRightAnchoredPlacementBoundsForSizeIgnoringQuickLaunch(snapshot, compactSize, out placementBounds))
+            {
+                return false;
+            }
+
+            this.SetTaskbarIntegrationForcedRightOnly(true);
+            return true;
+        }
+
+        private bool TryGetTaskbarPlacementBoundsForSize(TaskbarIntegrationSnapshot snapshot, Size popupSize, out Rectangle placementBounds)
+        {
+            placementBounds = Rectangle.Empty;
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            Rectangle usableBounds = Rectangle.Inflate(snapshot.Bounds, -this.ScaleValue(TaskbarInsetThickness), -this.ScaleValue(TaskbarInsetThickness));
+            if (usableBounds.Width <= 0 || usableBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            int popupWidth = popupSize.Width;
+            int popupHeight = popupSize.Height;
+            if (popupWidth <= 0 || popupHeight <= 0)
+            {
+                return false;
+            }
+
+            int placementMargin = this.ScaleValue(TaskbarPlacementMargin);
+
+            List<Rectangle> freeBands = this.GetFreeTaskbarBands(snapshot, usableBounds);
+            if (this.taskbarIntegrationPreferredLocation.HasValue)
+            {
+                return this.TryGetTaskbarPlacementBoundsFromPreferredLocation(
+                    snapshot,
+                    freeBands,
+                    popupWidth,
+                    popupHeight,
+                    placementMargin,
+                    usableBounds,
+                    this.taskbarIntegrationPreferredLocation.Value,
+                    out placementBounds);
+            }
+
+            Rectangle? bestBand = null;
+
+            for (int i = 0; i < freeBands.Count; i++)
+            {
+                Rectangle band = freeBands[i];
+                bool fits = snapshot.IsVertical
+                    ? band.Height >= popupHeight
+                    : band.Width >= popupWidth;
+                if (!fits)
+                {
+                    continue;
+                }
+
+                if (!bestBand.HasValue)
+                {
+                    bestBand = band;
+                    continue;
+                }
+
+                if (snapshot.IsVertical)
+                {
+                    if (band.Bottom > bestBand.Value.Bottom)
+                    {
+                        bestBand = band;
+                    }
+                }
+                else if (band.Right > bestBand.Value.Right)
+                {
+                    bestBand = band;
+                }
+            }
+
+            if (!bestBand.HasValue)
+            {
+                return false;
+            }
+
+            Rectangle selectedBand = bestBand.Value;
+            if (snapshot.IsVertical)
+            {
+                placementBounds = new Rectangle(
+                    selectedBand.Left + Math.Max(0, (selectedBand.Width - popupWidth) / 2),
+                    selectedBand.Bottom - popupHeight - placementMargin,
+                    popupWidth,
+                    popupHeight);
+            }
+            else
+            {
+                placementBounds = new Rectangle(
+                    selectedBand.Right - popupWidth - placementMargin,
+                    selectedBand.Top + Math.Max(0, (selectedBand.Height - popupHeight) / 2),
+                    popupWidth,
+                    popupHeight);
+            }
+
+            return usableBounds.Contains(placementBounds);
+        }
+
+        private bool TryGetTaskbarRightAnchoredPlacementBoundsForSizeIgnoringQuickLaunch(
+            TaskbarIntegrationSnapshot snapshot,
+            Size popupSize,
+            out Rectangle placementBounds)
+        {
+            placementBounds = Rectangle.Empty;
+            if (snapshot == null)
+            {
+                return false;
+            }
+
+            Rectangle usableBounds = Rectangle.Inflate(snapshot.Bounds, -this.ScaleValue(TaskbarInsetThickness), -this.ScaleValue(TaskbarInsetThickness));
+            if (usableBounds.Width <= 0 || usableBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            int popupWidth = popupSize.Width;
+            int popupHeight = popupSize.Height;
+            if (popupWidth <= 0 || popupHeight <= 0)
+            {
+                return false;
+            }
+
+            int placementMargin = this.ScaleValue(TaskbarPlacementMargin);
+            Rectangle protectedEdgeBounds;
+            this.TryGetTaskbarProtectedEdgeBounds(snapshot, usableBounds, out protectedEdgeBounds);
+
+            if (snapshot.IsVertical)
+            {
+                int bottomLimit = protectedEdgeBounds.IsEmpty
+                    ? usableBounds.Bottom
+                    : Math.Min(usableBounds.Bottom, protectedEdgeBounds.Top);
+                int placementY = bottomLimit - popupHeight - placementMargin;
+                if (placementY < usableBounds.Top + placementMargin)
+                {
+                    return false;
+                }
+
+                placementBounds = new Rectangle(
+                    usableBounds.Left + Math.Max(0, (usableBounds.Width - popupWidth) / 2),
+                    placementY,
+                    popupWidth,
+                    popupHeight);
+            }
+            else
+            {
+                int rightLimit = protectedEdgeBounds.IsEmpty
+                    ? usableBounds.Right
+                    : Math.Min(usableBounds.Right, protectedEdgeBounds.Left);
+                int placementX = rightLimit - popupWidth - placementMargin;
+                if (placementX < usableBounds.Left + placementMargin)
+                {
+                    return false;
+                }
+
+                placementBounds = new Rectangle(
+                    placementX,
+                    usableBounds.Top + Math.Max(0, (usableBounds.Height - popupHeight) / 2),
+                    popupWidth,
+                    popupHeight);
+            }
+
+            return usableBounds.Contains(placementBounds);
+        }
+
+        private bool ShouldHoldCompactTaskbarSectionNearProtectedEdge(
+            TaskbarIntegrationSnapshot snapshot,
+            Size regularSize)
+        {
+            if (snapshot == null ||
+                regularSize.Width <= 0 ||
+                regularSize.Height <= 0)
+            {
+                return false;
+            }
+
+            Rectangle usableBounds = Rectangle.Inflate(snapshot.Bounds, -this.ScaleValue(TaskbarInsetThickness), -this.ScaleValue(TaskbarInsetThickness));
+            if (usableBounds.Width <= 0 || usableBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            Rectangle protectedEdgeBounds;
+            if (!this.TryGetTaskbarProtectedEdgeBounds(snapshot, usableBounds, out protectedEdgeBounds) ||
+                protectedEdgeBounds.IsEmpty)
+            {
+                return false;
+            }
+
+            int placementMargin = this.ScaleValue(TaskbarPlacementMargin);
+            int restoreHysteresis = this.ScaleValue(TaskbarCompactRestoreHysteresis);
+
+            Rectangle anchorBounds = Rectangle.Empty;
+            if (this.taskbarIntegrationPreferredLocation.HasValue)
+            {
+                anchorBounds = new Rectangle(this.taskbarIntegrationPreferredLocation.Value, regularSize);
+            }
+            else if (this.lastSuccessfulTaskbarPlacementBounds.Width > 0 &&
+                this.lastSuccessfulTaskbarPlacementBounds.Height > 0)
+            {
+                anchorBounds = this.lastSuccessfulTaskbarPlacementBounds;
+            }
+            else
+            {
+                anchorBounds = this.GetCurrentPopupScreenBounds();
+            }
+
+            if (anchorBounds.Width <= 0 || anchorBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            if (snapshot.IsVertical)
+            {
+                int anchorBottom = anchorBounds.Bottom + placementMargin;
+                return anchorBottom >= protectedEdgeBounds.Top - restoreHysteresis;
+            }
+
+            int anchorRight = anchorBounds.Right + placementMargin;
+            return anchorRight >= protectedEdgeBounds.Left - restoreHysteresis;
+        }
+
+        private bool TryGetTaskbarProtectedEdgeBounds(
+            TaskbarIntegrationSnapshot snapshot,
+            Rectangle usableBounds,
+            out Rectangle protectedEdgeBounds)
+        {
+            protectedEdgeBounds = Rectangle.Empty;
+            if (snapshot == null || snapshot.OccupiedBounds == null || snapshot.OccupiedBounds.Length <= 0)
+            {
+                return false;
+            }
+
+            int probeDistance = this.ScaleValue(TaskbarProtectedEdgeProbe);
+            bool hasProtectedBounds = false;
+            for (int i = 0; i < snapshot.OccupiedBounds.Length; i++)
+            {
+                Rectangle occupied = Rectangle.Intersect(snapshot.OccupiedBounds[i], usableBounds);
+                if (occupied.Width <= 0 || occupied.Height <= 0)
+                {
+                    continue;
+                }
+
+                bool nearProtectedEdge = snapshot.IsVertical
+                    ? occupied.Bottom >= usableBounds.Bottom - probeDistance
+                    : occupied.Right >= usableBounds.Right - probeDistance;
+                if (!nearProtectedEdge)
+                {
+                    continue;
+                }
+
+                protectedEdgeBounds = hasProtectedBounds
+                    ? Rectangle.Union(protectedEdgeBounds, occupied)
+                    : occupied;
+                hasProtectedBounds = true;
+            }
+
+            return hasProtectedBounds;
+        }
+
+        private bool TryPreserveRightAnchoredTaskbarPlacement(TaskbarIntegrationSnapshot snapshot, bool activateWindow)
+        {
+            if (snapshot == null ||
+                this.lastSuccessfulTaskbarPlacementBounds.Width <= 0 ||
+                this.lastSuccessfulTaskbarPlacementBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            Rectangle usableBounds = Rectangle.Inflate(snapshot.Bounds, -this.ScaleValue(TaskbarInsetThickness), -this.ScaleValue(TaskbarInsetThickness));
+            if (!usableBounds.Contains(this.lastSuccessfulTaskbarPlacementBounds))
+            {
+                return false;
+            }
+
+            Rectangle protectedEdgeBounds;
+            if (this.TryGetTaskbarProtectedEdgeBounds(snapshot, usableBounds, out protectedEdgeBounds) &&
+                !protectedEdgeBounds.IsEmpty)
+            {
+                bool intrudesProtectedEdge = snapshot.IsVertical
+                    ? this.lastSuccessfulTaskbarPlacementBounds.Bottom > protectedEdgeBounds.Top
+                    : this.lastSuccessfulTaskbarPlacementBounds.Right > protectedEdgeBounds.Left;
+                if (intrudesProtectedEdge)
+                {
+                    return false;
+                }
+            }
+
+            this.ShowAtTaskbarPlacement(this.lastSuccessfulTaskbarPlacementBounds, activateWindow);
+            return true;
+        }
+
+        private bool TryGetTaskbarPlacementBoundsFromPreferredLocation(
+            TaskbarIntegrationSnapshot snapshot,
+            List<Rectangle> freeBands,
+            int popupWidth,
+            int popupHeight,
+            int placementMargin,
+            Rectangle usableBounds,
+            Point preferredLocation,
+            out Rectangle placementBounds)
+        {
+            placementBounds = Rectangle.Empty;
+            Rectangle? bestPlacement = null;
+            int bestDistance = int.MaxValue;
+
+            for (int i = 0; i < freeBands.Count; i++)
+            {
+                Rectangle band = freeBands[i];
+                int candidateX;
+                int candidateY;
+
+                if (snapshot.IsVertical)
+                {
+                    int minimumY = band.Top + placementMargin;
+                    int maximumY = band.Bottom - popupHeight - placementMargin;
+                    if (maximumY < minimumY || band.Width < popupWidth)
+                    {
+                        continue;
+                    }
+
+                    candidateY = Clamp(preferredLocation.Y, minimumY, maximumY);
+                    candidateX = band.Left + Math.Max(0, (band.Width - popupWidth) / 2);
+                }
+                else
+                {
+                    int minimumX = band.Left + placementMargin;
+                    int maximumX = band.Right - popupWidth - placementMargin;
+                    if (maximumX < minimumX || band.Height < popupHeight)
+                    {
+                        continue;
+                    }
+
+                    candidateX = Clamp(preferredLocation.X, minimumX, maximumX);
+                    candidateY = band.Top + Math.Max(0, (band.Height - popupHeight) / 2);
+                }
+
+                Rectangle candidatePlacement = new Rectangle(candidateX, candidateY, popupWidth, popupHeight);
+                if (!usableBounds.Contains(candidatePlacement))
+                {
+                    continue;
+                }
+
+                int distance = snapshot.IsVertical
+                    ? Math.Abs(preferredLocation.Y - candidateY)
+                    : Math.Abs(preferredLocation.X - candidateX);
+                bool preferCandidate = !bestPlacement.HasValue || distance < bestDistance;
+                if (!preferCandidate && bestPlacement.HasValue && distance == bestDistance)
+                {
+                    // Keep the taskbar behavior biased toward the later free band
+                    // (rightmost on horizontal taskbars, lowermost on vertical ones)
+                    // instead of snapping left just because bands are iterated left-to-right.
+                    preferCandidate = snapshot.IsVertical
+                        ? candidatePlacement.Bottom > bestPlacement.Value.Bottom
+                        : candidatePlacement.Right > bestPlacement.Value.Right;
+                }
+
+                if (preferCandidate)
+                {
+                    bestPlacement = candidatePlacement;
+                    bestDistance = distance;
+                }
+            }
+
+            if (!bestPlacement.HasValue)
+            {
+                return false;
+            }
+
+            placementBounds = bestPlacement.Value;
+            return true;
+        }
+
+        private List<Rectangle> GetFreeTaskbarBands(TaskbarIntegrationSnapshot snapshot, Rectangle usableBounds)
+        {
+            List<Tuple<int, int>> occupiedIntervals = new List<Tuple<int, int>>();
+            int occupiedSafetyPadding = this.ScaleValue(TaskbarOccupiedSafetyPadding);
+            for (int i = 0; i < snapshot.OccupiedBounds.Length; i++)
+            {
+                Rectangle paddedOccupied = snapshot.OccupiedBounds[i];
+                paddedOccupied.Inflate(occupiedSafetyPadding, occupiedSafetyPadding);
+                Rectangle occupied = Rectangle.Intersect(paddedOccupied, usableBounds);
+                if (occupied.Width <= 0 || occupied.Height <= 0)
+                {
+                    continue;
+                }
+
+                int start = snapshot.IsVertical ? occupied.Top : occupied.Left;
+                int end = snapshot.IsVertical ? occupied.Bottom : occupied.Right;
+                occupiedIntervals.Add(Tuple.Create(start, end));
+            }
+
+            occupiedIntervals.Sort(delegate(Tuple<int, int> a, Tuple<int, int> b)
+            {
+                return a.Item1.CompareTo(b.Item1);
+            });
+
+            List<Rectangle> freeBands = new List<Rectangle>();
+            int cursor = snapshot.IsVertical ? usableBounds.Top : usableBounds.Left;
+            int maximum = snapshot.IsVertical ? usableBounds.Bottom : usableBounds.Right;
+
+            for (int i = 0; i < occupiedIntervals.Count; i++)
+            {
+                int intervalStart = Math.Max(cursor, occupiedIntervals[i].Item1);
+                int intervalEnd = Math.Min(maximum, occupiedIntervals[i].Item2);
+                if (intervalStart > cursor)
+                {
+                    freeBands.Add(CreateBandRectangle(snapshot, usableBounds, cursor, intervalStart));
+                }
+
+                if (intervalEnd > cursor)
+                {
+                    cursor = intervalEnd;
+                }
+            }
+
+            if (cursor < maximum)
+            {
+                freeBands.Add(CreateBandRectangle(snapshot, usableBounds, cursor, maximum));
+            }
+
+            return freeBands;
+        }
+
+        private static Rectangle CreateBandRectangle(TaskbarIntegrationSnapshot snapshot, Rectangle usableBounds, int start, int end)
+        {
+            if (snapshot.IsVertical)
+            {
+                return new Rectangle(
+                    usableBounds.Left,
+                    start,
+                    usableBounds.Width,
+                    Math.Max(0, end - start));
+            }
+
+            return new Rectangle(
+                start,
+                usableBounds.Top,
+                Math.Max(0, end - start),
+                usableBounds.Height);
+        }
+
+        private static int Clamp(int value, int minimum, int maximum)
+        {
+            if (value < minimum)
+            {
+                return minimum;
+            }
+
+            if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
+        }
+
+        private bool ShouldYieldToFullscreenForegroundWindow(Rectangle screenBounds)
+        {
+            IntPtr foregroundWindow = GetForegroundWindow();
+            if (foregroundWindow == IntPtr.Zero || foregroundWindow == this.Handle)
+            {
+                return false;
+            }
+
+            string foregroundClassName = GetWindowClassName(foregroundWindow);
+            if (IsTaskbarShellWindowClass(foregroundClassName))
+            {
+                return false;
+            }
+
+            NativeRect foregroundRect;
+            if (!GetWindowRect(foregroundWindow, out foregroundRect))
+            {
+                return false;
+            }
+
+            Rectangle visibleForeground = Rectangle.Intersect(foregroundRect.ToRectangle(), screenBounds);
+            if (visibleForeground.Width <= 0 || visibleForeground.Height <= 0)
+            {
+                return false;
+            }
+
+            int widthTolerance = Math.Max(2, this.ScaleValue(2));
+            int heightTolerance = Math.Max(2, this.ScaleValue(2));
+            return visibleForeground.Width >= screenBounds.Width - widthTolerance &&
+                visibleForeground.Height >= screenBounds.Height - heightTolerance;
+        }
+
+        private TaskbarVisualTheme CreateTaskbarVisualTheme(Rectangle taskbarBounds, Rectangle[] occupiedBounds)
+        {
+            Color sampledTaskbarColor;
+            if (this.TrySampleTaskbarBackgroundColor(taskbarBounds, occupiedBounds, out sampledTaskbarColor))
+            {
+                return CreateTaskbarVisualThemeFromColor(sampledTaskbarColor, TaskbarIntegratedPanelTintAlpha);
+            }
+
+            return this.CreateFallbackTaskbarVisualTheme();
+        }
+
+        private bool TrySampleTaskbarBackgroundColor(
+            Rectangle taskbarBounds,
+            Rectangle[] occupiedBounds,
+            out Color sampledTaskbarColor)
+        {
+            sampledTaskbarColor = Color.Empty;
+
+            Rectangle sampleBounds = Rectangle.Intersect(taskbarBounds, Screen.PrimaryScreen.Bounds);
+            if (sampleBounds.Width <= 0 || sampleBounds.Height <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                using (Bitmap bitmap = new Bitmap(sampleBounds.Width, sampleBounds.Height, PixelFormat.Format32bppArgb))
+                using (Graphics graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.CopyFromScreen(sampleBounds.Location, Point.Empty, sampleBounds.Size);
+
+                    return TryGetSampledTaskbarColorFromBitmap(
+                        bitmap,
+                        sampleBounds.Location,
+                        occupiedBounds,
+                        this.Visible ? this.GetCurrentPopupScreenBounds() : Rectangle.Empty,
+                        this.ScaleValue(TaskbarPlacementMargin),
+                        out sampledTaskbarColor);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "taskbar-background-sampling-failed",
+                    "Die Taskleistenfarbe konnte nicht direkt abgetastet werden. DWM-Akzentfarbe wird als stabile Naeherung verwendet.",
+                    ex);
+                return false;
+            }
+        }
+
+        private static bool TryGetSampledTaskbarColorFromBitmap(
+            Bitmap bitmap,
+            Point screenOrigin,
+            Rectangle[] occupiedBounds,
+            Rectangle ownWindowBounds,
+            int exclusionPadding,
+            out Color sampledTaskbarColor)
+        {
+            sampledTaskbarColor = Color.Empty;
+
+            List<int> redSamples = new List<int>();
+            List<int> greenSamples = new List<int>();
+            List<int> blueSamples = new List<int>();
+            int stepX = Math.Max(1, bitmap.Width / 96);
+            int stepY = Math.Max(1, bitmap.Height / 24);
+
+            CollectTaskbarColorSamples(
+                bitmap,
+                screenOrigin,
+                occupiedBounds,
+                ownWindowBounds,
+                exclusionPadding,
+                true,
+                redSamples,
+                greenSamples,
+                blueSamples,
+                stepX,
+                stepY);
+
+            if (redSamples.Count < 12)
+            {
+                CollectTaskbarColorSamples(
+                    bitmap,
+                    screenOrigin,
+                    occupiedBounds,
+                    ownWindowBounds,
+                    exclusionPadding,
+                    false,
+                    redSamples,
+                    greenSamples,
+                    blueSamples,
+                    stepX,
+                    stepY);
+            }
+
+            if (redSamples.Count <= 0)
+            {
+                return false;
+            }
+
+            redSamples.Sort();
+            greenSamples.Sort();
+            blueSamples.Sort();
+            int medianIndex = redSamples.Count / 2;
+            sampledTaskbarColor = Color.FromArgb(
+                255,
+                redSamples[medianIndex],
+                greenSamples[medianIndex],
+                blueSamples[medianIndex]);
+            return true;
+        }
+
+        private static void CollectTaskbarColorSamples(
+            Bitmap bitmap,
+            Point screenOrigin,
+            Rectangle[] occupiedBounds,
+            Rectangle ownWindowBounds,
+            int exclusionPadding,
+            bool excludeOccupiedAreas,
+            List<int> redSamples,
+            List<int> greenSamples,
+            List<int> blueSamples,
+            int stepX,
+            int stepY)
+        {
+            for (int y = stepY / 2; y < bitmap.Height; y += stepY)
+            {
+                for (int x = stepX / 2; x < bitmap.Width; x += stepX)
+                {
+                    Point screenPoint = new Point(screenOrigin.X + x, screenOrigin.Y + y);
+                    if (!ownWindowBounds.IsEmpty && IsPointInPaddedRectangle(ownWindowBounds, screenPoint, exclusionPadding))
+                    {
+                        continue;
+                    }
+
+                    if (excludeOccupiedAreas &&
+                        IsPointInAnyPaddedRectangle(occupiedBounds, screenPoint, exclusionPadding))
+                    {
+                        continue;
+                    }
+
+                    Color pixel = bitmap.GetPixel(x, y);
+                    if (pixel.A <= 0)
+                    {
+                        continue;
+                    }
+
+                    redSamples.Add(pixel.R);
+                    greenSamples.Add(pixel.G);
+                    blueSamples.Add(pixel.B);
+                }
+            }
+        }
+
+        private static bool IsPointInAnyPaddedRectangle(Rectangle[] bounds, Point point, int padding)
+        {
+            if (bounds == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < bounds.Length; i++)
+            {
+                if (IsPointInPaddedRectangle(bounds[i], point, padding))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsPointInPaddedRectangle(Rectangle bounds, Point point, int padding)
+        {
+            if (bounds.IsEmpty)
+            {
+                return false;
+            }
+
+            Rectangle paddedBounds = bounds;
+            paddedBounds.Inflate(Math.Max(0, padding), Math.Max(0, padding));
+            return paddedBounds.Contains(point);
+        }
+
+        private static TaskbarVisualTheme CreateTaskbarVisualThemeFromColor(Color taskbarColor, byte overlayAlpha)
+        {
+            Color normalizedTaskbarColor = Color.FromArgb(255, taskbarColor.R, taskbarColor.G, taskbarColor.B);
+            double luminance = GetRelativeLuminance(normalizedTaskbarColor);
+            Color edgeReferenceColor = luminance < 0.42D
+                ? Color.FromArgb(126, 164, 210)
+                : Color.FromArgb(20, 32, 58);
+
+            return new TaskbarVisualTheme
+            {
+                TaskbarColor = normalizedTaskbarColor,
+                BaseColor = GetInterpolatedColor(normalizedTaskbarColor, BackgroundBlue, 0.12D),
+                BorderColor = GetInterpolatedColor(normalizedTaskbarColor, edgeReferenceColor, 0.24D),
+                DividerColor = GetInterpolatedColor(normalizedTaskbarColor, edgeReferenceColor, 0.18D),
+                OverlayAlpha = overlayAlpha
+            };
+        }
+
+        private TaskbarVisualTheme CreateFallbackTaskbarVisualTheme()
+        {
+            uint colorizationColor;
+            bool opaqueBlend;
+            Color accentColor = BackgroundBlue;
+            if (DwmGetColorizationColor(out colorizationColor, out opaqueBlend) == 0)
+            {
+                accentColor = Color.FromArgb(
+                    255,
+                    (byte)((colorizationColor >> 16) & 0xFF),
+                    (byte)((colorizationColor >> 8) & 0xFF),
+                    (byte)(colorizationColor & 0xFF));
+            }
+
+            return new TaskbarVisualTheme
+            {
+                TaskbarColor = accentColor,
+                BaseColor = GetInterpolatedColor(BackgroundBlue, accentColor, 0.34D),
+                BorderColor = GetInterpolatedColor(BorderColor, accentColor, 0.24D),
+                DividerColor = GetInterpolatedColor(DividerColor, accentColor, 0.22D),
+                OverlayAlpha = TaskbarIntegratedPanelTintAlpha
+            };
+        }
+
+        private static double GetRelativeLuminance(Color color)
+        {
+            return ((color.R * 0.2126D) + (color.G * 0.7152D) + (color.B * 0.0722D)) / 255D;
         }
 
         private void TryActivatePopupWindow()
@@ -3009,6 +5327,166 @@ namespace TrafficView
             }
 
             return adjustedLocation;
+        }
+
+        private Point GetVisiblePopupLocationForManualDrag(Point preferredLocation, Point anchorPoint)
+        {
+            bool snappedToTaskbar;
+            TaskbarIntegrationSnapshot snapshot;
+            if (this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+            {
+                return this.GetVisiblePopupLocationForManualDrag(
+                    preferredLocation,
+                    anchorPoint,
+                    snapshot,
+                    out snappedToTaskbar);
+            }
+
+            Rectangle screenBounds = Screen.FromPoint(anchorPoint).Bounds;
+            return ClampLocationToWorkingArea(preferredLocation, this.Size, screenBounds);
+        }
+
+        private Point GetVisiblePopupLocationForManualDrag(
+            Point preferredLocation,
+            Point anchorPoint,
+            TaskbarIntegrationSnapshot snapshot,
+            out bool snappedToTaskbar)
+        {
+            snappedToTaskbar = false;
+            Rectangle screenBounds = Screen.FromPoint(anchorPoint).Bounds;
+            Point adjustedLocation = ClampLocationToWorkingArea(preferredLocation, this.Size, screenBounds);
+
+            if (snapshot == null ||
+                snapshot.IsHidden ||
+                snapshot.ScreenBounds != screenBounds)
+            {
+                return adjustedLocation;
+            }
+
+            Rectangle popupBounds = new Rectangle(adjustedLocation, this.Size);
+            bool overlapsTaskbarSpan = snapshot.IsVertical
+                ? popupBounds.Bottom > snapshot.Bounds.Top && popupBounds.Top < snapshot.Bounds.Bottom
+                : popupBounds.Right > snapshot.Bounds.Left && popupBounds.Left < snapshot.Bounds.Right;
+            if (!overlapsTaskbarSpan)
+            {
+                return adjustedLocation;
+            }
+
+            int snapDistance = this.ScaleValue(30);
+            int breakThroughDepth = this.ScaleValue(52);
+            switch (snapshot.Edge)
+            {
+                case AppBarEdge.Bottom:
+                    adjustedLocation.Y = this.ApplyTaskbarDragBarrierAxis(
+                        adjustedLocation.Y,
+                        popupBounds.Bottom,
+                        snapshot.Bounds.Top,
+                        this.Height,
+                        snapDistance,
+                        breakThroughDepth,
+                        true,
+                        out snappedToTaskbar);
+                    break;
+
+                case AppBarEdge.Top:
+                    adjustedLocation.Y = this.ApplyTaskbarDragBarrierAxis(
+                        adjustedLocation.Y,
+                        snapshot.Bounds.Bottom,
+                        popupBounds.Top,
+                        this.Height,
+                        snapDistance,
+                        breakThroughDepth,
+                        false,
+                        out snappedToTaskbar);
+                    break;
+
+                case AppBarEdge.Left:
+                    adjustedLocation.X = this.ApplyTaskbarDragBarrierAxis(
+                        adjustedLocation.X,
+                        snapshot.Bounds.Right,
+                        popupBounds.Left,
+                        this.Width,
+                        snapDistance,
+                        breakThroughDepth,
+                        false,
+                        out snappedToTaskbar);
+                    break;
+
+                case AppBarEdge.Right:
+                    adjustedLocation.X = this.ApplyTaskbarDragBarrierAxis(
+                        adjustedLocation.X,
+                        popupBounds.Right,
+                        snapshot.Bounds.Left,
+                        this.Width,
+                        snapDistance,
+                        breakThroughDepth,
+                        true,
+                        out snappedToTaskbar);
+                    break;
+            }
+
+            return adjustedLocation;
+        }
+
+        private int ApplyTaskbarDragBarrierAxis(
+            int currentLocation,
+            int outerPopupEdge,
+            int taskbarEdge,
+            int popupSize,
+            int snapDistance,
+            int breakThroughDepth,
+            bool snapOutsideBeforeTaskbar,
+            out bool snappedToBarrier)
+        {
+            int barrierLocation = snapOutsideBeforeTaskbar
+                ? taskbarEdge - popupSize
+                : taskbarEdge;
+            int direction = snapOutsideBeforeTaskbar ? 1 : -1;
+            int signedOffset = (currentLocation - barrierLocation) * direction;
+
+            if (signedOffset < -snapDistance || signedOffset > breakThroughDepth)
+            {
+                snappedToBarrier = false;
+                return currentLocation;
+            }
+
+            if (signedOffset <= 0)
+            {
+                // Outside the taskbar: keep a short magnetic snap zone directly
+                // before the edge so the popup can be aligned flush above/beside
+                // the taskbar more easily, then fade back into the softer pull.
+                int outsideHoldDistance = Math.Min(snapDistance, this.ScaleValue(TaskbarDesktopSnapHoldDistance));
+                if (Math.Abs(signedOffset) <= outsideHoldDistance)
+                {
+                    snappedToBarrier = false;
+                    return barrierLocation;
+                }
+
+                int distance = Math.Abs(signedOffset);
+                int easedOffset = (int)Math.Round((distance * distance) / (double)Math.Max(1, snapDistance));
+                snappedToBarrier = false;
+                return barrierLocation - (direction * easedOffset);
+            }
+
+            // Inside the taskbar: keep the popup taskbar-locked until the user
+            // pushes far enough through the magnetic threshold.
+            snappedToBarrier = true;
+            int easedInsideOffset = (int)Math.Round((signedOffset * signedOffset) / (double)Math.Max(1, breakThroughDepth));
+            return barrierLocation + (direction * easedInsideOffset);
+        }
+
+        private bool ShouldAutoIntegrateWithTaskbar(Rectangle popupBounds, TaskbarIntegrationSnapshot snapshot)
+        {
+            Rectangle overlap = Rectangle.Intersect(popupBounds, snapshot.Bounds);
+            if (overlap.Width <= 0 || overlap.Height <= 0)
+            {
+                return false;
+            }
+
+            int overlapDepth = snapshot.IsVertical ? overlap.Width : overlap.Height;
+            int taskbarThickness = snapshot.IsVertical ? snapshot.Bounds.Width : snapshot.Bounds.Height;
+            int requiredDepth = Math.Max(this.ScaleValue(6), Math.Min(taskbarThickness, this.ScaleValue(10)));
+            return overlapDepth >= requiredDepth;
         }
 
         private Rectangle GetBestWorkingArea(Point preferredLocation, Point? anchorPoint)
@@ -3219,7 +5697,10 @@ namespace TrafficView
 
         private void TopMostGuardTimer_Tick(object sender, EventArgs e)
         {
-            if (!this.Visible || this.IsDisposed || this.IsTopMostEnforcementPaused)
+            if (!this.Visible ||
+                this.IsDisposed ||
+                this.IsTopMostEnforcementPaused ||
+                (this.settings != null && this.settings.TaskbarIntegrationEnabled))
             {
                 return;
             }
@@ -3560,7 +6041,7 @@ namespace TrafficView
                 ? baseDiameter - 3
                 : baseDiameter);
             int x;
-            if (this.settings != null && this.settings.PopupSectionMode == PopupSectionMode.RightOnly)
+            if (this.GetEffectivePopupSectionMode() == PopupSectionMode.RightOnly)
             {
                 x = Math.Max(0, (this.ClientSize.Width - diameter) / 2);
             }
@@ -3644,15 +6125,20 @@ namespace TrafficView
                 float usableBand = Math.Max(2.4F, strokeWidth - gapBetweenRings);
                 float weightUnit = usableBand / Math.Max(0.1F, totalWeight);
                 float downloadStrokeWidth = Math.Max(4.2F, weightUnit * downloadWeight * 2.52F) + this.ScaleFloat(2F);
+                float uploadOffsetDownloadStrokeWidth = downloadStrokeWidth;
+                float downloadOutwardExpansion = this.IsTaskbarIntegrationActive()
+                    ? DpiHelper.Scale(TaskbarIntegratedDownloadRingOutwardExpansion, this.currentDpi)
+                    : 0F;
+                downloadStrokeWidth += downloadOutwardExpansion;
                 float uploadStrokeWidth = Math.Max(2.4F, weightUnit * uploadWeight * 1.18F);
 
                 RectangleF stableBounds = GetStableArcBounds(bounds);
                 RectangleF downloadBounds = GetStableArcBounds(
-                    InflateRectangle(stableBounds, -Math.Max(0F, (downloadStrokeWidth / 2F) - this.ScaleFloat(1F))));
+                    InflateRectangle(stableBounds, -Math.Max(0F, (downloadStrokeWidth / 2F) - this.ScaleFloat(1F) - downloadOutwardExpansion)));
                 RectangleF uploadBounds = GetStableArcBounds(
                     InflateRectangle(
                         stableBounds,
-                        -((downloadStrokeWidth / 2F) + gapBetweenRings + (uploadStrokeWidth / 2F))));
+                        -((uploadOffsetDownloadStrokeWidth / 2F) + gapBetweenRings + (uploadStrokeWidth / 2F))));
 
                 this.DrawSegmentedProgressSet(
                     graphics,
@@ -4276,10 +6762,11 @@ namespace TrafficView
             using (GraphicsPath shadingPath = CreateRoundedPath(shadingBounds, shadingCornerRadius))
             using (PathGradientBrush shadingBrush = new PathGradientBrush(shadingPath))
             {
+                Color basePanelColor = this.GetPanelBackgroundBaseColor();
                 Color convexCenterColor = ApplyAlpha(
-                    GetInterpolatedColor(BackgroundBlue, Color.FromArgb(104, 136, 194), 0.07D),
+                    GetInterpolatedColor(basePanelColor, Color.FromArgb(104, 136, 194), 0.07D),
                     backgroundAlpha);
-                Color convexEdgeColor = Color.FromArgb(0, BackgroundBlue.R, BackgroundBlue.G, BackgroundBlue.B);
+                Color convexEdgeColor = Color.FromArgb(0, basePanelColor.R, basePanelColor.G, basePanelColor.B);
                 Color[] surroundColors = new Color[Math.Max(1, shadingPath.PointCount)];
 
                 for (int i = 0; i < surroundColors.Length; i++)
@@ -4333,6 +6820,222 @@ namespace TrafficView
                         surfaceBrush.InterpolationColors = blend;
                         graphics.FillRectangle(surfaceBrush, surfaceBounds);
                     }
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
+        private void DrawTaskbarIntegratedPanelEdgeGradient(
+            Graphics graphics,
+            RectangleF outerBounds,
+            float cornerRadius,
+            byte backgroundAlpha)
+        {
+            if (this.activeTaskbarSnapshot == null || backgroundAlpha == 0)
+            {
+                return;
+            }
+
+            float maximumGradientWidth = Math.Min(outerBounds.Width, outerBounds.Height) / 2F;
+            float gradientWidth = Math.Min(
+                Math.Max(2F, this.ScaleFloat(TaskbarIntegratedEdgeGradientWidth)),
+                Math.Max(1F, maximumGradientWidth - 1F));
+            if (gradientWidth <= 1F)
+            {
+                return;
+            }
+
+            Color taskbarColor = this.activeTaskbarSnapshot.Theme.TaskbarColor;
+            int outerAlpha = Math.Min(
+                (int)TaskbarIntegratedEdgeGradientOuterAlpha,
+                Math.Max(72, (int)backgroundAlpha + 142));
+            int lipAlpha = Math.Min(
+                (int)TaskbarIntegratedEdgeGradientLipAlpha,
+                Math.Max(96, (int)backgroundAlpha + 160));
+            int steps = Math.Max(12, (int)Math.Ceiling(gradientWidth));
+
+            GraphicsState state = graphics.Save();
+
+            try
+            {
+                using (GraphicsPath clipPath = CreateRoundedPath(outerBounds, cornerRadius))
+                {
+                    graphics.SetClip(clipPath, CombineMode.Intersect);
+
+                    float lipWidth = Math.Min(
+                        gradientWidth,
+                        Math.Max(1F, this.ScaleFloat(TaskbarIntegratedEdgeGradientLipWidth)));
+                    RectangleF lipInnerBounds = InflateRectangle(outerBounds, -lipWidth);
+                    using (GraphicsPath lipOuterPath = CreateRoundedPath(outerBounds, cornerRadius))
+                    using (GraphicsPath lipInnerPath = CreateRoundedPath(
+                        lipInnerBounds,
+                        Math.Max(2F, cornerRadius - lipWidth)))
+                    using (Region lipRegion = new Region(lipOuterPath))
+                    using (SolidBrush lipBrush = new SolidBrush(ApplyAlpha(taskbarColor, (byte)lipAlpha)))
+                    {
+                        lipRegion.Exclude(lipInnerPath);
+                        graphics.FillRegion(lipBrush, lipRegion);
+                    }
+
+                    for (int step = 0; step < steps; step++)
+                    {
+                        float outerProgress = step / (float)steps;
+                        float innerProgress = (step + 1) / (float)steps;
+                        float outerInset = outerProgress * gradientWidth;
+                        float innerInset = innerProgress * gradientWidth;
+                        double blend = 1D - SmoothStep((outerProgress + innerProgress) * 0.5F);
+                        int alpha = (int)Math.Round(outerAlpha * blend);
+                        if (alpha <= 1)
+                        {
+                            continue;
+                        }
+
+                        RectangleF bandOuterBounds = InflateRectangle(outerBounds, -outerInset);
+                        RectangleF bandInnerBounds = InflateRectangle(outerBounds, -innerInset);
+                        if (bandOuterBounds.Width <= 1F || bandOuterBounds.Height <= 1F)
+                        {
+                            break;
+                        }
+
+                        using (GraphicsPath bandOuterPath = CreateRoundedPath(
+                            bandOuterBounds,
+                            Math.Max(2F, cornerRadius - outerInset)))
+                        using (GraphicsPath bandInnerPath = CreateRoundedPath(
+                            bandInnerBounds,
+                            Math.Max(2F, cornerRadius - innerInset)))
+                        using (Region bandRegion = new Region(bandOuterPath))
+                        using (SolidBrush bandBrush = new SolidBrush(ApplyAlpha(taskbarColor, (byte)Math.Min(255, alpha))))
+                        {
+                            bandRegion.Exclude(bandInnerPath);
+                            graphics.FillRegion(bandBrush, bandRegion);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
+        private void DrawTaskbarIntegratedInnerOpacityBoost(
+            Graphics graphics,
+            RectangleF innerBounds,
+            float innerCornerRadius,
+            bool drawRightSection)
+        {
+            if (this.activeTaskbarSnapshot == null)
+            {
+                return;
+            }
+
+            GraphicsState state = graphics.Save();
+
+            try
+            {
+                RectangleF focusBounds = drawRightSection
+                    ? new RectangleF(
+                        innerBounds.Left + (innerBounds.Width * 0.05F),
+                        innerBounds.Top + (innerBounds.Height * 0.11F),
+                        innerBounds.Width * 0.58F,
+                        innerBounds.Height * 0.74F)
+                    : new RectangleF(
+                        innerBounds.Left + (innerBounds.Width * 0.12F),
+                        innerBounds.Top + (innerBounds.Height * 0.11F),
+                        innerBounds.Width * 0.76F,
+                        innerBounds.Height * 0.74F);
+                float focusCornerRadius = Math.Max(4F, Math.Min(focusBounds.Width, focusBounds.Height) * 0.18F);
+
+                using (GraphicsPath clipPath = CreateRoundedPath(innerBounds, innerCornerRadius))
+                using (GraphicsPath focusPath = CreateRoundedPath(focusBounds, focusCornerRadius))
+                using (PathGradientBrush opacityBrush = new PathGradientBrush(focusPath))
+                {
+                    Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
+                    Color[] surroundColors = new Color[Math.Max(1, focusPath.PointCount)];
+                    for (int i = 0; i < surroundColors.Length; i++)
+                    {
+                        surroundColors[i] = Color.FromArgb(0, panelBackgroundColor.R, panelBackgroundColor.G, panelBackgroundColor.B);
+                    }
+
+                    graphics.SetClip(clipPath, CombineMode.Intersect);
+                    opacityBrush.CenterPoint = new PointF(
+                        focusBounds.Left + (focusBounds.Width * (drawRightSection ? 0.42F : 0.50F)),
+                        focusBounds.Top + (focusBounds.Height * 0.50F));
+                    opacityBrush.FocusScales = drawRightSection
+                        ? new PointF(0.80F, 0.78F)
+                        : new PointF(0.84F, 0.78F);
+                    opacityBrush.CenterColor = ApplyAlpha(panelBackgroundColor, TaskbarIntegratedPanelInnerOpacityBoostAlpha);
+                    opacityBrush.SurroundColors = surroundColors;
+                    opacityBrush.WrapMode = WrapMode.Clamp;
+                    graphics.FillPath(opacityBrush, focusPath);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
+        private void DrawTaskbarIntegratedInfoOpacityPlate(Graphics graphics, Rectangle meterBounds)
+        {
+            if (this.activeTaskbarSnapshot == null || !this.IsLeftSectionVisible())
+            {
+                return;
+            }
+
+            int left = this.ScaleValue(4);
+            int right = this.GetLeftSectionRightBoundary(meterBounds, left + this.ScaleValue(44)) - this.ScaleValue(2);
+            int top = this.ScaleValue(4);
+            int bottom = Math.Min(
+                this.ClientSize.Height - this.ScaleValue(6),
+                this.uploadValueLabel.Bounds.Bottom + this.ScaleValue(4));
+            if (right - left < this.ScaleValue(18) || bottom - top < this.ScaleValue(18))
+            {
+                return;
+            }
+
+            RectangleF plateBounds = new RectangleF(
+                AlignToHalfPixel(left),
+                AlignToHalfPixel(top),
+                Math.Max(1F, right - left),
+                Math.Max(1F, bottom - top));
+            float radius = Math.Max(this.ScaleFloat(6F), Math.Min(plateBounds.Width, plateBounds.Height) * 0.16F);
+            Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
+
+            GraphicsState state = graphics.Save();
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.Half;
+
+                using (GraphicsPath platePath = CreateRoundedPath(plateBounds, radius))
+                using (LinearGradientBrush fillBrush = new LinearGradientBrush(
+                    new PointF(plateBounds.Left, plateBounds.Top),
+                    new PointF(plateBounds.Right, plateBounds.Bottom),
+                    ApplyAlpha(GetInterpolatedColor(panelBackgroundColor, Color.FromArgb(6, 14, 34), 0.42D), TaskbarIntegratedInfoPlateFillAlpha),
+                    ApplyAlpha(GetInterpolatedColor(panelBackgroundColor, Color.FromArgb(10, 20, 40), 0.30D), (byte)Math.Max(0, TaskbarIntegratedInfoPlateFillAlpha - 16))))
+                using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
+                    new PointF(plateBounds.Left, plateBounds.Top),
+                    new PointF(plateBounds.Left, plateBounds.Bottom),
+                    Color.Transparent,
+                    Color.Transparent))
+                {
+                    ColorBlend blend = new ColorBlend();
+                    blend.Positions = new float[] { 0F, 0.16F, 0.48F, 1F };
+                    blend.Colors = new Color[]
+                    {
+                        ApplyAlpha(Color.FromArgb(218, 234, 255), TaskbarIntegratedInfoPlateHighlightAlpha),
+                        ApplyAlpha(Color.FromArgb(168, 202, 240), (byte)Math.Max(0, TaskbarIntegratedInfoPlateHighlightAlpha - 8)),
+                        Color.FromArgb(0, 140, 176, 220),
+                        Color.FromArgb(0, 24, 34, 48)
+                    };
+                    highlightBrush.InterpolationColors = blend;
+
+                    graphics.FillPath(fillBrush, platePath);
+                    graphics.FillPath(highlightBrush, platePath);
                 }
             }
             finally
@@ -4562,23 +7265,18 @@ namespace TrafficView
                         try
                         {
                             GraphicsState imageState = graphics.Save();
-                            try
-                            {
-                                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                                graphics.CompositingQuality = CompositingQuality.HighQuality;
+                            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                            graphics.CompositingQuality = CompositingQuality.HighQuality;
 
-                                Bitmap meterCenterImage = GetCachedMeterCenterAsset(meterCenterAssetPath);
-                                if (meterCenterImage != null)
-                                {
-                                    graphics.DrawImage(meterCenterImage, centerBounds);
-                                    return;
-                                }
-                            }
-                            finally
+                            Bitmap meterCenterImage = GetCachedMeterCenterAsset(meterCenterAssetPath);
+                            if (meterCenterImage != null)
                             {
+                                graphics.DrawImage(meterCenterImage, centerBounds);
                                 graphics.Restore(imageState);
+                                return;
                             }
+                            graphics.Restore(imageState);
                         }
                         catch (Exception ex)
                         {
@@ -4831,12 +7529,14 @@ namespace TrafficView
             float lineY = AlignToHalfPixel(separatorY);
             float accentWidth = Math.Max(1F, this.ScaleFloat(1F));
             float transitionOffset = Math.Max(1F, this.ScaleFloat(1F));
+            Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
+            Color panelDividerColor = this.GetPanelDividerBaseColor();
 
             using (Pen transitionPen = new Pen(
-                ApplyAlpha(GetInterpolatedColor(BackgroundBlue, DividerColor, 0.20D), Math.Min(backgroundAlpha, (byte)52)),
+                ApplyAlpha(GetInterpolatedColor(panelBackgroundColor, panelDividerColor, 0.20D), Math.Min(backgroundAlpha, (byte)52)),
                 accentWidth))
             using (Pen separatorPen = new Pen(
-                ApplyAlpha(GetInterpolatedColor(DividerColor, BackgroundBlue, 0.14D), Math.Min(backgroundAlpha, (byte)88)),
+                ApplyAlpha(GetInterpolatedColor(panelDividerColor, panelBackgroundColor, 0.14D), Math.Min(backgroundAlpha, (byte)88)),
                 accentWidth))
             {
                 transitionPen.StartCap = LineCap.Flat;
@@ -5125,13 +7825,15 @@ namespace TrafficView
                 int innerAlpha = Math.Min(64, 28 + (int)Math.Round(transparencyPercent * 0.18D));
                 int highlightStrongAlpha = Math.Min(92, 66 + (int)Math.Round(transparencyPercent * 0.20D));
                 int highlightSoftAlpha = Math.Min(44, 28 + (int)Math.Round(transparencyPercent * 0.14D));
+                Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
+                Color panelBorderColor = this.GetPanelBorderBaseColor();
 
                 using (GraphicsPath platePath = CreateRoundedPath(bounds, radius))
                 using (GraphicsPath innerPath = CreateRoundedPath(
                     InflateRectangle(bounds, -this.ScaleFloat(1.5F)),
                     Math.Max(2F, radius - this.ScaleFloat(1.5F))))
-                using (SolidBrush fillBrush = new SolidBrush(Color.FromArgb(fillAlpha, 5, 14, 34)))
-                using (Pen borderPen = new Pen(Color.FromArgb(borderAlpha, 164, 215, 255), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                using (SolidBrush fillBrush = new SolidBrush(ApplyAlpha(GetInterpolatedColor(panelBackgroundColor, Color.FromArgb(5, 14, 34), 0.40D), (byte)fillAlpha)))
+                using (Pen borderPen = new Pen(ApplyAlpha(GetInterpolatedColor(panelBorderColor, Color.FromArgb(164, 215, 255), 0.32D), (byte)borderAlpha), Math.Max(0.8F, this.ScaleFloat(0.8F))))
                 using (Pen innerPen = new Pen(Color.FromArgb(innerAlpha, 255, 255, 255), Math.Max(0.6F, this.ScaleFloat(0.6F))))
                 using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
                     new PointF(bounds.Left, bounds.Top),
@@ -5161,7 +7863,7 @@ namespace TrafficView
                 float separatorTop = this.downloadValueLabel.Bounds.Bottom + this.ScaleFloat(2F);
                 float separatorBottom = this.uploadCaptionLabel.Bounds.Top - this.ScaleFloat(1F);
                 float separatorY = (separatorTop + separatorBottom) / 2F;
-                using (Pen separatorPen = new Pen(Color.FromArgb(28, 150, 196, 255), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                using (Pen separatorPen = new Pen(ApplyAlpha(GetInterpolatedColor(this.GetPanelDividerBaseColor(), Color.FromArgb(150, 196, 255), 0.24D), 28), Math.Max(0.8F, this.ScaleFloat(0.8F))))
                 {
                     graphics.DrawLine(
                         separatorPen,
@@ -5203,6 +7905,8 @@ namespace TrafficView
             int fillAlpha = Math.Min(176, 42 + (int)Math.Round(transparencyPercent * 0.90D));
             int borderAlpha = Math.Min(82, 18 + (int)Math.Round(transparencyPercent * 0.34D));
             int highlightAlpha = Math.Min(62, 14 + (int)Math.Round(transparencyPercent * 0.26D));
+            Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
+            Color panelBorderColor = this.GetPanelBorderBaseColor();
 
             GraphicsState state = graphics.Save();
             try
@@ -5214,14 +7918,14 @@ namespace TrafficView
                 using (LinearGradientBrush fillBrush = new LinearGradientBrush(
                     new PointF(bounds.Left, bounds.Top),
                     new PointF(bounds.Right, bounds.Bottom),
-                    Color.FromArgb(fillAlpha, 4, 10, 24),
-                    Color.FromArgb(Math.Max(0, fillAlpha - 18), 8, 18, 36)))
+                    ApplyAlpha(GetInterpolatedColor(panelBackgroundColor, Color.FromArgb(4, 10, 24), 0.42D), (byte)fillAlpha),
+                    ApplyAlpha(GetInterpolatedColor(panelBackgroundColor, Color.FromArgb(8, 18, 36), 0.34D), (byte)Math.Max(0, fillAlpha - 18))))
                 using (LinearGradientBrush highlightBrush = new LinearGradientBrush(
                     new PointF(bounds.Left, bounds.Top),
                     new PointF(bounds.Left, bounds.Bottom),
                     Color.Transparent,
                     Color.Transparent))
-                using (Pen borderPen = new Pen(Color.FromArgb(borderAlpha, 132, 192, 235), Math.Max(0.8F, this.ScaleFloat(0.8F))))
+                using (Pen borderPen = new Pen(ApplyAlpha(GetInterpolatedColor(panelBorderColor, Color.FromArgb(132, 192, 235), 0.28D), (byte)borderAlpha), Math.Max(0.8F, this.ScaleFloat(0.8F))))
                 {
                     ColorBlend blend = new ColorBlend();
                     blend.Positions = new float[] { 0F, 0.16F, 0.40F, 1F };
@@ -5261,20 +7965,30 @@ namespace TrafficView
                 : TrafficTextStringFormat;
             int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
             bool ultraTransparent = transparencyPercent >= 100;
-            int glowAlpha = ultraTransparent
+            bool taskbarIntegrated = this.IsTaskbarIntegrationActive();
+            Color textColor = taskbarIntegrated && isPrimaryValue
+                ? GetCrispTaskbarIntegratedValueColor(color)
+                : color;
+            int glowAlpha = taskbarIntegrated
+                ? (isPrimaryValue ? 42 : 34)
+                : ultraTransparent
                 ? (isPrimaryValue ? 68 : 42)
                 : Math.Min(isPrimaryValue ? 48 : 28, (isPrimaryValue ? 28 : 16) + (int)Math.Round(transparencyPercent * 0.22D));
-            int shadowAlpha = ultraTransparent
+            int shadowAlpha = taskbarIntegrated
+                ? (isPrimaryValue ? 214 : 176)
+                : ultraTransparent
                 ? (isPrimaryValue ? 212 : 176)
                 : Math.Min(isPrimaryValue ? 164 : 132, (isPrimaryValue ? 112 : 92) + (int)Math.Round(transparencyPercent * 0.52D));
-            int outlineAlpha = ultraTransparent
+            int outlineAlpha = taskbarIntegrated
+                ? (isPrimaryValue ? 206 : 172)
+                : ultraTransparent
                 ? (isPrimaryValue ? 198 : 166)
                 : Math.Min(isPrimaryValue ? 148 : 118, (isPrimaryValue ? 92 : 72) + (int)Math.Round(transparencyPercent * 0.56D));
 
-            using (SolidBrush glowBrush = new SolidBrush(Color.FromArgb(glowAlpha, color)))
+            using (SolidBrush glowBrush = new SolidBrush(Color.FromArgb(glowAlpha, textColor)))
             using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(shadowAlpha, 4, 10, 24)))
             using (SolidBrush outlineBrush = new SolidBrush(Color.FromArgb(outlineAlpha, 6, 14, 30)))
-            using (SolidBrush textBrush = new SolidBrush(color))
+            using (SolidBrush textBrush = new SolidBrush(textColor))
             {
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
                 graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -5318,7 +8032,7 @@ namespace TrafficView
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
 
-                Color supportColor = GetInterpolatedColor(BackgroundBlue, MeterTrackInnerColor, 0.14D);
+                Color supportColor = GetInterpolatedColor(this.GetPanelBackgroundBaseColor(), MeterTrackInnerColor, 0.14D);
                 using (LinearGradientBrush supportBrush = new LinearGradientBrush(
                     new PointF(supportBounds.Left, supportBounds.Top),
                     new PointF(supportBounds.Right, supportBounds.Top),
@@ -5506,6 +8220,11 @@ namespace TrafficView
 
             int left = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineLeft : 8);
             int top = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineTop : 46);
+            if (this.IsTaskbarIntegrationActive())
+            {
+                top = Math.Max(0, top - this.ScaleValue(4));
+            }
+
             int width = this.IsRightSectionVisible()
                 ? Math.Max(12, meterBounds.Left - left - this.ScaleValue(4))
                 : Math.Max(18, this.ClientSize.Width - left - this.ScaleValue(6));
@@ -5709,7 +8428,13 @@ namespace TrafficView
                 0.5F);
             int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
             bool ultraTransparent = transparencyPercent >= 100;
-            int contrastAlpha = ultraTransparent
+            bool taskbarIntegrated = this.IsTaskbarIntegrationActive();
+            Color textColor = taskbarIntegrated && isPrimaryValue
+                ? GetCrispTaskbarIntegratedValueColor(color)
+                : color;
+            int contrastAlpha = taskbarIntegrated
+                ? (isPrimaryValue ? 174 : 138)
+                : ultraTransparent
                 ? (isPrimaryValue ? 164 : 132)
                 : Math.Min(
                     isPrimaryValue ? 112 : 86,
@@ -5720,7 +8445,7 @@ namespace TrafficView
                 BackgroundBlue.R,
                 BackgroundBlue.G,
                 BackgroundBlue.B)))
-            using (SolidBrush textBrush = new SolidBrush(color))
+            using (SolidBrush textBrush = new SolidBrush(textColor))
             {
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
                 graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -5743,6 +8468,14 @@ namespace TrafficView
             }
 
             graphics.Restore(state);
+        }
+
+        private static Color GetCrispTaskbarIntegratedValueColor(Color color)
+        {
+            double whiteBoost = color.ToArgb() == DownloadValueColor.ToArgb()
+                ? 0.44D
+                : 0.28D;
+            return GetInterpolatedColor(color, Color.White, whiteBoost);
         }
 
         private double GetVisualizedFillRatioForCurrentDownload()
@@ -6363,7 +9096,9 @@ namespace TrafficView
             Size baseClientSize = definition != null && definition.ClientSize.HasValue
                 ? definition.ClientSize.Value
                 : new Size(BaseClientWidth, BaseClientHeight);
-            baseClientSize = this.GetBaseClientSizeForCurrentSection(baseClientSize);
+            baseClientSize = this.GetBaseClientSizeForSection(
+                this.GetDisplayModeAdjustedBaseClientSize(baseClientSize),
+                this.GetEffectivePopupSectionMode());
             Size clientSize = this.ScaleSkinSize(baseClientSize);
             this.ClientSize = clientSize;
             this.MinimumSize = clientSize;
@@ -6387,6 +9122,11 @@ namespace TrafficView
             Rectangle scaledUploadValueBounds = this.GetValueBoundsForCurrentSection(
                 defaultUploadValueBounds,
                 definition != null ? definition.UploadValueBounds : (Rectangle?)null);
+
+            if (this.IsTaskbarIntegrationActive() && !scaledUploadValueBounds.IsEmpty)
+            {
+                scaledUploadValueBounds.Offset(0, -this.ScaleValue(2));
+            }
 
             this.downloadCaptionLabel.Font = this.captionFont;
             this.downloadCaptionLabel.Location = scaledDownloadCaptionBounds.Location;
@@ -6420,7 +9160,14 @@ namespace TrafficView
 
         private Size GetBaseClientSizeForCurrentSection(Size baseClientSize)
         {
-            switch (this.settings.PopupSectionMode)
+            return this.GetBaseClientSizeForSection(
+                this.GetDisplayModeAdjustedBaseClientSize(baseClientSize),
+                this.GetEffectivePopupSectionMode());
+        }
+
+        private Size GetBaseClientSizeForSection(Size baseClientSize, PopupSectionMode popupSectionMode)
+        {
+            switch (popupSectionMode)
             {
                 case PopupSectionMode.LeftOnly:
                     return new Size(
@@ -6435,14 +9182,79 @@ namespace TrafficView
             }
         }
 
+        private Size GetDisplayModeAdjustedBaseClientSize(Size baseClientSize)
+        {
+            return baseClientSize;
+        }
+
+        private int GetPanelOuterInset()
+        {
+            if (this.IsMiniSoftDisplayMode())
+            {
+                return Math.Max(1, BaseOuterInset - 1);
+            }
+
+            return BaseOuterInset;
+        }
+
+        private Size GetScaledClientSizeForSection(PopupSectionMode popupSectionMode)
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            Size baseClientSize = definition != null && definition.ClientSize.HasValue
+                ? definition.ClientSize.Value
+                : new Size(BaseClientWidth, BaseClientHeight);
+            return this.ScaleSkinSize(
+                this.GetBaseClientSizeForSection(
+                    this.GetDisplayModeAdjustedBaseClientSize(baseClientSize),
+                    popupSectionMode));
+        }
+
+        private bool NeedsCurrentDpiLayout()
+        {
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            Size baseClientSize = definition != null && definition.ClientSize.HasValue
+                ? definition.ClientSize.Value
+                : new Size(BaseClientWidth, BaseClientHeight);
+            baseClientSize = this.GetBaseClientSizeForCurrentSection(baseClientSize);
+            Size desiredClientSize = this.ScaleSkinSize(baseClientSize);
+            return this.ClientSize != desiredClientSize ||
+                this.MinimumSize != desiredClientSize ||
+                this.MaximumSize != desiredClientSize;
+        }
+
+        private bool NeedsTaskbarIntegrationLayoutRefresh(TaskbarIntegrationSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.IsHidden)
+            {
+                if (this.lastAppliedTaskbarThickness != -1)
+                {
+                    this.lastAppliedTaskbarThickness = -1;
+                }
+
+                return false;
+            }
+
+            int currentTaskbarThickness = snapshot.IsVertical
+                ? snapshot.Bounds.Width
+                : snapshot.Bounds.Height;
+            if (this.lastAppliedTaskbarThickness == currentTaskbarThickness)
+            {
+                return false;
+            }
+
+            this.lastAppliedTaskbarThickness = currentTaskbarThickness;
+            return true;
+        }
+
         private Rectangle GetCaptionBoundsForCurrentSection(Rectangle defaultBounds, Rectangle? overrideBounds)
         {
-            if (this.settings.PopupSectionMode == PopupSectionMode.RightOnly)
+            PopupSectionMode popupSectionMode = this.GetEffectivePopupSectionMode();
+            if (popupSectionMode == PopupSectionMode.RightOnly)
             {
                 return Rectangle.Empty;
             }
 
-            if (this.settings.PopupSectionMode == PopupSectionMode.Both)
+            if (popupSectionMode == PopupSectionMode.Both)
             {
                 return this.GetScaledSkinBounds(defaultBounds, overrideBounds);
             }
@@ -6454,12 +9266,13 @@ namespace TrafficView
 
         private Rectangle GetValueBoundsForCurrentSection(Rectangle defaultBounds, Rectangle? overrideBounds)
         {
-            if (this.settings.PopupSectionMode == PopupSectionMode.RightOnly)
+            PopupSectionMode popupSectionMode = this.GetEffectivePopupSectionMode();
+            if (popupSectionMode == PopupSectionMode.RightOnly)
             {
                 return Rectangle.Empty;
             }
 
-            if (this.settings.PopupSectionMode == PopupSectionMode.Both)
+            if (popupSectionMode == PopupSectionMode.Both)
             {
                 return this.GetScaledSkinBounds(defaultBounds, overrideBounds);
             }
@@ -6488,7 +9301,47 @@ namespace TrafficView
 
         private double GetPopupScaleFactor()
         {
-            return Math.Max(0.5D, this.settings.PopupScalePercent / 100D);
+            double popupScaleFactor = Math.Max(0.5D, this.settings.PopupScalePercent / 100D);
+            if (!this.IsTaskbarIntegrationActive())
+            {
+                return popupScaleFactor;
+            }
+
+            return popupScaleFactor * this.GetTaskbarIntegrationScaleFactor();
+        }
+
+        private double GetTaskbarIntegrationScaleFactor()
+        {
+            if (this.activeTaskbarSnapshot == null)
+            {
+                return 1D;
+            }
+
+            int taskbarThickness = this.activeTaskbarSnapshot.IsVertical
+                ? this.activeTaskbarSnapshot.Bounds.Width
+                : this.activeTaskbarSnapshot.Bounds.Height;
+            int scaledTaskbarInsetThickness = Math.Max(1, DpiHelper.Scale(TaskbarInsetThickness, this.currentDpi));
+            int usableTaskbarThickness = Math.Max(
+                1,
+                taskbarThickness - (2 * scaledTaskbarInsetThickness));
+            int baseThickness = DpiHelper.Scale(
+                this.activeTaskbarSnapshot.IsVertical ? BaseClientWidth : BaseClientHeight,
+                this.currentDpi);
+            if (baseThickness <= 0)
+            {
+                return 1D;
+            }
+
+            double scaleFactor = Math.Max(0.42D, Math.Min(1.85D, usableTaskbarThickness / (double)baseThickness));
+            return scaleFactor;
+        }
+
+        private bool IsTaskbarIntegrationActive()
+        {
+            return this.settings != null &&
+                this.settings.TaskbarIntegrationEnabled &&
+                this.activeTaskbarSnapshot != null &&
+                !this.activeTaskbarSnapshot.IsHidden;
         }
 
         private Point GetPopupScaleAdjustedLocation(Rectangle previousBounds)
@@ -6638,7 +9491,37 @@ namespace TrafficView
             Point preferredLocation = new Point(
                 this.dragStartLocation.X + deltaX,
                 this.dragStartLocation.Y + deltaY);
-            this.Location = this.GetVisiblePopupLocation(preferredLocation, cursorPosition, null, null);
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                TaskbarIntegrationSnapshot snapshot = this.activeTaskbarSnapshot;
+                if (snapshot == null && !this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+                {
+                    return;
+                }
+
+                bool snappedToTaskbar;
+                Point dragLocation = this.GetVisiblePopupLocationForManualDrag(
+                    preferredLocation,
+                    cursorPosition,
+                    snapshot,
+                    out snappedToTaskbar);
+                this.taskbarIntegrationPreferredLocation = preferredLocation;
+
+                if (snappedToTaskbar)
+                {
+                    Rectangle placementBounds;
+                    if (this.TryGetTaskbarPlacementBounds(snapshot, out placementBounds))
+                    {
+                        this.Location = placementBounds.Location;
+                        return;
+                    }
+                }
+
+                this.Location = dragLocation;
+                return;
+            }
+
+            this.Location = this.GetVisiblePopupLocationForManualDrag(preferredLocation, cursorPosition);
         }
 
         private void Control_MouseUp(object sender, MouseEventArgs e)

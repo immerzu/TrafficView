@@ -27,7 +27,8 @@ namespace TrafficView
             string panelSkinId = "08",
             PopupDisplayMode popupDisplayMode = PopupDisplayMode.Standard,
             PopupSectionMode popupSectionMode = PopupSectionMode.Both,
-            bool rotatingMeterGlossEnabled = true)
+            bool rotatingMeterGlossEnabled = true,
+            bool taskbarIntegrationEnabled = false)
         {
             this.AdapterId = adapterId ?? string.Empty;
             this.AdapterName = adapterName ?? string.Empty;
@@ -46,6 +47,7 @@ namespace TrafficView
             this.PopupDisplayMode = NormalizePopupDisplayMode(popupDisplayMode);
             this.PopupSectionMode = NormalizePopupSectionMode(popupSectionMode);
             this.RotatingMeterGlossEnabled = rotatingMeterGlossEnabled;
+            this.TaskbarIntegrationEnabled = taskbarIntegrationEnabled;
         }
 
         public string AdapterId { get; private set; }
@@ -90,6 +92,8 @@ namespace TrafficView
 
         public bool RotatingMeterGlossEnabled { get; private set; }
 
+        public bool TaskbarIntegrationEnabled { get; private set; }
+
         public MonitorSettings Clone()
         {
             return new MonitorSettings(
@@ -109,7 +113,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
@@ -131,7 +136,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
@@ -153,7 +159,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithTransparencyPercent(int transparencyPercent)
@@ -175,7 +182,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithLanguageCode(string languageCode)
@@ -197,7 +205,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithPopupLocation(Point popupLocation)
@@ -219,7 +228,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithPopupScalePercent(int popupScalePercent)
@@ -241,7 +251,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithPanelSkinId(string panelSkinId)
@@ -285,7 +296,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 popupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithPopupSectionMode(PopupSectionMode popupSectionMode)
@@ -307,7 +319,8 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 popupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithRotatingMeterGlossEnabled(bool rotatingMeterGlossEnabled)
@@ -329,7 +342,31 @@ namespace TrafficView
                 this.PanelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                rotatingMeterGlossEnabled);
+                rotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
+        }
+
+        public MonitorSettings WithTaskbarIntegrationEnabled(bool taskbarIntegrationEnabled)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent,
+                this.PanelSkinId,
+                this.PopupDisplayMode,
+                this.PopupSectionMode,
+                this.RotatingMeterGlossEnabled,
+                taskbarIntegrationEnabled);
         }
 
         public double GetDownloadVisualizationPeak()
@@ -593,6 +630,7 @@ namespace TrafficView
             PopupDisplayMode popupDisplayMode = defaults.PopupDisplayMode;
             PopupSectionMode popupSectionMode = defaults.PopupSectionMode;
             bool rotatingMeterGlossEnabled = defaults.RotatingMeterGlossEnabled;
+            bool taskbarIntegrationEnabled = defaults.TaskbarIntegrationEnabled;
 
             foreach (string line in lines)
             {
@@ -759,6 +797,14 @@ namespace TrafficView
                     rotatingMeterGlossEnabled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
+                if (string.Equals(key, "TaskbarIntegrationEnabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    taskbarIntegrationEnabled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
                 }
             }
 
@@ -779,7 +825,8 @@ namespace TrafficView
                 panelSkinId,
                 popupDisplayMode,
                 popupSectionMode,
-                rotatingMeterGlossEnabled);
+                rotatingMeterGlossEnabled,
+                taskbarIntegrationEnabled);
         }
 
         private static bool ContainsStoredValidLanguageSetting(string[] lines)
@@ -892,6 +939,12 @@ namespace TrafficView
             }
 
             if (string.Equals(key, "RotatingMeterGlossEnabled", StringComparison.OrdinalIgnoreCase))
+            {
+                bool parsedValue;
+                return TryParseStoredBoolean(value, out parsedValue);
+            }
+
+            if (string.Equals(key, "TaskbarIntegrationEnabled", StringComparison.OrdinalIgnoreCase))
             {
                 bool parsedValue;
                 return TryParseStoredBoolean(value, out parsedValue);
@@ -1039,7 +1092,8 @@ namespace TrafficView
                 string.Format("PanelSkinId={0}", this.PanelSkinId),
                 string.Format("PopupDisplayMode={0}", this.PopupDisplayMode),
                 string.Format("PopupSectionMode={0}", this.PopupSectionMode),
-                string.Format("RotatingMeterGlossEnabled={0}", this.RotatingMeterGlossEnabled ? "1" : "0")
+                string.Format("RotatingMeterGlossEnabled={0}", this.RotatingMeterGlossEnabled ? "1" : "0"),
+                string.Format("TaskbarIntegrationEnabled={0}", this.TaskbarIntegrationEnabled ? "1" : "0")
             };
         }
 

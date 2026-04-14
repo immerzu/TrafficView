@@ -74,7 +74,7 @@ function Restore-TextFileIfAvailable {
         return
     }
 
-    Set-Content -LiteralPath $Path -Value $Lines -Encoding ASCII
+    Set-Content -LiteralPath $Path -Value $Lines -Encoding UTF8
 }
 
 function Remove-DeleteStagingDirectory {

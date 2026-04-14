@@ -7,6 +7,8 @@ namespace TrafficView
     internal static class DpiHelper
     {
         private const int BaseDpi = 96;
+        private const int ErrorAccessDenied = 5;
+        private const int HResultAccessDenied = unchecked((int)0x80070005);
         private static readonly IntPtr DpiAwarenessContextPerMonitorAwareV2 = new IntPtr(-4);
 
         private enum ProcessDpiAwareness
@@ -32,10 +34,19 @@ namespace TrafficView
         {
             try
             {
-                if (Environment.OSVersion.Version.Major >= 10 &&
-                    SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2))
+                if (Environment.OSVersion.Version.Major >= 10)
                 {
-                    return;
+                    if (SetProcessDpiAwarenessContext(DpiAwarenessContextPerMonitorAwareV2))
+                    {
+                        return;
+                    }
+
+                    if (Marshal.GetLastWin32Error() == ErrorAccessDenied)
+                    {
+                        // The process DPI awareness may already be fixed by app config
+                        // or manifest. Treat this as success instead of warning.
+                        return;
+                    }
                 }
             }
             catch (EntryPointNotFoundException)
@@ -50,6 +61,12 @@ namespace TrafficView
                 int result = SetProcessDpiAwareness(ProcessDpiAwareness.ProcessPerMonitorDpiAware);
                 if (result == 0)
                 {
+                    return;
+                }
+
+                if (result == HResultAccessDenied)
+                {
+                    // Already configured by manifest/app config; no fallback warning needed.
                     return;
                 }
 
