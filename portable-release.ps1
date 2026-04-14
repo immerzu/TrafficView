@@ -9,6 +9,7 @@ $stageWithDefaultsDir = Join-Path $stageWithDefaultsRoot 'TrafficView'
 $outputRoot = Join-Path (Split-Path -Parent $projectRoot) 'Ausgabe'
 $programCsPath = Join-Path $projectRoot 'src\Program.cs'
 $settingsFileName = 'TrafficView.settings.ini'
+$settingsBackupFileName = 'TrafficView.settings.ini_'
 
 if (-not (Test-Path $distDir)) {
     throw "Dist-Ordner nicht gefunden: $distDir"
@@ -45,6 +46,7 @@ function Get-DefaultSettingsLines {
         'PopupScalePercent=100',
         'PanelSkinId=08',
         'PopupDisplayMode=Standard',
+        'PopupSectionMode=Both',
         'RotatingMeterGlossEnabled=1'
     )
 }
@@ -57,7 +59,10 @@ function Remove-PortableNoise {
 
     $excludedFiles = @(
         'Verbrauch.txt',
+        'Verbrauch.txt_',
         'Verbrauch.archiv.txt',
+        'Verbrauch.archiv.txt_',
+        $settingsBackupFileName,
         $settingsFileName
     )
 
@@ -68,6 +73,10 @@ function Remove-PortableNoise {
     }
 
     Get-ChildItem -LiteralPath $TargetDirectory -Recurse -Force -File -Filter 'Verbrauch.archiv.*.txt.gz' -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
+
+    Get-ChildItem -LiteralPath $TargetDirectory -Recurse -Force -File -Filter '*.lnk' -ErrorAction SilentlyContinue | ForEach-Object {
         Remove-Item -LiteralPath $_.FullName -Force
     }
 

@@ -26,6 +26,7 @@ namespace TrafficView
             int popupScalePercent = 100,
             string panelSkinId = "08",
             PopupDisplayMode popupDisplayMode = PopupDisplayMode.Standard,
+            PopupSectionMode popupSectionMode = PopupSectionMode.Both,
             bool rotatingMeterGlossEnabled = true)
         {
             this.AdapterId = adapterId ?? string.Empty;
@@ -43,6 +44,7 @@ namespace TrafficView
             this.PopupScalePercent = NormalizePopupScalePercent(popupScalePercent);
             this.PanelSkinId = NormalizePanelSkinId(panelSkinId);
             this.PopupDisplayMode = NormalizePopupDisplayMode(popupDisplayMode);
+            this.PopupSectionMode = NormalizePopupSectionMode(popupSectionMode);
             this.RotatingMeterGlossEnabled = rotatingMeterGlossEnabled;
         }
 
@@ -84,6 +86,8 @@ namespace TrafficView
 
         public PopupDisplayMode PopupDisplayMode { get; private set; }
 
+        public PopupSectionMode PopupSectionMode { get; private set; }
+
         public bool RotatingMeterGlossEnabled { get; private set; }
 
         public MonitorSettings Clone()
@@ -104,6 +108,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -125,6 +130,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -146,6 +152,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -167,6 +174,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -188,6 +196,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -209,6 +218,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -230,6 +240,7 @@ namespace TrafficView
                 popupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -251,6 +262,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 panelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -272,6 +284,29 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 popupDisplayMode,
+                this.PopupSectionMode,
+                this.RotatingMeterGlossEnabled);
+        }
+
+        public MonitorSettings WithPopupSectionMode(PopupSectionMode popupSectionMode)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent,
+                this.PanelSkinId,
+                this.PopupDisplayMode,
+                popupSectionMode,
                 this.RotatingMeterGlossEnabled);
         }
 
@@ -293,6 +328,7 @@ namespace TrafficView
                 this.PopupScalePercent,
                 this.PanelSkinId,
                 this.PopupDisplayMode,
+                this.PopupSectionMode,
                 rotatingMeterGlossEnabled);
         }
 
@@ -555,6 +591,7 @@ namespace TrafficView
             int popupScalePercent = defaults.PopupScalePercent;
             string panelSkinId = defaults.PanelSkinId;
             PopupDisplayMode popupDisplayMode = defaults.PopupDisplayMode;
+            PopupSectionMode popupSectionMode = defaults.PopupSectionMode;
             bool rotatingMeterGlossEnabled = defaults.RotatingMeterGlossEnabled;
 
             foreach (string line in lines)
@@ -711,6 +748,12 @@ namespace TrafficView
                     continue;
                 }
 
+                if (string.Equals(key, "PopupSectionMode", StringComparison.OrdinalIgnoreCase))
+                {
+                    popupSectionMode = ParsePopupSectionMode(value, defaults.PopupSectionMode);
+                    continue;
+                }
+
                 if (string.Equals(key, "RotatingMeterGlossEnabled", StringComparison.OrdinalIgnoreCase))
                 {
                     rotatingMeterGlossEnabled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
@@ -735,6 +778,7 @@ namespace TrafficView
                 popupScalePercent,
                 panelSkinId,
                 popupDisplayMode,
+                popupSectionMode,
                 rotatingMeterGlossEnabled);
         }
 
@@ -839,6 +883,12 @@ namespace TrafficView
             {
                 PopupDisplayMode parsedMode;
                 return TryParsePopupDisplayMode(value, out parsedMode);
+            }
+
+            if (string.Equals(key, "PopupSectionMode", StringComparison.OrdinalIgnoreCase))
+            {
+                PopupSectionMode parsedMode;
+                return TryParsePopupSectionMode(value, out parsedMode);
             }
 
             if (string.Equals(key, "RotatingMeterGlossEnabled", StringComparison.OrdinalIgnoreCase))
@@ -988,6 +1038,7 @@ namespace TrafficView
                 string.Format("PopupScalePercent={0}", this.PopupScalePercent),
                 string.Format("PanelSkinId={0}", this.PanelSkinId),
                 string.Format("PopupDisplayMode={0}", this.PopupDisplayMode),
+                string.Format("PopupSectionMode={0}", this.PopupSectionMode),
                 string.Format("RotatingMeterGlossEnabled={0}", this.RotatingMeterGlossEnabled ? "1" : "0")
             };
         }
@@ -1297,12 +1348,35 @@ namespace TrafficView
             return PopupDisplayMode.Standard;
         }
 
+        private static PopupSectionMode NormalizePopupSectionMode(PopupSectionMode popupSectionMode)
+        {
+            if (popupSectionMode == PopupSectionMode.LeftOnly)
+            {
+                return PopupSectionMode.LeftOnly;
+            }
+
+            if (popupSectionMode == PopupSectionMode.RightOnly)
+            {
+                return PopupSectionMode.RightOnly;
+            }
+
+            return PopupSectionMode.Both;
+        }
+
         private static PopupDisplayMode ParsePopupDisplayMode(string value, PopupDisplayMode fallback)
         {
             PopupDisplayMode parsedMode;
             return TryParsePopupDisplayMode(value, out parsedMode)
                 ? parsedMode
                 : NormalizePopupDisplayMode(fallback);
+        }
+
+        private static PopupSectionMode ParsePopupSectionMode(string value, PopupSectionMode fallback)
+        {
+            PopupSectionMode parsedMode;
+            return TryParsePopupSectionMode(value, out parsedMode)
+                ? parsedMode
+                : NormalizePopupSectionMode(fallback);
         }
 
         private static bool TryParsePopupDisplayMode(string value, out PopupDisplayMode popupDisplayMode)
@@ -1329,6 +1403,36 @@ namespace TrafficView
             if (string.Equals(normalized, "Standard", StringComparison.OrdinalIgnoreCase))
             {
                 popupDisplayMode = PopupDisplayMode.Standard;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryParsePopupSectionMode(string value, out PopupSectionMode popupSectionMode)
+        {
+            popupSectionMode = PopupSectionMode.Both;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string normalized = value.Trim();
+            if (string.Equals(normalized, "LeftOnly", StringComparison.OrdinalIgnoreCase))
+            {
+                popupSectionMode = PopupSectionMode.LeftOnly;
+                return true;
+            }
+
+            if (string.Equals(normalized, "RightOnly", StringComparison.OrdinalIgnoreCase))
+            {
+                popupSectionMode = PopupSectionMode.RightOnly;
+                return true;
+            }
+
+            if (string.Equals(normalized, "Both", StringComparison.OrdinalIgnoreCase))
+            {
+                popupSectionMode = PopupSectionMode.Both;
                 return true;
             }
 

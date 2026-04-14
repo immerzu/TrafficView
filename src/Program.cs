@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.20.0")]
-[assembly: AssemblyFileVersion("1.4.20.0")]
+[assembly: AssemblyVersion("1.4.21.0")]
+[assembly: AssemblyFileVersion("1.4.21.0")]
 
 namespace TrafficView
 {
@@ -34,6 +34,13 @@ namespace TrafficView
         Standard,
         MiniGraph,
         MiniSoft
+    }
+
+    internal enum PopupSectionMode
+    {
+        Both,
+        LeftOnly,
+        RightOnly
     }
 
     internal static class Program
@@ -178,6 +185,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem transparencyItem;
         private readonly ToolStripMenuItem sizeItem;
         private readonly ToolStripMenuItem displayModeItem;
+        private readonly ToolStripMenuItem sectionModeItem;
         private readonly ToolStripMenuItem rotatingGlossItem;
         private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem deleteSkinItem;
@@ -192,6 +200,7 @@ namespace TrafficView
         private readonly Dictionary<string, ToolStripMenuItem> languageMenuItems;
         private readonly Dictionary<int, ToolStripMenuItem> popupScaleMenuItems;
         private readonly Dictionary<PopupDisplayMode, ToolStripMenuItem> displayModeMenuItems;
+        private readonly Dictionary<PopupSectionMode, ToolStripMenuItem> sectionModeMenuItems;
         private readonly Dictionary<string, ToolStripMenuItem> panelSkinMenuItems;
         private SharedMenuOpenSource sharedMenuOpenSource;
         private MonitorSettings settings;
@@ -212,6 +221,7 @@ namespace TrafficView
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
             this.displayModeMenuItems = new Dictionary<PopupDisplayMode, ToolStripMenuItem>();
+            this.sectionModeMenuItems = new Dictionary<PopupSectionMode, ToolStripMenuItem>();
             this.panelSkinMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.menuVersionNumber = GetMenuVersionNumber();
 
@@ -234,6 +244,7 @@ namespace TrafficView
             this.transparencyItem = new ToolStripMenuItem(string.Empty, null, this.TransparencyItem_Click);
             this.sizeItem = new ToolStripMenuItem(string.Empty);
             this.displayModeItem = new ToolStripMenuItem(string.Empty);
+            this.sectionModeItem = new ToolStripMenuItem(string.Empty);
             this.rotatingGlossItem = new ToolStripMenuItem(string.Empty, null, this.RotatingGlossItem_Click);
             this.skinItem = new ToolStripMenuItem(string.Empty);
             this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
@@ -274,6 +285,20 @@ namespace TrafficView
             this.displayModeItem.DropDownItems.Add(new ToolStripSeparator());
             this.displayModeItem.DropDownItems.Add(this.rotatingGlossItem);
 
+            PopupSectionMode[] popupSectionModes = new PopupSectionMode[]
+            {
+                PopupSectionMode.Both,
+                PopupSectionMode.LeftOnly,
+                PopupSectionMode.RightOnly
+            };
+            for (int i = 0; i < popupSectionModes.Length; i++)
+            {
+                ToolStripMenuItem item = new ToolStripMenuItem(string.Empty, null, this.SectionModeMenuItem_Click);
+                item.Tag = popupSectionModes[i];
+                this.sectionModeMenuItems[popupSectionModes[i]] = item;
+                this.sectionModeItem.DropDownItems.Add(item);
+            }
+
             if (this.companyLogoHost != null)
             {
                 this.sharedMenu.Items.Add(this.companyLogoHost);
@@ -287,6 +312,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.transparencyItem);
             this.sharedMenu.Items.Add(this.sizeItem);
             this.sharedMenu.Items.Add(this.displayModeItem);
+            this.sharedMenu.Items.Add(this.sectionModeItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
             this.sharedMenu.Items.Add(this.exitItem);
@@ -729,6 +755,34 @@ namespace TrafficView
             this.settings = this.settings.WithPopupDisplayMode(popupDisplayMode);
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
+            this.UpdateMenuState();
+        }
+
+        private void SectionModeMenuItem_Click(object sender, EventArgs e)
+        {
+            ToolStripMenuItem item = sender as ToolStripMenuItem;
+            if (item == null || !(item.Tag is PopupSectionMode))
+            {
+                return;
+            }
+
+            PopupSectionMode popupSectionMode = (PopupSectionMode)item.Tag;
+            if (this.settings.PopupSectionMode == popupSectionMode)
+            {
+                return;
+            }
+
+            this.settings = this.settings.WithPopupSectionMode(popupSectionMode);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+
+            if (this.popupForm.Visible)
+            {
+                this.settings = this.settings.WithPopupLocation(this.popupForm.Location);
+                this.settings.Save();
+                this.popupForm.BringToFrontOnly();
+            }
+
             this.UpdateMenuState();
         }
 
@@ -1317,6 +1371,9 @@ namespace TrafficView
             this.displayModeItem.Text = UiLanguage.Get(
                 "Menu.DisplayMode",
                 "Anzeige");
+            this.sectionModeItem.Text = UiLanguage.Get(
+                "Menu.SectionMode",
+                "Bereich");
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
             if (this.menuVersionLabel != null)
@@ -1339,6 +1396,12 @@ namespace TrafficView
             {
                 pair.Value.Text = this.GetPopupDisplayModeDisplayName(pair.Key);
                 pair.Value.Checked = pair.Key == this.settings.PopupDisplayMode;
+            }
+
+            foreach (KeyValuePair<PopupSectionMode, ToolStripMenuItem> pair in this.sectionModeMenuItems)
+            {
+                pair.Value.Text = this.GetPopupSectionModeDisplayName(pair.Key);
+                pair.Value.Checked = pair.Key == this.settings.PopupSectionMode;
             }
 
             this.rotatingGlossItem.Text = UiLanguage.Get(
@@ -1430,6 +1493,19 @@ namespace TrafficView
                     return UiLanguage.Get("Menu.DisplayModeMiniSoft", "MiniSoft");
                 default:
                     return UiLanguage.Get("Menu.DisplayModeStandard", "Standard");
+            }
+        }
+
+        private string GetPopupSectionModeDisplayName(PopupSectionMode popupSectionMode)
+        {
+            switch (popupSectionMode)
+            {
+                case PopupSectionMode.LeftOnly:
+                    return UiLanguage.Get("Menu.SectionModeLeftOnly", "Nur links");
+                case PopupSectionMode.RightOnly:
+                    return UiLanguage.Get("Menu.SectionModeRightOnly", "Nur rechts");
+                default:
+                    return UiLanguage.Get("Menu.SectionModeBoth", "Beide Teile");
             }
         }
 
@@ -1705,6 +1781,8 @@ namespace TrafficView
     {
         private const int BaseClientWidth = 102;
         private const int BaseClientHeight = 56;
+        private const int BaseLeftOnlyClientWidth = 62;
+        private const int BaseRightOnlyClientWidth = 58;
         private const int BaseWindowCornerRadius = 14;
         private const int BaseOuterInset = 2;
         private const int BaseSeparatorY = 28;
@@ -1834,6 +1912,9 @@ namespace TrafficView
             new Dictionary<string, Dictionary<string, Bitmap>>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, bool> PanelBackgroundAssetLoadAttemptedByDirectory =
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object MeterCenterAssetSync = new object();
+        private static string cachedMeterCenterAssetPath = string.Empty;
+        private static Bitmap cachedMeterCenterAsset;
 
         private readonly Timer refreshTimer;
         private readonly Timer animationTimer;
@@ -2227,9 +2308,16 @@ namespace TrafficView
                 outerInset + strokeInset,
                 Math.Max(1F, this.Width - (outerInset * 2F) - strokeWidth),
                 Math.Max(1F, this.Height - (outerInset * 2F) - strokeWidth));
-            Rectangle meterBounds = this.GetDownloadMeterBounds();
-            RectangleF sharedRingBounds = this.CreateInsetBounds(meterBounds, sharedRingWidth / 2F);
-            RectangleF centerBounds = this.CreateInsetBounds(meterBounds, sharedRingWidth + centerInset);
+            bool drawRightSection = this.IsRightSectionVisible();
+            Rectangle meterBounds = drawRightSection
+                ? this.GetDownloadMeterBounds()
+                : Rectangle.Empty;
+            RectangleF sharedRingBounds = drawRightSection
+                ? this.CreateInsetBounds(meterBounds, sharedRingWidth / 2F)
+                : RectangleF.Empty;
+            RectangleF centerBounds = drawRightSection
+                ? this.CreateInsetBounds(meterBounds, sharedRingWidth + centerInset)
+                : RectangleF.Empty;
 
             using (SolidBrush meterCenterBrush = new SolidBrush(MeterCenterColor))
             using (Pen meterCenterPen = new Pen(MeterCenterBorderColor, strokeWidth))
@@ -2270,30 +2358,36 @@ namespace TrafficView
                         backgroundAlpha);
                 }
 
-                this.DrawPanelSeparator(
-                    graphics,
-                    separatorInset,
-                    separatorY,
-                    Math.Max(separatorInset, meterBounds.Left - this.ScaleValue(5)),
-                    backgroundAlpha);
+                if (this.IsBothSectionsVisible())
+                {
+                    this.DrawPanelSeparator(
+                        graphics,
+                        separatorInset,
+                        separatorY,
+                        Math.Max(separatorInset, meterBounds.Left - this.ScaleValue(5)),
+                        backgroundAlpha);
+                }
 
-                this.DrawInterleavedTrafficRing(
-                    graphics,
-                    sharedRingBounds,
-                    sharedRingWidth,
-                    0D,
-                    0D,
-                    MeterTrackColor,
-                    MeterTrackInnerColor,
-                    DownloadRingLowColor,
-                    DownloadRingLowColor,
-                    UploadRingLowColor,
-                    UploadRingLowColor,
-                    true);
+                if (drawRightSection)
+                {
+                    this.DrawInterleavedTrafficRing(
+                        graphics,
+                        sharedRingBounds,
+                        sharedRingWidth,
+                        0D,
+                        0D,
+                        MeterTrackColor,
+                        MeterTrackInnerColor,
+                        DownloadRingLowColor,
+                        DownloadRingLowColor,
+                        UploadRingLowColor,
+                        UploadRingLowColor,
+                        true);
 
-                graphics.FillEllipse(meterCenterBrush, centerBounds);
-                this.DrawMeterCenterDepth(graphics, centerBounds);
-                graphics.DrawEllipse(meterCenterPen, centerBounds);
+                    graphics.FillEllipse(meterCenterBrush, centerBounds);
+                    this.DrawMeterCenterDepth(graphics, centerBounds);
+                    graphics.DrawEllipse(meterCenterPen, centerBounds);
+                }
             }
         }
 
@@ -2337,28 +2431,51 @@ namespace TrafficView
                 && MonitorSettings.ToOpacityByte(this.settings.TransparencyPercent) > 0;
         }
 
+        private bool IsLeftSectionVisible()
+        {
+            return this.settings == null ||
+                this.settings.PopupSectionMode == PopupSectionMode.Both ||
+                this.settings.PopupSectionMode == PopupSectionMode.LeftOnly;
+        }
+
+        private bool IsRightSectionVisible()
+        {
+            return this.settings == null ||
+                this.settings.PopupSectionMode == PopupSectionMode.Both ||
+                this.settings.PopupSectionMode == PopupSectionMode.RightOnly;
+        }
+
+        private bool IsBothSectionsVisible()
+        {
+            return this.settings == null || this.settings.PopupSectionMode == PopupSectionMode.Both;
+        }
+
         private bool ShouldDrawDynamicRing()
         {
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            return definition == null || definition.DrawDynamicRing;
+            return this.IsRightSectionVisible() &&
+                (definition == null || definition.DrawDynamicRing);
         }
 
         private bool ShouldDrawCenterTrafficArrows()
         {
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            return definition == null || definition.DrawCenterArrows;
+            return this.IsRightSectionVisible() &&
+                (definition == null || definition.DrawCenterArrows);
         }
 
         private bool ShouldDrawSparkline()
         {
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            return definition == null || definition.DrawSparkline;
+            return this.IsLeftSectionVisible() &&
+                (definition == null || definition.DrawSparkline);
         }
 
         private bool ShouldDrawMeterValueSupport()
         {
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            return definition == null || definition.DrawMeterValueSupport;
+            return this.IsLeftSectionVisible() &&
+                (definition == null || definition.DrawMeterValueSupport);
         }
 
         private Rectangle ScaleSkinRectangle(Rectangle bounds)
@@ -2454,10 +2571,20 @@ namespace TrafficView
             float centerInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftDisplayMode() ? 4.6F : 2.3F));
             float iconInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftDisplayMode() ? 4.6F : 2.3F));
 
-            Rectangle meterBounds = this.GetDownloadMeterBounds();
-            RectangleF sharedRingBounds = this.CreateInsetBounds(meterBounds, sharedRingWidth / 2F);
-            RectangleF centerBounds = this.CreateInsetBounds(meterBounds, sharedRingWidth + centerInset);
-            RectangleF iconBounds = this.CreateInsetBounds(meterBounds, sharedRingWidth + iconInset);
+            bool drawLeftSection = this.IsLeftSectionVisible();
+            bool drawRightSection = this.IsRightSectionVisible();
+            Rectangle meterBounds = drawRightSection
+                ? this.GetDownloadMeterBounds()
+                : Rectangle.Empty;
+            RectangleF sharedRingBounds = drawRightSection
+                ? this.CreateInsetBounds(meterBounds, sharedRingWidth / 2F)
+                : RectangleF.Empty;
+            RectangleF centerBounds = drawRightSection
+                ? this.CreateInsetBounds(meterBounds, sharedRingWidth + centerInset)
+                : RectangleF.Empty;
+            RectangleF iconBounds = drawRightSection
+                ? this.CreateInsetBounds(meterBounds, sharedRingWidth + iconInset)
+                : RectangleF.Empty;
 
             Color downloadRingEndColor = GetInterpolatedColor(
                 DownloadRingLowColor,
@@ -2468,27 +2595,33 @@ namespace TrafficView
                 UploadRingHighColor,
                 SmoothStep(visualUploadFillRatio));
 
-            if (this.IsReadableInfoPanelSkinEnabled() && !this.IsHudOnlyTransparencyMode())
+            if (drawLeftSection &&
+                this.IsReadableInfoPanelSkinEnabled() &&
+                !this.IsHudOnlyTransparencyMode())
             {
                 this.DrawReadableTrafficInfoPanel(graphics, meterBounds);
             }
-            else if (!this.IsHudOnlyTransparencyMode())
+            else if (drawLeftSection && !this.IsHudOnlyTransparencyMode())
             {
                 this.DrawTransparencyAwareInfoPanel(graphics, meterBounds);
             }
 
-            if (!this.IsHudOnlyTransparencyMode() && this.ShouldDrawMeterValueSupport())
+            if (drawLeftSection && !this.IsHudOnlyTransparencyMode() && this.ShouldDrawMeterValueSupport())
             {
                 this.DrawMeterValueBalanceSupport(graphics, meterBounds);
             }
 
-            this.DrawTrafficTexts(graphics);
+            if (drawLeftSection)
+            {
+                this.DrawTrafficTexts(graphics);
+            }
+
             if (this.ShouldDrawSparkline())
             {
                 this.DrawMiniTrafficSparkline(graphics, meterBounds);
             }
 
-            if (this.IsHudOnlyTransparencyMode())
+            if (drawRightSection && this.IsHudOnlyTransparencyMode())
             {
                 this.DrawHudOnlyMeterGuideCircles(graphics, sharedRingBounds, sharedRingWidth);
             }
@@ -2510,22 +2643,25 @@ namespace TrafficView
                     false);
             }
 
-            RectangleF glossBounds = centerBounds;
-            if (!this.IsMiniSoftDisplayMode())
+            if (drawRightSection)
             {
-                float glossInset = this.ScaleFloat(StandardMeterGlossExtraInset);
-                glossBounds = new RectangleF(
-                    centerBounds.Left + glossInset,
-                    centerBounds.Top + glossInset,
-                    Math.Max(2F, centerBounds.Width - (glossInset * 2F)),
-                    Math.Max(2F, centerBounds.Height - (glossInset * 2F)));
-            }
+                RectangleF glossBounds = centerBounds;
+                if (!this.IsMiniSoftDisplayMode())
+                {
+                    float glossInset = this.ScaleFloat(StandardMeterGlossExtraInset);
+                    glossBounds = new RectangleF(
+                        centerBounds.Left + glossInset,
+                        centerBounds.Top + glossInset,
+                        Math.Max(2F, centerBounds.Width - (glossInset * 2F)),
+                        Math.Max(2F, centerBounds.Height - (glossInset * 2F)));
+                }
 
-            this.DrawRotatingMeterGloss(
-                graphics,
-                glossBounds,
-                visualDownloadFillRatio,
-                visualUploadFillRatio);
+                this.DrawRotatingMeterGloss(
+                    graphics,
+                    glossBounds,
+                    visualDownloadFillRatio,
+                    visualUploadFillRatio);
+            }
 
             if (this.ShouldDrawCenterTrafficArrows())
             {
@@ -2599,6 +2735,7 @@ namespace TrafficView
                 }
 
                 this.DisposeSurfaceBitmaps();
+                ReleaseCachedMeterCenterAsset();
 
                 DisposeFont(this.captionFont);
                 DisposeFont(this.valueFont);
@@ -2611,10 +2748,11 @@ namespace TrafficView
         public void ApplySettings(MonitorSettings newSettings)
         {
             bool popupScaleChanged = this.settings.PopupScalePercent != newSettings.PopupScalePercent;
+            bool sectionModeChanged = this.settings.PopupSectionMode != newSettings.PopupSectionMode;
             Rectangle previousBounds = new Rectangle(this.Location, this.Size);
             this.settings = newSettings.Clone();
 
-            if (popupScaleChanged)
+            if (popupScaleChanged || sectionModeChanged)
             {
                 this.ApplyDpiLayout(this.currentDpi, false);
 
@@ -3409,7 +3547,9 @@ namespace TrafficView
         private Rectangle GetDownloadMeterBounds()
         {
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            if (definition != null && definition.MeterBounds.HasValue)
+            if (definition != null &&
+                definition.MeterBounds.HasValue &&
+                this.IsBothSectionsVisible())
             {
                 return this.ScaleSkinRectangle(definition.MeterBounds.Value);
             }
@@ -3419,8 +3559,16 @@ namespace TrafficView
             int diameter = this.ScaleValue(this.IsReadableInfoPanelSkinEnabled()
                 ? baseDiameter - 3
                 : baseDiameter);
-            int rightInset = this.ScaleValue(miniGraphDisplayMode ? MiniGraphMeterRightInset : BaseMeterRightInset);
-            int x = this.ClientSize.Width - diameter - rightInset;
+            int x;
+            if (this.settings != null && this.settings.PopupSectionMode == PopupSectionMode.RightOnly)
+            {
+                x = Math.Max(0, (this.ClientSize.Width - diameter) / 2);
+            }
+            else
+            {
+                int rightInset = this.ScaleValue(miniGraphDisplayMode ? MiniGraphMeterRightInset : BaseMeterRightInset);
+                x = this.ClientSize.Width - diameter - rightInset;
+            }
             int y = miniGraphDisplayMode
                 ? Math.Max(0, (this.ClientSize.Height - diameter) / 2)
                 : Math.Max(this.ScaleValue(6), (this.ClientSize.Height - diameter) / 2);
@@ -4352,6 +4500,51 @@ namespace TrafficView
             return (widthDelta * widthDelta) + (heightDelta * heightDelta) + areaDelta;
         }
 
+        private static Bitmap GetCachedMeterCenterAsset(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath) || !File.Exists(assetPath))
+            {
+                return null;
+            }
+
+            lock (MeterCenterAssetSync)
+            {
+                if (string.Equals(cachedMeterCenterAssetPath, assetPath, StringComparison.OrdinalIgnoreCase) &&
+                    cachedMeterCenterAsset != null)
+                {
+                    return cachedMeterCenterAsset;
+                }
+
+                if (cachedMeterCenterAsset != null)
+                {
+                    cachedMeterCenterAsset.Dispose();
+                    cachedMeterCenterAsset = null;
+                }
+
+                using (Image meterCenterImage = Image.FromFile(assetPath))
+                {
+                    cachedMeterCenterAsset = new Bitmap(meterCenterImage);
+                }
+
+                cachedMeterCenterAssetPath = assetPath;
+                return cachedMeterCenterAsset;
+            }
+        }
+
+        private static void ReleaseCachedMeterCenterAsset()
+        {
+            lock (MeterCenterAssetSync)
+            {
+                if (cachedMeterCenterAsset != null)
+                {
+                    cachedMeterCenterAsset.Dispose();
+                    cachedMeterCenterAsset = null;
+                }
+
+                cachedMeterCenterAssetPath = string.Empty;
+            }
+        }
+
         private void DrawMeterCenterDepth(Graphics graphics, RectangleF centerBounds)
         {
             GraphicsState state = graphics.Save();
@@ -4369,17 +4562,23 @@ namespace TrafficView
                         try
                         {
                             GraphicsState imageState = graphics.Save();
-                            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                            graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                            graphics.CompositingQuality = CompositingQuality.HighQuality;
-
-                            using (Image meterCenterImage = Image.FromFile(meterCenterAssetPath))
+                            try
                             {
-                                graphics.DrawImage(meterCenterImage, centerBounds);
-                            }
+                                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                                graphics.CompositingQuality = CompositingQuality.HighQuality;
 
-                            graphics.Restore(imageState);
-                            return;
+                                Bitmap meterCenterImage = GetCachedMeterCenterAsset(meterCenterAssetPath);
+                                if (meterCenterImage != null)
+                                {
+                                    graphics.DrawImage(meterCenterImage, centerBounds);
+                                    return;
+                                }
+                            }
+                            finally
+                            {
+                                graphics.Restore(imageState);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -4897,7 +5096,7 @@ namespace TrafficView
         private void DrawReadableTrafficInfoPanel(Graphics graphics, Rectangle meterBounds)
         {
             int left = this.ScaleValue(3);
-            int right = Math.Max(left + this.ScaleValue(44), meterBounds.Left - this.ScaleValue(5));
+            int right = this.GetLeftSectionRightBoundary(meterBounds, left + this.ScaleValue(44));
             int top = this.ScaleValue(4);
             int bottom = Math.Min(
                 this.ClientSize.Height - this.ScaleValue(7),
@@ -4987,7 +5186,7 @@ namespace TrafficView
             }
 
             int left = this.ScaleValue(3);
-            int right = Math.Max(left + this.ScaleValue(44), meterBounds.Left - this.ScaleValue(5));
+            int right = this.GetLeftSectionRightBoundary(meterBounds, left + this.ScaleValue(44));
             int top = Math.Max(0, this.downloadCaptionLabel.Bounds.Top - this.ScaleValue(3));
             int bottom = Math.Min(this.ClientSize.Height, this.uploadValueLabel.Bounds.Bottom + this.ScaleValue(4));
             if (right - left < this.ScaleValue(16) || bottom - top < this.ScaleValue(16))
@@ -5096,7 +5295,9 @@ namespace TrafficView
         {
             int valueRight = Math.Max(this.downloadValueLabel.Bounds.Right, this.uploadValueLabel.Bounds.Right);
             int supportLeft = Math.Max(this.ScaleValue(40), valueRight - this.ScaleValue(8));
-            int supportRight = meterBounds.Left + this.ScaleValue(2);
+            int supportRight = this.IsRightSectionVisible()
+                ? meterBounds.Left + this.ScaleValue(2)
+                : this.ClientSize.Width - this.ScaleValue(4);
             int supportTop = Math.Max(0, this.downloadCaptionLabel.Bounds.Top - this.ScaleValue(2));
             int supportBottom = Math.Min(this.ClientSize.Height, this.uploadValueLabel.Bounds.Bottom + this.ScaleValue(2));
 
@@ -5296,18 +5497,30 @@ namespace TrafficView
         private Rectangle GetSparklineBounds(Rectangle meterBounds)
         {
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            if (definition != null && definition.SparklineBounds.HasValue)
+            if (definition != null &&
+                definition.SparklineBounds.HasValue &&
+                this.IsBothSectionsVisible())
             {
                 return this.ScaleSkinRectangle(definition.SparklineBounds.Value);
             }
 
             int left = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineLeft : 8);
             int top = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineTop : 46);
-            int width = Math.Max(12, meterBounds.Left - left - this.ScaleValue(4));
+            int width = this.IsRightSectionVisible()
+                ? Math.Max(12, meterBounds.Left - left - this.ScaleValue(4))
+                : Math.Max(18, this.ClientSize.Width - left - this.ScaleValue(6));
             int height = Math.Max(
                 this.IsMiniGraphDisplayMode() ? 8 : 4,
                 this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineHeight : 7));
             return new Rectangle(left, top, width, height);
+        }
+
+        private int GetLeftSectionRightBoundary(Rectangle meterBounds, int minimumRight)
+        {
+            int candidateRight = this.IsRightSectionVisible()
+                ? meterBounds.Left - this.ScaleValue(5)
+                : this.ClientSize.Width - this.ScaleValue(4);
+            return Math.Max(minimumRight, candidateRight);
         }
 
         private TrafficHistorySample[] GetOverlaySparklineSamples()
@@ -6150,6 +6363,7 @@ namespace TrafficView
             Size baseClientSize = definition != null && definition.ClientSize.HasValue
                 ? definition.ClientSize.Value
                 : new Size(BaseClientWidth, BaseClientHeight);
+            baseClientSize = this.GetBaseClientSizeForCurrentSection(baseClientSize);
             Size clientSize = this.ScaleSkinSize(baseClientSize);
             this.ClientSize = clientSize;
             this.MinimumSize = clientSize;
@@ -6161,16 +6375,16 @@ namespace TrafficView
             Rectangle defaultUploadCaptionBounds = new Rectangle(BaseCaptionX, BaseUploadCaptionY, BaseCaptionWidth, BaseCaptionHeight);
             Rectangle defaultUploadValueBounds = new Rectangle(BaseUploadValueX, BaseUploadValueY, BaseValueWidth, BaseValueHeight);
 
-            Rectangle scaledDownloadCaptionBounds = this.GetScaledSkinBounds(
+            Rectangle scaledDownloadCaptionBounds = this.GetCaptionBoundsForCurrentSection(
                 defaultDownloadCaptionBounds,
                 definition != null ? definition.DownloadCaptionBounds : (Rectangle?)null);
-            Rectangle scaledDownloadValueBounds = this.GetScaledSkinBounds(
+            Rectangle scaledDownloadValueBounds = this.GetValueBoundsForCurrentSection(
                 defaultDownloadValueBounds,
                 definition != null ? definition.DownloadValueBounds : (Rectangle?)null);
-            Rectangle scaledUploadCaptionBounds = this.GetScaledSkinBounds(
+            Rectangle scaledUploadCaptionBounds = this.GetCaptionBoundsForCurrentSection(
                 defaultUploadCaptionBounds,
                 definition != null ? definition.UploadCaptionBounds : (Rectangle?)null);
-            Rectangle scaledUploadValueBounds = this.GetScaledSkinBounds(
+            Rectangle scaledUploadValueBounds = this.GetValueBoundsForCurrentSection(
                 defaultUploadValueBounds,
                 definition != null ? definition.UploadValueBounds : (Rectangle?)null);
 
@@ -6202,6 +6416,60 @@ namespace TrafficView
             DisposeFont(previousFormFont);
             DisposeFont(previousCaptionFont);
             DisposeFont(previousValueFont);
+        }
+
+        private Size GetBaseClientSizeForCurrentSection(Size baseClientSize)
+        {
+            switch (this.settings.PopupSectionMode)
+            {
+                case PopupSectionMode.LeftOnly:
+                    return new Size(
+                        Math.Min(baseClientSize.Width, BaseLeftOnlyClientWidth),
+                        baseClientSize.Height);
+                case PopupSectionMode.RightOnly:
+                    return new Size(
+                        Math.Min(baseClientSize.Width, BaseRightOnlyClientWidth),
+                        baseClientSize.Height);
+                default:
+                    return baseClientSize;
+            }
+        }
+
+        private Rectangle GetCaptionBoundsForCurrentSection(Rectangle defaultBounds, Rectangle? overrideBounds)
+        {
+            if (this.settings.PopupSectionMode == PopupSectionMode.RightOnly)
+            {
+                return Rectangle.Empty;
+            }
+
+            if (this.settings.PopupSectionMode == PopupSectionMode.Both)
+            {
+                return this.GetScaledSkinBounds(defaultBounds, overrideBounds);
+            }
+
+            Rectangle scaledBounds = this.ScaleSkinRectangle(defaultBounds);
+            scaledBounds.Width = Math.Max(scaledBounds.Width, this.ScaleValue(BaseCaptionWidth));
+            return scaledBounds;
+        }
+
+        private Rectangle GetValueBoundsForCurrentSection(Rectangle defaultBounds, Rectangle? overrideBounds)
+        {
+            if (this.settings.PopupSectionMode == PopupSectionMode.RightOnly)
+            {
+                return Rectangle.Empty;
+            }
+
+            if (this.settings.PopupSectionMode == PopupSectionMode.Both)
+            {
+                return this.GetScaledSkinBounds(defaultBounds, overrideBounds);
+            }
+
+            Rectangle scaledBounds = this.ScaleSkinRectangle(defaultBounds);
+            int rightPadding = this.ScaleValue(6);
+            int width = Math.Max(
+                this.ScaleValue(22),
+                this.ClientSize.Width - scaledBounds.Left - rightPadding);
+            return new Rectangle(scaledBounds.Left, scaledBounds.Top, width, scaledBounds.Height);
         }
 
         private int ScaleValue(int value)
