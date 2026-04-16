@@ -48,6 +48,7 @@
 
   <ItemGroup>
     <Compile Include="src\Program.cs" />
+    <Compile Include="src\AppStorage.cs" />
     <Compile Include="src\AppLog.cs" />
     <Compile Include="src\DpiHelper.cs" />
     <Compile Include="src\UiLanguage.cs" />

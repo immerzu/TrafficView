@@ -1,7 +1,7 @@
 # Tooling Inventory
 
 Stand: 2026-04-04  
-Projekt: `TrafficView 1.4.22`
+Projekt: `TrafficView 1.4.23`
 
 Diese Datei dient als Arbeitsgedächtnis für bereits vorhandene, nachinstallierte und tatsächlich verwendete Werkzeuge rund um TrafficView, Skin-Erzeugung und Build.
 

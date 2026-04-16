@@ -16,8 +16,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.22.0")]
-[assembly: AssemblyFileVersion("1.4.22.0")]
+[assembly: AssemblyVersion("1.4.23.0")]
+[assembly: AssemblyFileVersion("1.4.23.0")]
 
 namespace TrafficView
 {
@@ -196,6 +196,8 @@ namespace TrafficView
     internal sealed class TaskbarIntegrationSnapshot
     {
         public IntPtr TaskbarHandle { get; set; }
+
+        public IntPtr TaskbarZOrderAnchorHandle { get; set; }
 
         public AppBarEdge Edge { get; set; }
 
@@ -839,6 +841,11 @@ namespace TrafficView
                 return;
             }
 
+            if (this.settings.TaskbarIntegrationEnabled)
+            {
+                this.popupForm.ClearTaskbarDefaultSectionModeOverride();
+            }
+
             this.settings = this.settings.WithPopupSectionMode(popupSectionMode);
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
@@ -902,6 +909,10 @@ namespace TrafficView
             this.settings = this.settings.WithTaskbarIntegrationEnabled(enableTaskbarIntegration);
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
+            if (enableTaskbarIntegration)
+            {
+                this.popupForm.ApplyDefaultTaskbarSectionModeOverride();
+            }
 
             if (restorePopupAfterChange &&
                 (this.popupForm.Visible || this.popupForm.HasDeferredVisibilityRequest))
@@ -1968,13 +1979,17 @@ namespace TrafficView
         private const int BaseDragThreshold = 4;
         private const int BasePopupVisibleMargin = 8;
         private const int TaskbarMonitorIntervalMs = 350;
+        private const int TaskbarRefreshDebounceMs = 220;
         private const int TaskbarInsetThickness = 2;
         private const int MinimumVisibleTaskbarThickness = 8;
         private const int TaskbarPlacementMargin = 2;
         private const int TaskbarOccupiedSafetyPadding = 4;
         private const int TaskbarProtectedEdgeProbe = 96;
         private const int TaskbarCompactRestoreHysteresis = 12;
-        private const int TaskbarDesktopSnapHoldDistance = 12;
+        private const int TaskbarSectionToggleDragThreshold = 10;
+        private const int TaskbarDesktopSnapHoldDistance = 18;
+        private const int TaskbarDragSnapDistance = 36;
+        private const int TaskbarDragBreakThroughDepth = 60;
         private const int NoSpaceMessageCooldownMs = 1800;
         private const int TaskbarTransientFailureGraceMs = 900;
         private const int DesktopToTaskbarBlinkSuppressionMs = 1200;
@@ -1993,9 +2008,11 @@ namespace TrafficView
         private const int WmNclButtonDown = 0xA1;
         private const int HtCaption = 0x2;
         private const int WmContextMenu = 0x007B;
+        private const int WmNcHitTest = 0x0084;
         private const int WmDpiChanged = 0x02E0;
         private const int WmDisplayChange = 0x007E;
         private const int WmSettingChange = 0x001A;
+        private const int HtTransparent = -1;
         private const int WsExLayered = 0x00080000;
         private const uint AbmGetTaskbarPos = 0x00000005;
         private const uint AbmGetState = 0x00000004;
@@ -2007,6 +2024,8 @@ namespace TrafficView
         private const uint SwpNoRedraw = 0x0008;
         private const uint SwpNoOwnerZOrder = 0x0200;
         private const uint SwpNoSendChanging = 0x0400;
+        private const uint GwHwndNext = 2;
+        private const uint GwHwndPrev = 3;
         private const int GwlStyle = -16;
         private const uint LwaAlpha = 0x2;
         private const int UlwAlpha = 0x2;
@@ -2111,6 +2130,7 @@ namespace TrafficView
         private readonly Timer animationTimer;
         private readonly Timer topMostGuardTimer;
         private readonly Timer taskbarMonitorTimer;
+        private readonly Timer taskbarRefreshDebounceTimer;
         private readonly Label downloadCaptionLabel;
         private readonly Label uploadCaptionLabel;
         private readonly Label downloadValueLabel;
@@ -2167,16 +2187,21 @@ namespace TrafficView
         private bool taskbarNoSpaceMessageVisible;
         private bool taskbarIntegrationRefreshInProgress;
         private bool taskbarIntegrationRefreshPending;
+        private bool taskbarIntegrationDebouncedRefreshPending;
         private bool taskbarIntegrationPendingActivateWindow;
         private bool taskbarIntegrationPendingShowNoSpaceMessage;
+        private bool taskbarLocalZOrderRepairPending = true;
         private bool taskbarIntegrationForceRightOnlySection;
+        private bool taskbarIntegrationStickyRightOnlySection;
         private Point? taskbarIntegrationPreferredLocation;
         private DateTime lastNoSpaceMessageUtc = DateTime.MinValue;
         private DateTime lastDesktopShellForegroundUtc = DateTime.MinValue;
+        private DateTime lastTaskbarIntegrationRefreshUtc = DateTime.MinValue;
         private DateTime lastSuccessfulTaskbarPlacementUtc = DateTime.MinValue;
         private Rectangle lastSuccessfulTaskbarPlacementBounds = Rectangle.Empty;
         private int lastAppliedTaskbarThickness = -1;
         private TaskbarIntegrationSnapshot activeTaskbarSnapshot;
+        private IntPtr lastTaskbarLocalZOrderAnchorHandle = IntPtr.Zero;
         private IntPtr taskbarIntegrationHostHandle = IntPtr.Zero;
         
         public event EventHandler OverlayMenuRequested;
@@ -2201,6 +2226,9 @@ namespace TrafficView
         [DllImport("user32.dll")]
         private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
@@ -2209,6 +2237,9 @@ namespace TrafficView
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetParent(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
@@ -2319,6 +2350,54 @@ namespace TrafficView
             }
         }
 
+        protected override bool ShowWithoutActivation
+        {
+            get { return this.ShouldUsePassiveDesktopOverlayBehavior() || this.IsTaskbarIntegratedMode(); }
+        }
+
+        private bool ShouldUsePassiveDesktopOverlayBehavior()
+        {
+            return false;
+        }
+
+        private bool ShouldPassMouseToUnderlyingDesktop()
+        {
+            return this.ShouldUsePassiveDesktopOverlayBehavior() &&
+                (Control.ModifierKeys & Keys.Shift) != Keys.Shift;
+        }
+
+        private bool IsTaskbarIntegratedMode()
+        {
+            return this.settings != null && this.settings.TaskbarIntegrationEnabled;
+        }
+
+        private bool ShouldUseGlobalTopMost()
+        {
+            return this.ShouldUseDesktopGlobalTopMost();
+        }
+
+        private bool ShouldUseDesktopGlobalTopMost()
+        {
+            return !this.IsTaskbarIntegratedMode();
+        }
+
+        private bool ShouldUseTaskbarLocalZOrder()
+        {
+            return this.IsTaskbarIntegratedMode();
+        }
+
+        private void ApplyWindowZOrderMode()
+        {
+            if (this.ShouldUseDesktopGlobalTopMost() && !this.TopMost)
+            {
+                this.TopMost = true;
+            }
+            else if (this.ShouldUseTaskbarLocalZOrder() && this.TopMost)
+            {
+                this.TopMost = false;
+            }
+        }
+
         public TrafficPopupForm(MonitorSettings initialSettings)
         {
             this.settings = initialSettings.Clone();
@@ -2330,7 +2409,7 @@ namespace TrafficView
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.Manual;
             this.ShowInTaskbar = false;
-            this.TopMost = true;
+            this.TopMost = this.ShouldUseGlobalTopMost();
             this.Text = "TrafficView";
             this.BackColor = BackgroundBlue;
             this.AutoScaleMode = AutoScaleMode.None;
@@ -2380,12 +2459,19 @@ namespace TrafficView
             this.topMostGuardTimer = new Timer();
             this.topMostGuardTimer.Interval = KeepTopMostRefreshIntervalMs;
             this.topMostGuardTimer.Tick += this.TopMostGuardTimer_Tick;
-            this.topMostGuardTimer.Enabled = false;
+            this.topMostGuardTimer.Enabled = this.Visible &&
+                !this.IsTopMostEnforcementPaused &&
+                this.ShouldUseGlobalTopMost();
 
             this.taskbarMonitorTimer = new Timer();
             this.taskbarMonitorTimer.Interval = TaskbarMonitorIntervalMs;
             this.taskbarMonitorTimer.Tick += this.TaskbarMonitorTimer_Tick;
             this.taskbarMonitorTimer.Enabled = false;
+
+            this.taskbarRefreshDebounceTimer = new Timer();
+            this.taskbarRefreshDebounceTimer.Interval = TaskbarRefreshDebounceMs;
+            this.taskbarRefreshDebounceTimer.Tick += this.TaskbarRefreshDebounceTimer_Tick;
+            this.taskbarRefreshDebounceTimer.Enabled = false;
 
             this.ApplyDpiLayout(this.currentDpi);
             this.ApplySettings(this.settings);
@@ -2455,13 +2541,10 @@ namespace TrafficView
                 return;
             }
 
-            if (!this.settings.TaskbarIntegrationEnabled)
+            this.TryBeginInvokeSafely(new Action(delegate
             {
-                this.TryBeginInvokeSafely(new Action(delegate
-                {
-                    this.EnsureTopMostPlacement(false);
-                }));
-            }
+                this.EnsureTopMostPlacement(false);
+            }));
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -2495,6 +2578,12 @@ namespace TrafficView
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == WmNcHitTest && this.ShouldPassMouseToUnderlyingDesktop())
+            {
+                m.Result = new IntPtr(HtTransparent);
+                return;
+            }
+
             if (m.Msg == WmContextMenu)
             {
                 m.Result = IntPtr.Zero;
@@ -2818,7 +2907,8 @@ namespace TrafficView
 
         private PopupSectionMode GetEffectivePopupSectionMode()
         {
-            if (this.taskbarIntegrationForceRightOnlySection &&
+            if ((this.taskbarIntegrationForceRightOnlySection ||
+                this.taskbarIntegrationStickyRightOnlySection) &&
                 this.settings != null &&
                 this.settings.TaskbarIntegrationEnabled)
             {
@@ -3117,6 +3207,11 @@ namespace TrafficView
                     this.taskbarMonitorTimer.Dispose();
                 }
 
+                if (this.taskbarRefreshDebounceTimer != null)
+                {
+                    this.taskbarRefreshDebounceTimer.Dispose();
+                }
+
                 this.DisposeSurfaceBitmaps();
                 ReleaseCachedMeterCenterAsset();
 
@@ -3135,12 +3230,24 @@ namespace TrafficView
             bool taskbarIntegrationChanged = this.settings.TaskbarIntegrationEnabled != newSettings.TaskbarIntegrationEnabled;
             Rectangle previousBounds = new Rectangle(this.Location, this.Size);
             this.settings = newSettings.Clone();
+            this.ApplyWindowZOrderMode();
+            this.UpdateTopMostGuardState();
+            if (taskbarIntegrationChanged && this.settings.TaskbarIntegrationEnabled)
+            {
+                this.taskbarLocalZOrderRepairPending = true;
+                this.lastTaskbarLocalZOrderAnchorHandle = IntPtr.Zero;
+            }
+
             if (!this.settings.TaskbarIntegrationEnabled)
             {
                 this.activeTaskbarSnapshot = null;
                 this.taskbarNoSpaceMessageShown = false;
                 this.taskbarIntegrationForceRightOnlySection = false;
+                this.taskbarIntegrationStickyRightOnlySection = false;
                 this.lastAppliedTaskbarThickness = -1;
+                this.taskbarLocalZOrderRepairPending = true;
+                this.lastTaskbarLocalZOrderAnchorHandle = IntPtr.Zero;
+                this.ClearTaskbarIntegrationRefreshDebounce();
             }
 
             if (popupScaleChanged || sectionModeChanged || taskbarIntegrationChanged)
@@ -3331,6 +3438,21 @@ namespace TrafficView
             TaskbarIntegrationSnapshot snapshot;
             if (!this.TryCaptureTaskbarIntegrationSnapshot(out snapshot) || snapshot.IsHidden)
             {
+                if (this.settings.TaskbarIntegrationEnabled &&
+                    this.taskbarIntegrationPreferredLocation.HasValue &&
+                    this.ShouldDetachFromTaskbarWithoutSnapshot(this.taskbarIntegrationPreferredLocation.Value))
+                {
+                    Point preferredLocationWithoutSnapshot = this.taskbarIntegrationPreferredLocation.Value;
+                    Rectangle preferredBoundsWithoutSnapshot = new Rectangle(preferredLocationWithoutSnapshot, this.Size);
+                    this.taskbarIntegrationPreferredLocation = null;
+                    desktopLocation = this.GetVisiblePopupLocation(
+                        preferredLocationWithoutSnapshot,
+                        GetRectangleCenter(preferredBoundsWithoutSnapshot),
+                        null,
+                        null);
+                    return true;
+                }
+
                 return false;
             }
 
@@ -3366,6 +3488,23 @@ namespace TrafficView
             return true;
         }
 
+        private bool ShouldDetachFromTaskbarWithoutSnapshot(Point preferredLocation)
+        {
+            Rectangle anchorBounds = this.lastSuccessfulTaskbarPlacementBounds.Width > 0 &&
+                this.lastSuccessfulTaskbarPlacementBounds.Height > 0
+                ? this.lastSuccessfulTaskbarPlacementBounds
+                : this.GetCurrentPopupScreenBounds();
+            Rectangle preferredBounds = new Rectangle(preferredLocation, this.Size);
+
+            int horizontalDistance = Math.Abs(preferredBounds.Left - anchorBounds.Left);
+            int verticalDistance = Math.Abs(preferredBounds.Top - anchorBounds.Top);
+            int detachThreshold = Math.Max(
+                this.ScaleValue(TaskbarDragSnapDistance),
+                this.ScaleValue(TaskbarDesktopSnapHoldDistance));
+
+            return horizontalDistance >= detachThreshold || verticalDistance >= detachThreshold;
+        }
+
         private void UpdateTaskbarMonitorState()
         {
             if (this.taskbarMonitorTimer == null)
@@ -3386,13 +3525,30 @@ namespace TrafficView
             }
 
             this.topMostGuardTimer.Enabled = this.Visible &&
-                !this.IsTopMostEnforcementPaused &&
-                (this.settings == null || !this.settings.TaskbarIntegrationEnabled);
+                this.ShouldUseGlobalTopMost() &&
+                !this.IsTopMostEnforcementPaused;
         }
 
         public void ClearTaskbarIntegrationPreferredLocation()
         {
             this.taskbarIntegrationPreferredLocation = null;
+        }
+
+        public void ApplyDefaultTaskbarSectionModeOverride()
+        {
+            if (this.settings == null || !this.settings.TaskbarIntegrationEnabled)
+            {
+                return;
+            }
+
+            this.SetTaskbarIntegrationStickyRightOnly(false);
+            this.SetTaskbarIntegrationForcedRightOnly(true);
+        }
+
+        public void ClearTaskbarDefaultSectionModeOverride()
+        {
+            this.SetTaskbarIntegrationStickyRightOnly(false);
+            this.SetTaskbarIntegrationForcedRightOnly(false);
         }
 
         public void ShowAtRightBiasedTaskbarPlacement(bool activateWindow, bool showNoSpaceMessage)
@@ -3414,6 +3570,7 @@ namespace TrafficView
                 return;
             }
 
+            this.TrackTaskbarLocalZOrderAnchor(snapshot);
             this.activeTaskbarSnapshot = snapshot;
             this.ApplyTaskbarHostBinding(IntPtr.Zero);
             if (this.NeedsTaskbarIntegrationLayoutRefresh(snapshot) || this.NeedsCurrentDpiLayout())
@@ -3422,16 +3579,6 @@ namespace TrafficView
             }
 
             Rectangle placementBounds;
-            if (this.TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(snapshot, out placementBounds))
-            {
-                this.taskbarNoSpaceMessageShown = false;
-                this.lastSuccessfulTaskbarPlacementUtc = DateTime.UtcNow;
-                this.lastSuccessfulTaskbarPlacementBounds = placementBounds;
-                this.ShowAtTaskbarPlacement(placementBounds, activateWindow);
-                this.UpdateTaskbarMonitorState();
-                return;
-            }
-
             if (this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds))
             {
                 this.taskbarNoSpaceMessageShown = false;
@@ -3472,7 +3619,7 @@ namespace TrafficView
             {
                 if (this.TryRefreshTaskbarPlacementDuringTaskbarFocus())
                 {
-                    this.EnsureLightweightTaskbarForegroundPresence();
+                    this.EnsurePassiveTaskbarPresence();
                 }
 
                 return;
@@ -3502,7 +3649,7 @@ namespace TrafficView
                 return;
             }
 
-            this.EnsureLightweightTaskbarForegroundPresence();
+            this.EnsurePassiveTaskbarPresence();
         }
 
         public void SuspendTopMostEnforcement()
@@ -3525,17 +3672,44 @@ namespace TrafficView
                 return;
             }
 
+            if (!this.ShouldUseGlobalTopMost())
+            {
+                this.ApplyWindowZOrderMode();
+                return;
+            }
+
             this.EnsureTopMostPlacement(activateWindow);
         }
 
         private void RefreshTaskbarIntegration(bool activateWindow, bool showNoSpaceMessage)
         {
+            this.RefreshTaskbarIntegration(activateWindow, showNoSpaceMessage, false);
+        }
+
+        private void RefreshTaskbarIntegration(bool activateWindow, bool showNoSpaceMessage, bool bypassDebounce)
+        {
+            if (this.IsTaskbarIntegratedMode())
+            {
+                activateWindow = false;
+                if (!bypassDebounce &&
+                    !showNoSpaceMessage &&
+                    this.TryDebounceTaskbarIntegrationRefresh())
+                {
+                    return;
+                }
+            }
+
             if (this.taskbarIntegrationRefreshInProgress)
             {
                 this.taskbarIntegrationRefreshPending = true;
                 this.taskbarIntegrationPendingActivateWindow = this.taskbarIntegrationPendingActivateWindow || activateWindow;
                 this.taskbarIntegrationPendingShowNoSpaceMessage = this.taskbarIntegrationPendingShowNoSpaceMessage || showNoSpaceMessage;
                 return;
+            }
+
+            if (this.IsTaskbarIntegratedMode())
+            {
+                this.lastTaskbarIntegrationRefreshUtc = DateTime.UtcNow;
             }
 
             this.taskbarIntegrationRefreshInProgress = true;
@@ -3546,11 +3720,13 @@ namespace TrafficView
                     this.ApplyTaskbarHostBinding(IntPtr.Zero);
                     this.activeTaskbarSnapshot = null;
                     this.taskbarNoSpaceMessageShown = false;
+                    this.taskbarIntegrationStickyRightOnlySection = false;
                     this.SetTaskbarIntegrationForcedRightOnly(false);
                     this.taskbarIntegrationPreferredLocation = null;
                     this.lastAppliedTaskbarThickness = -1;
                     this.lastSuccessfulTaskbarPlacementUtc = DateTime.MinValue;
                     this.lastSuccessfulTaskbarPlacementBounds = Rectangle.Empty;
+                    this.ClearTaskbarIntegrationRefreshDebounce();
                     this.UpdateTaskbarMonitorState();
                     return;
                 }
@@ -3576,6 +3752,7 @@ namespace TrafficView
                     return;
                 }
 
+                this.TrackTaskbarLocalZOrderAnchor(snapshot);
                 this.activeTaskbarSnapshot = snapshot;
                 this.ApplyTaskbarHostBinding(IntPtr.Zero);
                 if (this.NeedsTaskbarIntegrationLayoutRefresh(snapshot) || this.NeedsCurrentDpiLayout())
@@ -3599,8 +3776,7 @@ namespace TrafficView
                 }
 
                 Rectangle placementBounds;
-                if (!this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds) &&
-                    !this.TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(snapshot, out placementBounds))
+                if (!this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds))
                 {
                     if (this.TryPreserveRightAnchoredTaskbarPlacement(snapshot, activateWindow))
                     {
@@ -3625,6 +3801,11 @@ namespace TrafficView
                     this.IsDesktopShellForegroundWindow())
                 {
                     this.lastDesktopShellForegroundUtc = DateTime.UtcNow;
+                    if (this.taskbarLocalZOrderRepairPending)
+                    {
+                        this.EnsurePassiveTaskbarPresence();
+                    }
+
                     this.UpdateTaskbarMonitorState();
                     return;
                 }
@@ -3660,6 +3841,53 @@ namespace TrafficView
             }
         }
 
+        private bool TryDebounceTaskbarIntegrationRefresh()
+        {
+            if (this.taskbarRefreshDebounceTimer == null ||
+                this.lastTaskbarIntegrationRefreshUtc == DateTime.MinValue)
+            {
+                return false;
+            }
+
+            double elapsedMilliseconds = (DateTime.UtcNow - this.lastTaskbarIntegrationRefreshUtc).TotalMilliseconds;
+            if (elapsedMilliseconds >= TaskbarRefreshDebounceMs)
+            {
+                return false;
+            }
+
+            int delayMilliseconds = Math.Max(1, TaskbarRefreshDebounceMs - (int)elapsedMilliseconds);
+            this.taskbarIntegrationDebouncedRefreshPending = true;
+            this.taskbarRefreshDebounceTimer.Stop();
+            this.taskbarRefreshDebounceTimer.Interval = delayMilliseconds;
+            this.taskbarRefreshDebounceTimer.Start();
+            return true;
+        }
+
+        private void TaskbarRefreshDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            this.taskbarRefreshDebounceTimer.Stop();
+            if (!this.taskbarIntegrationDebouncedRefreshPending)
+            {
+                return;
+            }
+
+            this.taskbarIntegrationDebouncedRefreshPending = false;
+            if (!this.IsDisposed && this.IsTaskbarIntegratedMode())
+            {
+                this.RefreshTaskbarIntegration(false, false, true);
+            }
+        }
+
+        private void ClearTaskbarIntegrationRefreshDebounce()
+        {
+            this.taskbarIntegrationDebouncedRefreshPending = false;
+            this.lastTaskbarIntegrationRefreshUtc = DateTime.MinValue;
+            if (this.taskbarRefreshDebounceTimer != null)
+            {
+                this.taskbarRefreshDebounceTimer.Stop();
+            }
+        }
+
         private void SetTaskbarIntegrationForcedRightOnly(bool forceRightOnly)
         {
             if (this.taskbarIntegrationForceRightOnlySection == forceRightOnly)
@@ -3672,6 +3900,70 @@ namespace TrafficView
             this.lastPresentedLocation = new Point(int.MinValue, int.MinValue);
             this.lastPresentedSize = Size.Empty;
             this.staticSurfaceDirty = true;
+        }
+
+        private void SetTaskbarIntegrationStickyRightOnly(bool stickyRightOnly)
+        {
+            if (this.taskbarIntegrationStickyRightOnlySection == stickyRightOnly)
+            {
+                return;
+            }
+
+            this.taskbarIntegrationStickyRightOnlySection = stickyRightOnly;
+            this.ApplyDpiLayout(this.currentDpi, false);
+            this.lastPresentedLocation = new Point(int.MinValue, int.MinValue);
+            this.lastPresentedSize = Size.Empty;
+            this.staticSurfaceDirty = true;
+        }
+
+        private void TryToggleTaskbarSectionModeFromLeftDrag()
+        {
+            if (this.settings == null ||
+                !this.settings.TaskbarIntegrationEnabled ||
+                this.GetConfiguredPopupSectionMode() != PopupSectionMode.Both)
+            {
+                return;
+            }
+
+            TaskbarIntegrationSnapshot snapshot = this.activeTaskbarSnapshot;
+            if ((snapshot == null && !this.TryCaptureTaskbarIntegrationSnapshot(out snapshot)) ||
+                snapshot == null ||
+                snapshot.IsVertical)
+            {
+                return;
+            }
+
+            Point cursorPosition = Cursor.Position;
+            int deltaX = cursorPosition.X - this.dragStartCursor.X;
+            int deltaY = cursorPosition.Y - this.dragStartCursor.Y;
+            int toggleThreshold = this.ScaleValue(TaskbarSectionToggleDragThreshold);
+            if (deltaX > -toggleThreshold || Math.Abs(deltaY) > toggleThreshold * 2)
+            {
+                return;
+            }
+
+            Rectangle popupBounds = this.GetCurrentPopupScreenBounds();
+            if (!this.ShouldAutoIntegrateWithTaskbar(popupBounds, snapshot))
+            {
+                return;
+            }
+
+            if (this.taskbarIntegrationStickyRightOnlySection)
+            {
+                this.SetTaskbarIntegrationStickyRightOnly(false);
+                this.SetTaskbarIntegrationForcedRightOnly(false);
+                this.RefreshTaskbarIntegration(false, false);
+                return;
+            }
+
+            if (this.GetEffectivePopupSectionMode() != PopupSectionMode.Both)
+            {
+                return;
+            }
+
+            this.SetTaskbarIntegrationForcedRightOnly(false);
+            this.SetTaskbarIntegrationStickyRightOnly(true);
+            this.RefreshTaskbarIntegration(false, false);
         }
 
         private void HideForTaskbarIntegrationCondition()
@@ -3697,6 +3989,8 @@ namespace TrafficView
             bool wasVisible = this.Visible;
             bool locationChanged = this.Location != placementBounds.Location;
             bool windowStateChanged = this.WindowState != FormWindowState.Normal;
+            bool needsLocalZOrderRepair = this.ShouldUseTaskbarLocalZOrder() &&
+                (!wasVisible || windowStateChanged || this.taskbarLocalZOrderRepairPending);
 
             if (locationChanged)
             {
@@ -3721,11 +4015,123 @@ namespace TrafficView
                 this.WindowState = FormWindowState.Normal;
             }
 
-            // Keep visibility reliable, but avoid unnecessary property churn.
-            // The TopMost reassertion stays active so the overlay does not drop
-            // behind the taskbar after shell/taskbar focus changes.
-            this.EnsureTopMostPlacement(activateWindow);
+            if (this.ShouldUseGlobalTopMost())
+            {
+                this.EnsureTopMostPlacement(activateWindow);
+            }
+            else
+            {
+                this.ApplyWindowZOrderMode();
+                this.EnsureTaskbarLocalFrontPlacement(needsLocalZOrderRepair);
+            }
+
             this.RefreshVisualSurface();
+        }
+
+        private void TrackTaskbarLocalZOrderAnchor(TaskbarIntegrationSnapshot snapshot)
+        {
+            if (!this.ShouldUseTaskbarLocalZOrder() ||
+                snapshot == null ||
+                snapshot.TaskbarZOrderAnchorHandle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            if (this.lastTaskbarLocalZOrderAnchorHandle != IntPtr.Zero &&
+                snapshot.TaskbarZOrderAnchorHandle != this.lastTaskbarLocalZOrderAnchorHandle)
+            {
+                this.taskbarLocalZOrderRepairPending = true;
+            }
+        }
+
+        private void EnsureTaskbarLocalFrontPlacement(bool forceRepair)
+        {
+            if (!this.ShouldUseTaskbarLocalZOrder() ||
+                !this.IsHandleCreated ||
+                !this.Visible ||
+                this.IsDisposed)
+            {
+                return;
+            }
+
+            TaskbarIntegrationSnapshot snapshot = this.activeTaskbarSnapshot;
+            if (snapshot == null && !this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+            {
+                return;
+            }
+
+            this.TrackTaskbarLocalZOrderAnchor(snapshot);
+            this.activeTaskbarSnapshot = snapshot;
+
+            IntPtr anchorHandle = snapshot.TaskbarZOrderAnchorHandle != IntPtr.Zero
+                ? snapshot.TaskbarZOrderAnchorHandle
+                : snapshot.TaskbarHandle;
+            if (anchorHandle == IntPtr.Zero || anchorHandle == this.Handle)
+            {
+                return;
+            }
+
+            if (!forceRepair &&
+                !this.taskbarLocalZOrderRepairPending &&
+                this.lastTaskbarLocalZOrderAnchorHandle == anchorHandle &&
+                this.IsWindowAboveZOrderAnchor(anchorHandle))
+            {
+                return;
+            }
+
+            IntPtr insertAfterHandle = this.GetTaskbarLocalInsertAfterHandle(anchorHandle);
+            if (insertAfterHandle == IntPtr.Zero || insertAfterHandle == this.Handle)
+            {
+                return;
+            }
+
+            uint flags = SwpNoMove | SwpNoSize | SwpNoOwnerZOrder | SwpNoSendChanging | SwpNoActivate;
+            bool repaired = SetWindowPos(this.Handle, insertAfterHandle, this.Left, this.Top, this.Width, this.Height, flags);
+            if (!repaired)
+            {
+                AppLog.WarnOnce(
+                    "taskbar-local-zorder-setwindowpos",
+                    string.Format(
+                        "SetWindowPos failed while repairing the taskbar-local z-order. Win32={0}",
+                        Marshal.GetLastWin32Error()));
+            }
+
+            if (repaired && this.IsWindowAboveZOrderAnchor(anchorHandle))
+            {
+                this.lastTaskbarLocalZOrderAnchorHandle = anchorHandle;
+                this.taskbarLocalZOrderRepairPending = false;
+            }
+            else
+            {
+                this.taskbarLocalZOrderRepairPending = true;
+            }
+        }
+
+        private IntPtr GetTaskbarLocalInsertAfterHandle(IntPtr anchorHandle)
+        {
+            IntPtr insertAfterHandle = GetWindow(anchorHandle, GwHwndPrev);
+            while (insertAfterHandle == this.Handle)
+            {
+                insertAfterHandle = GetWindow(insertAfterHandle, GwHwndPrev);
+            }
+
+            return insertAfterHandle != IntPtr.Zero ? insertAfterHandle : anchorHandle;
+        }
+
+        private bool IsWindowAboveZOrderAnchor(IntPtr anchorHandle)
+        {
+            IntPtr currentHandle = GetWindow(this.Handle, GwHwndNext);
+            while (currentHandle != IntPtr.Zero)
+            {
+                if (currentHandle == anchorHandle)
+                {
+                    return true;
+                }
+
+                currentHandle = GetWindow(currentHandle, GwHwndNext);
+            }
+
+            return false;
         }
 
         private bool TryPreserveTaskbarPlacement(bool activateWindow, bool allowExpiredPlacement)
@@ -3750,6 +4156,11 @@ namespace TrafficView
                 this.IsDesktopShellForegroundWindow())
             {
                 this.lastDesktopShellForegroundUtc = DateTime.UtcNow;
+                if (this.taskbarLocalZOrderRepairPending)
+                {
+                    this.EnsurePassiveTaskbarPresence();
+                }
+
                 return true;
             }
 
@@ -3807,6 +4218,12 @@ namespace TrafficView
 
         private void EnsureTopMostPlacement(bool activateWindow)
         {
+            if (!this.ShouldUseGlobalTopMost())
+            {
+                this.ApplyWindowZOrderMode();
+                return;
+            }
+
             if (!this.IsHandleCreated || this.IsTopMostEnforcementPaused)
             {
                 return;
@@ -3860,9 +4277,13 @@ namespace TrafficView
         {
             snapshot = null;
 
-            // Intentionally limited to the primary taskbar window. This keeps
-            // the implementation robust and avoids guessing on secondary taskbars.
-            IntPtr taskbarHandle = FindWindow("Shell_TrayWnd", null);
+            Rectangle targetScreenBounds;
+            IntPtr taskbarHandle;
+            if (!this.TryFindRelevantTaskbarWindow(out taskbarHandle, out targetScreenBounds))
+            {
+                return false;
+            }
+
             if (taskbarHandle == IntPtr.Zero || !IsWindowVisible(taskbarHandle))
             {
                 return false;
@@ -3875,8 +4296,7 @@ namespace TrafficView
             }
 
             Rectangle visibleBounds = windowRect.ToRectangle();
-            Rectangle primaryScreenBounds = Screen.PrimaryScreen.Bounds;
-            visibleBounds = Rectangle.Intersect(visibleBounds, primaryScreenBounds);
+            visibleBounds = Rectangle.Intersect(visibleBounds, targetScreenBounds);
             if (visibleBounds.Width <= 0 || visibleBounds.Height <= 0)
             {
                 return false;
@@ -3886,7 +4306,7 @@ namespace TrafficView
             appBarData.CbSize = Marshal.SizeOf(typeof(AppBarData));
             appBarData.HWnd = taskbarHandle;
 
-            AppBarEdge edge = DetermineTaskbarEdge(visibleBounds, primaryScreenBounds);
+            AppBarEdge edge = DetermineTaskbarEdge(visibleBounds, targetScreenBounds);
             if (SHAppBarMessage(AbmGetTaskbarPos, ref appBarData) != 0)
             {
                 edge = appBarData.UEdge;
@@ -3915,9 +4335,10 @@ namespace TrafficView
             snapshot = new TaskbarIntegrationSnapshot
             {
                 TaskbarHandle = taskbarHandle,
+                TaskbarZOrderAnchorHandle = taskbarHandle,
                 Edge = edge,
                 Bounds = visibleBounds,
-                ScreenBounds = primaryScreenBounds,
+                ScreenBounds = targetScreenBounds,
                 AutoHide = autoHide,
                 IsHidden = hidden,
                 UsesCustomTaskListHeuristic = usesCustomTaskListHeuristic,
@@ -3926,6 +4347,82 @@ namespace TrafficView
             };
 
             return true;
+        }
+
+        private bool TryFindRelevantTaskbarWindow(out IntPtr taskbarHandle, out Rectangle targetScreenBounds)
+        {
+            taskbarHandle = IntPtr.Zero;
+            targetScreenBounds = this.GetTaskbarIntegrationTargetScreenBounds();
+            IntPtr bestTaskbarHandle = IntPtr.Zero;
+            Rectangle searchScreenBounds = targetScreenBounds;
+            int bestIntersectionArea = 0;
+
+            EnumWindows(delegate(IntPtr windowHandle, IntPtr lParam)
+            {
+                if (!IsWindowVisible(windowHandle))
+                {
+                    return true;
+                }
+
+                string className = GetWindowClassName(windowHandle);
+                if (!IsTaskbarRootWindowClass(className))
+                {
+                    return true;
+                }
+
+                NativeRect windowRect;
+                if (!GetWindowRect(windowHandle, out windowRect))
+                {
+                    return true;
+                }
+
+                Rectangle taskbarBounds = Rectangle.Intersect(windowRect.ToRectangle(), searchScreenBounds);
+                int intersectionArea = Math.Max(0, taskbarBounds.Width) * Math.Max(0, taskbarBounds.Height);
+                if (intersectionArea <= 0)
+                {
+                    return true;
+                }
+
+                if (intersectionArea > bestIntersectionArea ||
+                    (intersectionArea == bestIntersectionArea &&
+                    string.Equals(className, "Shell_TrayWnd", StringComparison.Ordinal)))
+                {
+                    bestTaskbarHandle = windowHandle;
+                    bestIntersectionArea = intersectionArea;
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            if (bestTaskbarHandle != IntPtr.Zero)
+            {
+                taskbarHandle = bestTaskbarHandle;
+                return true;
+            }
+
+            taskbarHandle = FindWindow("Shell_TrayWnd", null);
+            return taskbarHandle != IntPtr.Zero;
+        }
+
+        private Rectangle GetTaskbarIntegrationTargetScreenBounds()
+        {
+            if (this.Visible)
+            {
+                return Screen.FromPoint(GetRectangleCenter(this.GetCurrentPopupScreenBounds())).Bounds;
+            }
+
+            if (this.lastSuccessfulTaskbarPlacementBounds.Width > 0 &&
+                this.lastSuccessfulTaskbarPlacementBounds.Height > 0)
+            {
+                return Screen.FromPoint(GetRectangleCenter(this.lastSuccessfulTaskbarPlacementBounds)).Bounds;
+            }
+
+            if (this.taskbarIntegrationPreferredLocation.HasValue)
+            {
+                return Screen.FromPoint(this.taskbarIntegrationPreferredLocation.Value).Bounds;
+            }
+
+            return Screen.FromPoint(Cursor.Position).Bounds;
         }
 
         private static AppBarEdge DetermineTaskbarEdge(Rectangle bounds, Rectangle screenBounds)
@@ -4230,7 +4727,15 @@ namespace TrafficView
                 return false;
             }
 
-            IntPtr taskbarHandle = FindWindow("Shell_TrayWnd", null);
+            IntPtr taskbarHandle = this.activeTaskbarSnapshot != null
+                ? this.activeTaskbarSnapshot.TaskbarHandle
+                : IntPtr.Zero;
+            if (taskbarHandle == IntPtr.Zero)
+            {
+                Rectangle targetScreenBounds;
+                this.TryFindRelevantTaskbarWindow(out taskbarHandle, out targetScreenBounds);
+            }
+
             if (taskbarHandle == IntPtr.Zero)
             {
                 return false;
@@ -4271,23 +4776,20 @@ namespace TrafficView
             }
 
             this.lastDesktopShellForegroundUtc = DateTime.MinValue;
-            this.EnsureLightweightTaskbarForegroundPresence();
+            this.EnsurePassiveTaskbarPresence();
             return true;
         }
 
-        private void EnsureLightweightTaskbarForegroundPresence()
+        private void EnsurePassiveTaskbarPresence()
         {
-            if (!this.IsHandleCreated || !this.Visible || this.IsTopMostEnforcementPaused)
+            if (!this.IsHandleCreated || !this.Visible)
             {
                 return;
             }
 
-            if (!this.TopMost)
-            {
-                this.TopMost = true;
-            }
-
-            this.BringToFront();
+            this.ApplyWindowZOrderMode();
+            this.EnsureTaskbarLocalFrontPlacement(false);
+            this.RefreshVisualSurface();
         }
 
         private bool TryRefreshTaskbarPlacementDuringTaskbarFocus()
@@ -4311,6 +4813,7 @@ namespace TrafficView
                 return false;
             }
 
+            this.TrackTaskbarLocalZOrderAnchor(snapshot);
             this.activeTaskbarSnapshot = snapshot;
             if (this.NeedsCurrentDpiLayout())
             {
@@ -4318,8 +4821,7 @@ namespace TrafficView
             }
 
             Rectangle placementBounds;
-            if (!this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds) &&
-                !this.TryGetTaskbarPlacementBoundsAllowingQuickLaunchOverlap(snapshot, out placementBounds))
+            if (!this.TryGetTaskbarPlacementBoundsWithCompactFallback(snapshot, out placementBounds))
             {
                 if (this.TryPreserveRightAnchoredTaskbarPlacement(snapshot, false))
                 {
@@ -4356,7 +4858,13 @@ namespace TrafficView
         {
             return string.Equals(className, "Progman", StringComparison.Ordinal) ||
                 string.Equals(className, "WorkerW", StringComparison.Ordinal) ||
-                string.Equals(className, "Shell_TrayWnd", StringComparison.Ordinal);
+                IsTaskbarRootWindowClass(className);
+        }
+
+        private static bool IsTaskbarRootWindowClass(string className)
+        {
+            return string.Equals(className, "Shell_TrayWnd", StringComparison.Ordinal) ||
+                string.Equals(className, "Shell_SecondaryTrayWnd", StringComparison.Ordinal);
         }
 
         private static bool IsProtectedTaskbarRegionWindowClass(string className)
@@ -4558,6 +5066,13 @@ namespace TrafficView
             if (popupWidth <= 0 || popupHeight <= 0)
             {
                 return false;
+            }
+
+            // Horizontal taskbars stay strictly right-anchored against the tray edge.
+            // Left-side occupancy (for example quick-launch style buttons) is ignored on purpose.
+            if (!snapshot.IsVertical)
+            {
+                return this.TryGetTaskbarRightAnchoredPlacementBoundsForSizeIgnoringQuickLaunch(snapshot, popupSize, out placementBounds);
             }
 
             int placementMargin = this.ScaleValue(TaskbarPlacementMargin);
@@ -5257,6 +5772,11 @@ namespace TrafficView
 
         private void TryActivatePopupWindow()
         {
+            if (!this.ShouldUseGlobalTopMost())
+            {
+                return;
+            }
+
             IntPtr foregroundWindow = GetForegroundWindow();
             if (foregroundWindow == this.Handle)
             {
@@ -5372,8 +5892,8 @@ namespace TrafficView
                 return adjustedLocation;
             }
 
-            int snapDistance = this.ScaleValue(30);
-            int breakThroughDepth = this.ScaleValue(52);
+            int snapDistance = this.ScaleValue(TaskbarDragSnapDistance);
+            int breakThroughDepth = this.ScaleValue(TaskbarDragBreakThroughDepth);
             switch (snapshot.Edge)
             {
                 case AppBarEdge.Bottom:
@@ -5700,7 +6220,7 @@ namespace TrafficView
             if (!this.Visible ||
                 this.IsDisposed ||
                 this.IsTopMostEnforcementPaused ||
-                (this.settings != null && this.settings.TaskbarIntegrationEnabled))
+                !this.ShouldUseGlobalTopMost())
             {
                 return;
             }
@@ -9496,6 +10016,8 @@ namespace TrafficView
                 TaskbarIntegrationSnapshot snapshot = this.activeTaskbarSnapshot;
                 if (snapshot == null && !this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
                 {
+                    this.taskbarIntegrationPreferredLocation = preferredLocation;
+                    this.Location = this.GetVisiblePopupLocationForManualDrag(preferredLocation, cursorPosition);
                     return;
                 }
 
@@ -9542,6 +10064,11 @@ namespace TrafficView
             if (e.Button == GetOverlayDragMouseButton())
             {
                 bool shouldCommitLocation = this.dragMoved;
+                if (shouldCommitLocation)
+                {
+                    this.TryToggleTaskbarSectionModeFromLeftDrag();
+                }
+
                 this.ResetOverlayDragState();
 
                 if (shouldCommitLocation)

@@ -274,7 +274,8 @@ namespace TrafficView
                 panelSkinId,
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
-                this.RotatingMeterGlossEnabled);
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled);
         }
 
         public MonitorSettings WithPopupDisplayMode(PopupDisplayMode popupDisplayMode)
@@ -805,7 +806,9 @@ namespace TrafficView
                     taskbarIntegrationEnabled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
                 }
+
             }
 
             return new MonitorSettings(
