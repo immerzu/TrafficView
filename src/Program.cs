@@ -246,6 +246,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem taskbarIntegrationOnItem;
         private readonly ToolStripMenuItem taskbarIntegrationOffItem;
         private readonly ToolStripMenuItem rotatingGlossItem;
+        private readonly ToolStripMenuItem activityBorderGlowItem;
         private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem deleteSkinItem;
         private readonly ToolStripMenuItem languageItem;
@@ -313,6 +314,7 @@ namespace TrafficView
             this.taskbarIntegrationItem.DropDownItems.Add(this.taskbarIntegrationOnItem);
             this.taskbarIntegrationItem.DropDownItems.Add(this.taskbarIntegrationOffItem);
             this.rotatingGlossItem = new ToolStripMenuItem(string.Empty, null, this.RotatingGlossItem_Click);
+            this.activityBorderGlowItem = new ToolStripMenuItem(string.Empty, null, this.ActivityBorderGlowItem_Click);
             this.skinItem = new ToolStripMenuItem(string.Empty);
             this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
             this.languageItem = new ToolStripMenuItem(string.Empty);
@@ -351,6 +353,7 @@ namespace TrafficView
             }
             this.displayModeItem.DropDownItems.Add(new ToolStripSeparator());
             this.displayModeItem.DropDownItems.Add(this.rotatingGlossItem);
+            this.displayModeItem.DropDownItems.Add(this.activityBorderGlowItem);
 
             PopupSectionMode[] popupSectionModes = new PopupSectionMode[]
             {
@@ -867,6 +870,15 @@ namespace TrafficView
         {
             bool nextValue = !this.settings.RotatingMeterGlossEnabled;
             this.settings = this.settings.WithRotatingMeterGlossEnabled(nextValue);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            this.UpdateMenuState();
+        }
+
+        private void ActivityBorderGlowItem_Click(object sender, EventArgs e)
+        {
+            bool nextValue = !this.settings.ActivityBorderGlowEnabled;
+            this.settings = this.settings.WithActivityBorderGlowEnabled(nextValue);
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
             this.UpdateMenuState();
@@ -1581,6 +1593,11 @@ namespace TrafficView
                 "Menu.RotatingGloss",
                 "Rotierender Kernschimmer");
             this.rotatingGlossItem.Checked = this.settings.RotatingMeterGlossEnabled;
+            this.activityBorderGlowItem.Text = UiLanguage.Get(
+                "Menu.ActivityBorderGlow",
+                "Leuchtrand");
+            this.activityBorderGlowItem.Checked = this.settings.ActivityBorderGlowEnabled;
+            this.activityBorderGlowItem.Enabled = !this.settings.TaskbarIntegrationEnabled;
 
             AdapterAvailabilityState adapterAvailabilityState = GetAdapterAvailabilityState(this.settings);
 
@@ -2104,6 +2121,13 @@ namespace TrafficView
         private const double MeterGlossAnimationThresholdRatio = 0.02D;
         private const double MeterGlossClockwiseMaxRotationDegreesPerSecond = 138D;
         private const double MeterGlossCounterClockwiseMaxRotationDegreesPerSecond = 110D;
+        private const double ActivityBorderFadeInStartRatio = 0.008D;
+        private const double ActivityBorderFadeInFullRatio = 0.165D;
+        private const double ActivityBorderAnimationThresholdRatio = 0.006D;
+        private const double ActivityBorderBaseRotationDegreesPerSecond = 56D;
+        private const double ActivityBorderMaxRotationDegreesPerSecond = 328D;
+        private const double ActivityBorderTravelPulseWidth = 0.105D;
+        private const double ActivityBorderTravelTailWidth = 0.245D;
         private const float StandardMeterGlossExtraInset = 2.3F;
         private const float MiniGraphDownloadRingWeight = 1.12F;
         private const float MiniGraphUploadRingWeight = 1.00F;
@@ -2157,6 +2181,7 @@ namespace TrafficView
         private DateTime peakHoldUploadCapturedUtc = DateTime.MinValue;
         private DateTime lastAnimationAdvanceUtc = DateTime.MinValue;
         private double meterGlossRotationDegrees;
+        private double activityBorderRotationDegrees;
         private readonly Queue<double> recentDownloadSamples;
         private readonly Queue<double> recentUploadSamples;
         private readonly Queue<TrafficHistorySample> trafficHistory;
@@ -3142,6 +3167,11 @@ namespace TrafficView
                     visualDownloadFillRatio,
                     visualUploadFillRatio);
             }
+
+            this.DrawActivityBorderLights(
+                graphics,
+                visualDownloadFillRatio,
+                visualUploadFillRatio);
         }
 
         private void DrawHudOnlyMeterGuideCircles(
@@ -4115,12 +4145,22 @@ namespace TrafficView
                 insertAfterHandle = GetWindow(insertAfterHandle, GwHwndPrev);
             }
 
-            return insertAfterHandle != IntPtr.Zero ? insertAfterHandle : anchorHandle;
+            return insertAfterHandle;
         }
 
         private bool IsWindowAboveZOrderAnchor(IntPtr anchorHandle)
         {
-            IntPtr currentHandle = GetWindow(this.Handle, GwHwndNext);
+            return this.IsWindowAboveWindow(this.Handle, anchorHandle);
+        }
+
+        private bool IsWindowAboveWindow(IntPtr windowHandle, IntPtr anchorHandle)
+        {
+            if (windowHandle == IntPtr.Zero || anchorHandle == IntPtr.Zero || windowHandle == anchorHandle)
+            {
+                return false;
+            }
+
+            IntPtr currentHandle = GetWindow(windowHandle, GwHwndNext);
             while (currentHandle != IntPtr.Zero)
             {
                 if (currentHandle == anchorHandle)
@@ -4335,7 +4375,10 @@ namespace TrafficView
             snapshot = new TaskbarIntegrationSnapshot
             {
                 TaskbarHandle = taskbarHandle,
-                TaskbarZOrderAnchorHandle = taskbarHandle,
+                TaskbarZOrderAnchorHandle = this.ResolveTaskbarLocalZOrderAnchor(
+                    taskbarHandle,
+                    visibleBounds,
+                    usesCustomTaskListHeuristic),
                 Edge = edge,
                 Bounds = visibleBounds,
                 ScreenBounds = targetScreenBounds,
@@ -4347,6 +4390,55 @@ namespace TrafficView
             };
 
             return true;
+        }
+
+        private IntPtr ResolveTaskbarLocalZOrderAnchor(
+            IntPtr taskbarHandle,
+            Rectangle taskbarBounds,
+            bool usesCustomTaskListHeuristic)
+        {
+            if (taskbarHandle == IntPtr.Zero)
+            {
+                return IntPtr.Zero;
+            }
+
+            IntPtr bestHandle = taskbarHandle;
+            EnumWindows(delegate(IntPtr windowHandle, IntPtr lParam)
+            {
+                if (windowHandle == this.Handle ||
+                    windowHandle == IntPtr.Zero ||
+                    !IsWindowVisible(windowHandle))
+                {
+                    return true;
+                }
+
+                NativeRect candidateRect;
+                if (!GetWindowRect(windowHandle, out candidateRect))
+                {
+                    return true;
+                }
+
+                Rectangle intersectionBounds = Rectangle.Intersect(candidateRect.ToRectangle(), taskbarBounds);
+                if (intersectionBounds.Width <= 0 || intersectionBounds.Height <= 0)
+                {
+                    return true;
+                }
+
+                string className = GetWindowClassName(windowHandle);
+                if (!IsTaskbarLocalZOrderAnchorWindowClass(className, usesCustomTaskListHeuristic))
+                {
+                    return true;
+                }
+
+                if (bestHandle == IntPtr.Zero || this.IsWindowAboveWindow(windowHandle, bestHandle))
+                {
+                    bestHandle = windowHandle;
+                }
+
+                return true;
+            }, IntPtr.Zero);
+
+            return bestHandle;
         }
 
         private bool TryFindRelevantTaskbarWindow(out IntPtr taskbarHandle, out Rectangle targetScreenBounds)
@@ -4859,6 +4951,24 @@ namespace TrafficView
             return string.Equals(className, "Progman", StringComparison.Ordinal) ||
                 string.Equals(className, "WorkerW", StringComparison.Ordinal) ||
                 IsTaskbarRootWindowClass(className);
+        }
+
+        private static bool IsTaskbarLocalZOrderAnchorWindowClass(string className, bool usesCustomTaskListHeuristic)
+        {
+            if (IsTaskbarRootWindowClass(className) ||
+                IsProtectedTaskbarRegionWindowClass(className))
+            {
+                return true;
+            }
+
+            if (string.Equals(className, "MSTaskListWClass", StringComparison.Ordinal) ||
+                string.Equals(className, "MSTaskSwWClass", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return usesCustomTaskListHeuristic &&
+                string.Equals(className, "ToolbarWindow32", StringComparison.Ordinal);
         }
 
         private static bool IsTaskbarRootWindowClass(string className)
@@ -7951,6 +8061,288 @@ namespace TrafficView
             }
         }
 
+        private void DrawActivityBorderLights(
+            Graphics graphics,
+            double visualDownloadFillRatio,
+            double visualUploadFillRatio)
+        {
+            if (!this.ShouldUseActivityBorderGlow())
+            {
+                return;
+            }
+
+            double intensity = Math.Max(visualDownloadFillRatio, visualUploadFillRatio);
+            double fadeRatio = GetActivityBorderFadeRatio(intensity);
+            if (fadeRatio <= 0D ||
+                this.Width < this.ScaleValue(24) ||
+                this.Height < this.ScaleValue(18))
+            {
+                return;
+            }
+
+            float inset = Math.Max(2.5F, this.ScaleFloat(3.2F));
+            RectangleF borderBounds = new RectangleF(
+                inset,
+                inset,
+                Math.Max(1F, this.Width - (inset * 2F)),
+                Math.Max(1F, this.Height - (inset * 2F)));
+            float cornerRadius = Math.Min(
+                this.ScaleFloat(BaseWindowCornerRadius),
+                Math.Min(borderBounds.Width, borderBounds.Height) / 2F);
+            float perimeter = GetRoundedRectanglePerimeter(borderBounds, cornerRadius);
+            if (perimeter <= 1F)
+            {
+                return;
+            }
+
+            double direction = this.GetActivityBorderDirection();
+            Color glowColor = direction >= 0D
+                ? DownloadArrowBaseColor
+                : UploadArrowBaseColor;
+            Color coreColor = direction >= 0D
+                ? DownloadArrowHighColor
+                : UploadArrowHighColor;
+            int lightCount = Math.Max(16, Math.Min(34, (int)Math.Round(perimeter / Math.Max(7.5F, this.ScaleFloat(8.8F)))));
+            double phase = this.activityBorderRotationDegrees / 360D;
+            double smoothedIntensity = SmoothStep(intensity) * fadeRatio;
+
+            GraphicsState state = graphics.Save();
+            try
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+
+                for (int i = 0; i < lightCount; i++)
+                {
+                    double unit = i / (double)lightCount;
+                    double travelAccent = GetActivityBorderTravelAccent(unit, phase, direction);
+                    double wave = 0.24D + (0.76D * travelAccent);
+                    double localIntensity = smoothedIntensity * wave;
+                    PointF center = GetRoundedRectanglePoint(borderBounds, cornerRadius, unit);
+                    float coreRadius = this.ScaleFloat(0.55F) + ((float)localIntensity * this.ScaleFloat(1.85F));
+                    float glowRadius = coreRadius + this.ScaleFloat(2.8F) + ((float)localIntensity * this.ScaleFloat(4.4F));
+                    int glowAlpha = Math.Min(240, (int)Math.Round(localIntensity * 212D));
+                    int coreAlpha = Math.Min(255, (int)Math.Round(localIntensity * 255D));
+
+                    this.DrawActivityBorderLight(
+                        graphics,
+                        center,
+                        coreRadius,
+                        glowRadius,
+                        glowColor,
+                        coreColor,
+                        glowAlpha,
+                        coreAlpha);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
+            }
+        }
+
+        private void DrawActivityBorderLight(
+            Graphics graphics,
+            PointF center,
+            float coreRadius,
+            float glowRadius,
+            Color glowColor,
+            Color coreColor,
+            int glowAlpha,
+            int coreAlpha)
+        {
+            RectangleF glowBounds = new RectangleF(
+                center.X - glowRadius,
+                center.Y - glowRadius,
+                glowRadius * 2F,
+                glowRadius * 2F);
+            using (GraphicsPath glowPath = new GraphicsPath())
+            {
+                glowPath.AddEllipse(glowBounds);
+                using (PathGradientBrush glowBrush = new PathGradientBrush(glowPath))
+                {
+                    glowBrush.CenterPoint = center;
+                    glowBrush.CenterColor = Color.FromArgb(Math.Max(0, Math.Min(255, glowAlpha)), glowColor);
+                    glowBrush.SurroundColors = new Color[] { Color.Transparent };
+                    graphics.FillEllipse(glowBrush, glowBounds);
+                }
+            }
+
+            RectangleF coreBounds = new RectangleF(
+                center.X - coreRadius,
+                center.Y - coreRadius,
+                coreRadius * 2F,
+                coreRadius * 2F);
+            using (SolidBrush coreBrush = new SolidBrush(Color.FromArgb(Math.Max(0, Math.Min(255, coreAlpha)), coreColor)))
+            using (SolidBrush highlightBrush = new SolidBrush(Color.FromArgb(Math.Max(0, Math.Min(255, coreAlpha)), Color.White)))
+            {
+                graphics.FillEllipse(coreBrush, coreBounds);
+                graphics.FillEllipse(
+                    highlightBrush,
+                    coreBounds.Left + (coreRadius * 0.42F),
+                    coreBounds.Top + (coreRadius * 0.30F),
+                    Math.Max(0.6F, coreRadius * 0.72F),
+                    Math.Max(0.6F, coreRadius * 0.72F));
+            }
+        }
+
+        private double GetActivityBorderIntensity()
+        {
+            if (!this.ShouldUseActivityBorderGlow())
+            {
+                return 0D;
+            }
+
+            return Math.Max(
+                this.GetVisualizedFillRatioForCurrentDownload(),
+                this.GetVisualizedFillRatioForCurrentUpload());
+        }
+
+        private bool ShouldUseActivityBorderGlow()
+        {
+            return this.settings != null &&
+                this.settings.ActivityBorderGlowEnabled &&
+                !this.IsTaskbarIntegratedMode();
+        }
+
+        private double GetActivityBorderDirection()
+        {
+            double downloadInfluence = this.GetVisualizedFillRatioForCurrentDownload();
+            double uploadInfluence = this.GetVisualizedFillRatioForCurrentUpload();
+            return uploadInfluence > downloadInfluence + 0.015D ? -1D : 1D;
+        }
+
+        private static double GetActivityBorderFadeRatio(double intensity)
+        {
+            if (intensity <= ActivityBorderFadeInStartRatio)
+            {
+                return 0D;
+            }
+
+            double normalized = (intensity - ActivityBorderFadeInStartRatio) /
+                Math.Max(0.0001D, ActivityBorderFadeInFullRatio - ActivityBorderFadeInStartRatio);
+            return SmoothStep(Math.Max(0D, Math.Min(1D, normalized)));
+        }
+
+        private static double GetActivityBorderTravelAccent(double unitPosition, double phase, double direction)
+        {
+            double forwardDistance = direction >= 0D
+                ? GetCircularForwardDistance(phase, unitPosition)
+                : GetCircularForwardDistance(unitPosition, phase);
+            double head = 1D - Math.Min(1D, forwardDistance / ActivityBorderTravelPulseWidth);
+            double tail = 1D - Math.Min(1D, forwardDistance / ActivityBorderTravelTailWidth);
+            double secondaryPhase = phase + 0.50D;
+            secondaryPhase -= Math.Floor(secondaryPhase);
+            double secondaryDistance = direction >= 0D
+                ? GetCircularForwardDistance(secondaryPhase, unitPosition)
+                : GetCircularForwardDistance(unitPosition, secondaryPhase);
+            double secondaryHead = 1D - Math.Min(1D, secondaryDistance / (ActivityBorderTravelPulseWidth * 0.86D));
+
+            return Math.Max(
+                SmoothStep(head),
+                Math.Max(SmoothStep(tail) * 0.54D, SmoothStep(secondaryHead) * 0.58D));
+        }
+
+        private static double GetCircularForwardDistance(double fromUnitPosition, double toUnitPosition)
+        {
+            double distance = toUnitPosition - fromUnitPosition;
+            distance -= Math.Floor(distance);
+            return distance;
+        }
+
+        private static float GetRoundedRectanglePerimeter(RectangleF bounds, float radius)
+        {
+            float safeRadius = Math.Max(0F, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2F));
+            float horizontal = Math.Max(0F, bounds.Width - (2F * safeRadius));
+            float vertical = Math.Max(0F, bounds.Height - (2F * safeRadius));
+            return (2F * horizontal) + (2F * vertical) + ((float)(Math.PI * 2D) * safeRadius);
+        }
+
+        private static PointF GetRoundedRectanglePoint(RectangleF bounds, float radius, double unitPosition)
+        {
+            float safeRadius = Math.Max(0F, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2F));
+            float horizontal = Math.Max(0F, bounds.Width - (2F * safeRadius));
+            float vertical = Math.Max(0F, bounds.Height - (2F * safeRadius));
+            float arcLength = (float)(Math.PI * safeRadius / 2D);
+            float perimeter = (2F * horizontal) + (2F * vertical) + (4F * arcLength);
+            if (perimeter <= 0F)
+            {
+                return new PointF(bounds.Left + (bounds.Width / 2F), bounds.Top + (bounds.Height / 2F));
+            }
+
+            double normalizedUnit = unitPosition - Math.Floor(unitPosition);
+            float distance = (float)(normalizedUnit * perimeter);
+
+            if (distance <= horizontal)
+            {
+                return new PointF(bounds.Left + safeRadius + distance, bounds.Top);
+            }
+
+            distance -= horizontal;
+            if (distance <= arcLength)
+            {
+                return GetPointOnCircle(
+                    bounds.Right - safeRadius,
+                    bounds.Top + safeRadius,
+                    safeRadius,
+                    -90D + ((distance / Math.Max(0.0001F, arcLength)) * 90D));
+            }
+
+            distance -= arcLength;
+            if (distance <= vertical)
+            {
+                return new PointF(bounds.Right, bounds.Top + safeRadius + distance);
+            }
+
+            distance -= vertical;
+            if (distance <= arcLength)
+            {
+                return GetPointOnCircle(
+                    bounds.Right - safeRadius,
+                    bounds.Bottom - safeRadius,
+                    safeRadius,
+                    (distance / Math.Max(0.0001F, arcLength)) * 90D);
+            }
+
+            distance -= arcLength;
+            if (distance <= horizontal)
+            {
+                return new PointF(bounds.Right - safeRadius - distance, bounds.Bottom);
+            }
+
+            distance -= horizontal;
+            if (distance <= arcLength)
+            {
+                return GetPointOnCircle(
+                    bounds.Left + safeRadius,
+                    bounds.Bottom - safeRadius,
+                    safeRadius,
+                    90D + ((distance / Math.Max(0.0001F, arcLength)) * 90D));
+            }
+
+            distance -= arcLength;
+            if (distance <= vertical)
+            {
+                return new PointF(bounds.Left, bounds.Bottom - safeRadius - distance);
+            }
+
+            distance -= vertical;
+            return GetPointOnCircle(
+                bounds.Left + safeRadius,
+                bounds.Top + safeRadius,
+                safeRadius,
+                180D + ((distance / Math.Max(0.0001F, arcLength)) * 90D));
+        }
+
+        private static PointF GetPointOnCircle(float centerX, float centerY, float radius, double angleDegrees)
+        {
+            double angleRadians = angleDegrees * Math.PI / 180D;
+            return new PointF(
+                centerX + ((float)Math.Cos(angleRadians) * radius),
+                centerY + ((float)Math.Sin(angleRadians) * radius));
+        }
+
         private float GetDisplayedSweepAngle(double clampedRatio)
         {
             float sweepAngle = (float)(clampedRatio * 360D);
@@ -9054,7 +9446,13 @@ namespace TrafficView
                 Math.Abs(this.ringDisplayUploadBytesPerSecond - this.latestUploadBytesPerSecond) > ringMotionThreshold ||
                 this.peakHoldDownloadBytesPerSecond > this.displayedDownloadBytesPerSecond + holdMotionThreshold ||
                 this.peakHoldUploadBytesPerSecond > this.displayedUploadBytesPerSecond + holdMotionThreshold ||
+                this.ShouldAnimateActivityBorder() ||
                 this.ShouldAnimateMeterGloss();
+        }
+
+        private bool ShouldAnimateActivityBorder()
+        {
+            return this.GetActivityBorderIntensity() > ActivityBorderAnimationThresholdRatio;
         }
 
         private bool ShouldAnimateMeterGloss()
@@ -9093,7 +9491,33 @@ namespace TrafficView
             this.UpdateRingDisplayRates(this.latestDownloadBytesPerSecond, this.latestUploadBytesPerSecond);
             this.DecayPeakHoldRates(nowUtc, elapsedSeconds);
             this.AdvanceMeterGlossRotation(elapsedSeconds);
+            this.AdvanceActivityBorderRotation(elapsedSeconds);
             this.UpdateAnimationTimerState();
+        }
+
+        private void AdvanceActivityBorderRotation(double elapsedSeconds)
+        {
+            double intensity = this.GetActivityBorderIntensity();
+            double fadeRatio = GetActivityBorderFadeRatio(intensity);
+            if (fadeRatio <= 0D)
+            {
+                return;
+            }
+
+            double direction = this.GetActivityBorderDirection();
+            double degreesPerSecond = (ActivityBorderBaseRotationDegreesPerSecond +
+                (SmoothStep(intensity) * (ActivityBorderMaxRotationDegreesPerSecond - ActivityBorderBaseRotationDegreesPerSecond))) *
+                fadeRatio;
+            this.activityBorderRotationDegrees += direction * degreesPerSecond * elapsedSeconds;
+            while (this.activityBorderRotationDegrees >= 360D)
+            {
+                this.activityBorderRotationDegrees -= 360D;
+            }
+
+            while (this.activityBorderRotationDegrees < 0D)
+            {
+                this.activityBorderRotationDegrees += 360D;
+            }
         }
 
         private void AdvanceMeterGlossRotation(double elapsedSeconds)
@@ -9188,7 +9612,7 @@ namespace TrafficView
 
         private int GetAnimationFrameIndex()
         {
-            if (!this.ShouldAnimateCenterArrows())
+            if (!this.ShouldAnimateCenterArrows() && !this.ShouldAnimateVisualEffects())
             {
                 return 0;
             }
@@ -10658,7 +11082,12 @@ namespace TrafficView
                 this.currentSettings.PopupLocationX,
                 this.currentSettings.PopupLocationY,
                 this.currentSettings.PopupScalePercent,
-                this.currentSettings.PanelSkinId);
+                this.currentSettings.PanelSkinId,
+                this.currentSettings.PopupDisplayMode,
+                this.currentSettings.PopupSectionMode,
+                this.currentSettings.RotatingMeterGlossEnabled,
+                this.currentSettings.TaskbarIntegrationEnabled,
+                this.currentSettings.ActivityBorderGlowEnabled);
 
             this.lastSnapshot = NetworkSnapshot.Capture(this.activeSettings);
             if (!this.lastSnapshot.HasAdapters)
@@ -10888,7 +11317,12 @@ namespace TrafficView
                 this.currentSettings.PopupLocationX,
                 this.currentSettings.PopupLocationY,
                 this.currentSettings.PopupScalePercent,
-                this.currentSettings.PanelSkinId);
+                this.currentSettings.PanelSkinId,
+                this.currentSettings.PopupDisplayMode,
+                this.currentSettings.PopupSectionMode,
+                this.currentSettings.RotatingMeterGlossEnabled,
+                this.currentSettings.TaskbarIntegrationEnabled,
+                this.currentSettings.ActivityBorderGlowEnabled);
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.CompletedStatus",
                 "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' bestätigen.",
@@ -11117,7 +11551,12 @@ namespace TrafficView
                 this.currentSettings.PopupLocationX,
                 this.currentSettings.PopupLocationY,
                 this.currentSettings.PopupScalePercent,
-                this.currentSettings.PanelSkinId);
+                this.currentSettings.PanelSkinId,
+                this.currentSettings.PopupDisplayMode,
+                this.currentSettings.PopupSectionMode,
+                this.currentSettings.RotatingMeterGlossEnabled,
+                this.currentSettings.TaskbarIntegrationEnabled,
+                this.currentSettings.ActivityBorderGlowEnabled);
         }
 
         private void LoadAdapterItems()

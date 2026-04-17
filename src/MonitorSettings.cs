@@ -28,7 +28,8 @@ namespace TrafficView
             PopupDisplayMode popupDisplayMode = PopupDisplayMode.Standard,
             PopupSectionMode popupSectionMode = PopupSectionMode.Both,
             bool rotatingMeterGlossEnabled = true,
-            bool taskbarIntegrationEnabled = false)
+            bool taskbarIntegrationEnabled = false,
+            bool activityBorderGlowEnabled = false)
         {
             this.AdapterId = adapterId ?? string.Empty;
             this.AdapterName = adapterName ?? string.Empty;
@@ -47,6 +48,7 @@ namespace TrafficView
             this.PopupDisplayMode = NormalizePopupDisplayMode(popupDisplayMode);
             this.PopupSectionMode = NormalizePopupSectionMode(popupSectionMode);
             this.RotatingMeterGlossEnabled = rotatingMeterGlossEnabled;
+            this.ActivityBorderGlowEnabled = activityBorderGlowEnabled;
             this.TaskbarIntegrationEnabled = taskbarIntegrationEnabled;
         }
 
@@ -92,6 +94,8 @@ namespace TrafficView
 
         public bool RotatingMeterGlossEnabled { get; private set; }
 
+        public bool ActivityBorderGlowEnabled { get; private set; }
+
         public bool TaskbarIntegrationEnabled { get; private set; }
 
         public MonitorSettings Clone()
@@ -114,7 +118,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithInitialCalibrationPromptHandled(bool handled)
@@ -137,7 +142,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithInitialLanguagePromptHandled(bool handled)
@@ -160,7 +166,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithTransparencyPercent(int transparencyPercent)
@@ -183,7 +190,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithLanguageCode(string languageCode)
@@ -206,7 +214,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithPopupLocation(Point popupLocation)
@@ -229,7 +238,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithPopupScalePercent(int popupScalePercent)
@@ -252,7 +262,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithPanelSkinId(string panelSkinId)
@@ -275,7 +286,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithPopupDisplayMode(PopupDisplayMode popupDisplayMode)
@@ -298,7 +310,8 @@ namespace TrafficView
                 popupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithPopupSectionMode(PopupSectionMode popupSectionMode)
@@ -321,7 +334,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 popupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public MonitorSettings WithRotatingMeterGlossEnabled(bool rotatingMeterGlossEnabled)
@@ -344,7 +358,32 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 rotatingMeterGlossEnabled,
-                this.TaskbarIntegrationEnabled);
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
+        }
+
+        public MonitorSettings WithActivityBorderGlowEnabled(bool activityBorderGlowEnabled)
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                this.TransparencyPercent,
+                this.LanguageCode,
+                this.HasSavedPopupLocation,
+                this.PopupLocationX,
+                this.PopupLocationY,
+                this.PopupScalePercent,
+                this.PanelSkinId,
+                this.PopupDisplayMode,
+                this.PopupSectionMode,
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled,
+                activityBorderGlowEnabled);
         }
 
         public MonitorSettings WithTaskbarIntegrationEnabled(bool taskbarIntegrationEnabled)
@@ -367,7 +406,8 @@ namespace TrafficView
                 this.PopupDisplayMode,
                 this.PopupSectionMode,
                 this.RotatingMeterGlossEnabled,
-                taskbarIntegrationEnabled);
+                taskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled);
         }
 
         public double GetDownloadVisualizationPeak()
@@ -632,6 +672,7 @@ namespace TrafficView
             PopupSectionMode popupSectionMode = defaults.PopupSectionMode;
             bool rotatingMeterGlossEnabled = defaults.RotatingMeterGlossEnabled;
             bool taskbarIntegrationEnabled = defaults.TaskbarIntegrationEnabled;
+            bool activityBorderGlowEnabled = defaults.ActivityBorderGlowEnabled;
 
             foreach (string line in lines)
             {
@@ -801,6 +842,14 @@ namespace TrafficView
                     continue;
                 }
 
+                if (string.Equals(key, "ActivityBorderGlowEnabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    activityBorderGlowEnabled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+                    continue;
+                }
+
                 if (string.Equals(key, "TaskbarIntegrationEnabled", StringComparison.OrdinalIgnoreCase))
                 {
                     taskbarIntegrationEnabled = string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
@@ -829,7 +878,8 @@ namespace TrafficView
                 popupDisplayMode,
                 popupSectionMode,
                 rotatingMeterGlossEnabled,
-                taskbarIntegrationEnabled);
+                taskbarIntegrationEnabled,
+                activityBorderGlowEnabled);
         }
 
         private static bool ContainsStoredValidLanguageSetting(string[] lines)
@@ -942,6 +992,12 @@ namespace TrafficView
             }
 
             if (string.Equals(key, "RotatingMeterGlossEnabled", StringComparison.OrdinalIgnoreCase))
+            {
+                bool parsedValue;
+                return TryParseStoredBoolean(value, out parsedValue);
+            }
+
+            if (string.Equals(key, "ActivityBorderGlowEnabled", StringComparison.OrdinalIgnoreCase))
             {
                 bool parsedValue;
                 return TryParseStoredBoolean(value, out parsedValue);
@@ -1096,6 +1152,7 @@ namespace TrafficView
                 string.Format("PopupDisplayMode={0}", this.PopupDisplayMode),
                 string.Format("PopupSectionMode={0}", this.PopupSectionMode),
                 string.Format("RotatingMeterGlossEnabled={0}", this.RotatingMeterGlossEnabled ? "1" : "0"),
+                string.Format("ActivityBorderGlowEnabled={0}", this.ActivityBorderGlowEnabled ? "1" : "0"),
                 string.Format("TaskbarIntegrationEnabled={0}", this.TaskbarIntegrationEnabled ? "1" : "0")
             };
         }

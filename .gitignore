@@ -1,2 +1,8 @@
+bin/
+obj/
+
 dist/TrafficView.settings.ini
+dist/*.bak_*
+dist/*.ini_
+dist/*.lnk
 dist/Verbrauch.txt
