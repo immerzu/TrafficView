@@ -279,6 +279,7 @@ namespace TrafficView
             this.popupForm.OverlayMenuRequested += this.PopupForm_OverlayMenuRequested;
             this.popupForm.OverlayLocationCommitted += this.PopupForm_OverlayLocationCommitted;
             this.popupForm.TaskbarIntegrationNoSpaceAcknowledged += this.PopupForm_TaskbarIntegrationNoSpaceAcknowledged;
+            this.popupForm.TaskbarSectionModeChangeRequested += this.PopupForm_TaskbarSectionModeChangeRequested;
             this.languageMenuItems = new Dictionary<string, ToolStripMenuItem>(StringComparer.OrdinalIgnoreCase);
             this.popupScaleMenuItems = new Dictionary<int, ToolStripMenuItem>();
             this.displayModeMenuItems = new Dictionary<PopupDisplayMode, ToolStripMenuItem>();
@@ -839,7 +840,7 @@ namespace TrafficView
             }
 
             PopupSectionMode popupSectionMode = (PopupSectionMode)item.Tag;
-            if (this.settings.PopupSectionMode == popupSectionMode)
+            if (this.GetCurrentPopupSectionModeSetting() == popupSectionMode)
             {
                 return;
             }
@@ -847,11 +848,15 @@ namespace TrafficView
             if (this.settings.TaskbarIntegrationEnabled)
             {
                 this.popupForm.ClearTaskbarDefaultSectionModeOverride();
+                this.ApplyTaskbarPopupSectionMode(popupSectionMode);
             }
-
-            this.settings = this.settings.WithPopupSectionMode(popupSectionMode);
-            this.settings.Save();
-            this.popupForm.ApplySettings(this.settings);
+            else
+            {
+                this.settings = this.settings.WithPopupSectionMode(popupSectionMode);
+                this.settings.Save();
+                this.popupForm.ApplySettings(this.settings);
+                this.UpdateMenuState();
+            }
 
             if (this.popupForm.Visible)
             {
@@ -901,6 +906,36 @@ namespace TrafficView
             this.SetTaskbarIntegrationEnabled(false, true);
         }
 
+        private void PopupForm_TaskbarSectionModeChangeRequested(object sender, TaskbarSectionModeChangeRequestedEventArgs e)
+        {
+            if (e == null ||
+                this.settings == null ||
+                !this.settings.TaskbarIntegrationEnabled)
+            {
+                return;
+            }
+
+            this.ApplyTaskbarPopupSectionMode(e.PopupSectionMode);
+        }
+
+        private void ApplyTaskbarPopupSectionMode(PopupSectionMode popupSectionMode)
+        {
+            if (this.settings == null)
+            {
+                return;
+            }
+
+            if (this.settings.TaskbarPopupSectionMode == popupSectionMode)
+            {
+                return;
+            }
+
+            this.settings = this.settings.WithTaskbarPopupSectionMode(popupSectionMode);
+            this.settings.Save();
+            this.popupForm.ApplySettings(this.settings);
+            this.UpdateMenuState();
+        }
+
         private void SetTaskbarIntegrationEnabled(bool enableTaskbarIntegration)
         {
             this.SetTaskbarIntegrationEnabled(enableTaskbarIntegration, true);
@@ -921,10 +956,6 @@ namespace TrafficView
             this.settings = this.settings.WithTaskbarIntegrationEnabled(enableTaskbarIntegration);
             this.settings.Save();
             this.popupForm.ApplySettings(this.settings);
-            if (enableTaskbarIntegration)
-            {
-                this.popupForm.ApplyDefaultTaskbarSectionModeOverride();
-            }
 
             if (restorePopupAfterChange &&
                 (this.popupForm.Visible || this.popupForm.HasDeferredVisibilityRequest))
@@ -1586,7 +1617,7 @@ namespace TrafficView
             foreach (KeyValuePair<PopupSectionMode, ToolStripMenuItem> pair in this.sectionModeMenuItems)
             {
                 pair.Value.Text = this.GetPopupSectionModeDisplayName(pair.Key);
-                pair.Value.Checked = pair.Key == this.settings.PopupSectionMode;
+                pair.Value.Checked = pair.Key == this.GetCurrentPopupSectionModeSetting();
             }
 
             this.rotatingGlossItem.Text = UiLanguage.Get(
@@ -1697,6 +1728,18 @@ namespace TrafficView
                 default:
                     return UiLanguage.Get("Menu.SectionModeBoth", "Beide Teile");
             }
+        }
+
+        private PopupSectionMode GetCurrentPopupSectionModeSetting()
+        {
+            if (this.settings == null)
+            {
+                return PopupSectionMode.Both;
+            }
+
+            return this.settings.TaskbarIntegrationEnabled
+                ? this.settings.TaskbarPopupSectionMode
+                : this.settings.PopupSectionMode;
         }
 
         private void RebuildPanelSkinMenuItems()
@@ -2007,6 +2050,8 @@ namespace TrafficView
         private const int TaskbarDesktopSnapHoldDistance = 18;
         private const int TaskbarDragSnapDistance = 36;
         private const int TaskbarDragBreakThroughDepth = 60;
+        private const int TaskbarDragSnapshotRefreshMs = 120;
+        private const int ManualDragMoveIntervalMs = 15;
         private const int NoSpaceMessageCooldownMs = 1800;
         private const int TaskbarTransientFailureGraceMs = 900;
         private const int DesktopToTaskbarBlinkSuppressionMs = 1200;
@@ -2036,6 +2081,7 @@ namespace TrafficView
         private const int AbsAutoHide = 0x1;
         private const uint SwpNoSize = 0x0001;
         private const uint SwpNoMove = 0x0002;
+        private const uint SwpNoZOrder = 0x0004;
         private const uint SwpShowWindow = 0x0040;
         private const uint SwpNoActivate = 0x0010;
         private const uint SwpNoRedraw = 0x0008;
@@ -2155,6 +2201,7 @@ namespace TrafficView
         private readonly Timer topMostGuardTimer;
         private readonly Timer taskbarMonitorTimer;
         private readonly Timer taskbarRefreshDebounceTimer;
+        private readonly Timer manualDragMoveTimer;
         private readonly Label downloadCaptionLabel;
         private readonly Label uploadCaptionLabel;
         private readonly Label downloadValueLabel;
@@ -2190,6 +2237,8 @@ namespace TrafficView
         private Point dragStartLocation;
         private bool leftMousePressed;
         private bool dragMoved;
+        private bool manualDragMoveApplied;
+        private Point? pendingManualDragLocation;
         private Bitmap staticSurfaceBitmap;
         private Bitmap composedSurfaceBitmap;
         private bool staticSurfaceDirty = true;
@@ -2226,12 +2275,16 @@ namespace TrafficView
         private Rectangle lastSuccessfulTaskbarPlacementBounds = Rectangle.Empty;
         private int lastAppliedTaskbarThickness = -1;
         private TaskbarIntegrationSnapshot activeTaskbarSnapshot;
+        private TaskbarIntegrationSnapshot dragTaskbarSnapshot;
+        private Rectangle dragTaskbarSnapshotScreenBounds = Rectangle.Empty;
+        private DateTime dragTaskbarSnapshotCapturedUtc = DateTime.MinValue;
         private IntPtr lastTaskbarLocalZOrderAnchorHandle = IntPtr.Zero;
         private IntPtr taskbarIntegrationHostHandle = IntPtr.Zero;
         
         public event EventHandler OverlayMenuRequested;
         public event EventHandler OverlayLocationCommitted;
         public event EventHandler TaskbarIntegrationNoSpaceAcknowledged;
+        public event EventHandler<TaskbarSectionModeChangeRequestedEventArgs> TaskbarSectionModeChangeRequested;
         public event EventHandler<TrafficUsageMeasuredEventArgs> TrafficUsageMeasured;
 
         public bool HasDeferredVisibilityRequest
@@ -2498,6 +2551,11 @@ namespace TrafficView
             this.taskbarRefreshDebounceTimer.Tick += this.TaskbarRefreshDebounceTimer_Tick;
             this.taskbarRefreshDebounceTimer.Enabled = false;
 
+            this.manualDragMoveTimer = new Timer();
+            this.manualDragMoveTimer.Interval = ManualDragMoveIntervalMs;
+            this.manualDragMoveTimer.Tick += this.ManualDragMoveTimer_Tick;
+            this.manualDragMoveTimer.Enabled = false;
+
             this.ApplyDpiLayout(this.currentDpi);
             this.ApplySettings(this.settings);
         }
@@ -2565,7 +2623,7 @@ namespace TrafficView
                 }));
                 return;
             }
-
+            
             this.TryBeginInvokeSafely(new Action(delegate
             {
                 this.EnsureTopMostPlacement(false);
@@ -2925,9 +2983,14 @@ namespace TrafficView
 
         private PopupSectionMode GetConfiguredPopupSectionMode()
         {
-            return this.settings != null
-                ? this.settings.PopupSectionMode
-                : PopupSectionMode.Both;
+            if (this.settings == null)
+            {
+                return PopupSectionMode.Both;
+            }
+
+            return this.settings.TaskbarIntegrationEnabled
+                ? this.settings.TaskbarPopupSectionMode
+                : this.settings.PopupSectionMode;
         }
 
         private PopupSectionMode GetEffectivePopupSectionMode()
@@ -3256,7 +3319,8 @@ namespace TrafficView
         public void ApplySettings(MonitorSettings newSettings)
         {
             bool popupScaleChanged = this.settings.PopupScalePercent != newSettings.PopupScalePercent;
-            bool sectionModeChanged = this.settings.PopupSectionMode != newSettings.PopupSectionMode;
+            bool sectionModeChanged = this.settings.PopupSectionMode != newSettings.PopupSectionMode ||
+                this.settings.TaskbarPopupSectionMode != newSettings.TaskbarPopupSectionMode;
             bool taskbarIntegrationChanged = this.settings.TaskbarIntegrationEnabled != newSettings.TaskbarIntegrationEnabled;
             Rectangle previousBounds = new Rectangle(this.Location, this.Size);
             this.settings = newSettings.Clone();
@@ -3562,17 +3626,6 @@ namespace TrafficView
         public void ClearTaskbarIntegrationPreferredLocation()
         {
             this.taskbarIntegrationPreferredLocation = null;
-        }
-
-        public void ApplyDefaultTaskbarSectionModeOverride()
-        {
-            if (this.settings == null || !this.settings.TaskbarIntegrationEnabled)
-            {
-                return;
-            }
-
-            this.SetTaskbarIntegrationStickyRightOnly(false);
-            this.SetTaskbarIntegrationForcedRightOnly(true);
         }
 
         public void ClearTaskbarDefaultSectionModeOverride()
@@ -3950,7 +4003,16 @@ namespace TrafficView
         {
             if (this.settings == null ||
                 !this.settings.TaskbarIntegrationEnabled ||
-                this.GetConfiguredPopupSectionMode() != PopupSectionMode.Both)
+                !this.leftMousePressed ||
+                !this.dragMoved ||
+                !this.manualDragMoveApplied)
+            {
+                return;
+            }
+
+            PopupSectionMode configuredSectionMode = this.GetConfiguredPopupSectionMode();
+            if (configuredSectionMode != PopupSectionMode.Both &&
+                configuredSectionMode != PopupSectionMode.RightOnly)
             {
                 return;
             }
@@ -3978,10 +4040,20 @@ namespace TrafficView
                 return;
             }
 
+            if (configuredSectionMode == PopupSectionMode.RightOnly)
+            {
+                this.SetTaskbarIntegrationStickyRightOnly(false);
+                this.SetTaskbarIntegrationForcedRightOnly(false);
+                this.OnTaskbarSectionModeChangeRequested(PopupSectionMode.Both);
+                this.RefreshTaskbarIntegration(false, false);
+                return;
+            }
+
             if (this.taskbarIntegrationStickyRightOnlySection)
             {
                 this.SetTaskbarIntegrationStickyRightOnly(false);
                 this.SetTaskbarIntegrationForcedRightOnly(false);
+                this.OnTaskbarSectionModeChangeRequested(PopupSectionMode.Both);
                 this.RefreshTaskbarIntegration(false, false);
                 return;
             }
@@ -3993,6 +4065,7 @@ namespace TrafficView
 
             this.SetTaskbarIntegrationForcedRightOnly(false);
             this.SetTaskbarIntegrationStickyRightOnly(true);
+            this.OnTaskbarSectionModeChangeRequested(PopupSectionMode.RightOnly);
             this.RefreshTaskbarIntegration(false, false);
         }
 
@@ -5963,7 +6036,7 @@ namespace TrafficView
         {
             bool snappedToTaskbar;
             TaskbarIntegrationSnapshot snapshot;
-            if (this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+            if (this.TryGetTaskbarIntegrationSnapshotForManualDrag(anchorPoint, out snapshot))
             {
                 return this.GetVisiblePopupLocationForManualDrag(
                     preferredLocation,
@@ -5974,6 +6047,41 @@ namespace TrafficView
 
             Rectangle screenBounds = Screen.FromPoint(anchorPoint).Bounds;
             return ClampLocationToWorkingArea(preferredLocation, this.Size, screenBounds);
+        }
+
+        private bool TryGetTaskbarIntegrationSnapshotForManualDrag(Point anchorPoint, out TaskbarIntegrationSnapshot snapshot)
+        {
+            snapshot = null;
+
+            if (!this.IsOverlayDragInProgress())
+            {
+                return this.TryCaptureTaskbarIntegrationSnapshot(out snapshot);
+            }
+
+            Rectangle screenBounds = Screen.FromPoint(anchorPoint).Bounds;
+            bool canReuseSnapshot =
+                this.dragTaskbarSnapshot != null &&
+                this.dragTaskbarSnapshotScreenBounds == screenBounds &&
+                this.dragTaskbarSnapshotCapturedUtc != DateTime.MinValue &&
+                (DateTime.UtcNow - this.dragTaskbarSnapshotCapturedUtc).TotalMilliseconds < TaskbarDragSnapshotRefreshMs;
+            if (canReuseSnapshot)
+            {
+                snapshot = this.dragTaskbarSnapshot;
+                return true;
+            }
+
+            if (!this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
+            {
+                this.dragTaskbarSnapshot = null;
+                this.dragTaskbarSnapshotScreenBounds = Rectangle.Empty;
+                this.dragTaskbarSnapshotCapturedUtc = DateTime.MinValue;
+                return false;
+            }
+
+            this.dragTaskbarSnapshot = snapshot;
+            this.dragTaskbarSnapshotScreenBounds = snapshot.ScreenBounds;
+            this.dragTaskbarSnapshotCapturedUtc = DateTime.UtcNow;
+            return true;
         }
 
         private Point GetVisiblePopupLocationForManualDrag(
@@ -6322,6 +6430,11 @@ namespace TrafficView
             }
 
             this.AdvanceVisualAnimations();
+            if (this.ShouldDeferVisualSurfaceRefreshDuringManualDrag())
+            {
+                return;
+            }
+
             this.RefreshVisualSurface();
         }
 
@@ -6369,7 +6482,7 @@ namespace TrafficView
                 this.downloadValueLabel.Text = "0 B/s";
                 this.uploadValueLabel.Text = "0 B/s";
                 this.UpdateAnimationTimerState();
-                if (this.Visible)
+                if (this.Visible && !this.ShouldDeferVisualSurfaceRefreshDuringManualDrag())
                 {
                     this.RefreshVisualSurface();
                 }
@@ -6426,13 +6539,20 @@ namespace TrafficView
             this.uploadValueLabel.Text = FormatSpeed(smoothedUploadBytesPerSecond);
             this.AddTrafficHistorySample(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
             this.UpdateAnimationTimerState();
-            if (this.Visible)
+            if (this.Visible && !this.ShouldDeferVisualSurfaceRefreshDuringManualDrag())
             {
                 this.RefreshVisualSurface();
             }
 
             this.OnRatesUpdated(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
             this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
+        }
+
+        private bool ShouldDeferVisualSurfaceRefreshDuringManualDrag()
+        {
+            return this.IsOverlayDragInProgress() &&
+                this.Visible &&
+                !this.IsDisposed;
         }
 
         private void ResetDisplayedRateSmoothing()
@@ -9713,6 +9833,7 @@ namespace TrafficView
                             uploadFillRatio,
                             visualDownloadFillRatio,
                             visualUploadFillRatio);
+                        this.TrimTaskbarPresentationFringe(graphics);
                     }
                 }
                 catch (ExternalException ex)
@@ -9749,6 +9870,44 @@ namespace TrafficView
                     this.lastPresentedLocation = this.Location;
                     this.lastPresentedSize = this.Size;
                 }
+            }
+        }
+
+        private void TrimTaskbarPresentationFringe(Graphics graphics)
+        {
+            if (!this.IsTaskbarIntegrationActive() ||
+                graphics == null ||
+                this.Width <= 2 ||
+                this.Height <= 2)
+            {
+                return;
+            }
+
+            int trimInset = Math.Max(1, this.ScaleValue(1));
+            Rectangle innerBounds = new Rectangle(
+                trimInset,
+                trimInset,
+                Math.Max(1, this.Width - (trimInset * 2)),
+                Math.Max(1, this.Height - (trimInset * 2)));
+            int cornerRadius = Math.Max(2, this.ScaleValue(BaseWindowCornerRadius) - trimInset);
+
+            GraphicsState state = graphics.Save();
+            try
+            {
+                graphics.CompositingMode = CompositingMode.SourceCopy;
+                graphics.SmoothingMode = SmoothingMode.None;
+
+                using (Region outerRegion = new Region(new Rectangle(0, 0, this.Width, this.Height)))
+                using (GraphicsPath innerPath = CreateRoundedPath(innerBounds, cornerRadius))
+                using (SolidBrush clearBrush = new SolidBrush(Color.Transparent))
+                {
+                    outerRegion.Exclude(innerPath);
+                    graphics.FillRegion(clearBrush, outerRegion);
+                }
+            }
+            finally
+            {
+                graphics.Restore(state);
             }
         }
 
@@ -10441,7 +10600,7 @@ namespace TrafficView
                 if (snapshot == null && !this.TryCaptureTaskbarIntegrationSnapshot(out snapshot))
                 {
                     this.taskbarIntegrationPreferredLocation = preferredLocation;
-                    this.Location = this.GetVisiblePopupLocationForManualDrag(preferredLocation, cursorPosition);
+                    this.MoveOverlayDuringManualDrag(this.GetVisiblePopupLocationForManualDrag(preferredLocation, cursorPosition));
                     return;
                 }
 
@@ -10452,22 +10611,71 @@ namespace TrafficView
                     snapshot,
                     out snappedToTaskbar);
                 this.taskbarIntegrationPreferredLocation = preferredLocation;
-
                 if (snappedToTaskbar)
                 {
-                    Rectangle placementBounds;
-                    if (this.TryGetTaskbarPlacementBounds(snapshot, out placementBounds))
-                    {
-                        this.Location = placementBounds.Location;
-                        return;
-                    }
+                    this.activeTaskbarSnapshot = snapshot;
                 }
 
-                this.Location = dragLocation;
+                this.MoveOverlayDuringManualDrag(dragLocation);
                 return;
             }
 
-            this.Location = this.GetVisiblePopupLocationForManualDrag(preferredLocation, cursorPosition);
+            this.MoveOverlayDuringManualDrag(this.GetVisiblePopupLocationForManualDrag(preferredLocation, cursorPosition));
+        }
+
+        private void MoveOverlayDuringManualDrag(Point location)
+        {
+            this.manualDragMoveApplied = true;
+            if (this.Location == location && !this.pendingManualDragLocation.HasValue)
+            {
+                return;
+            }
+
+            this.pendingManualDragLocation = location;
+            if (!this.manualDragMoveTimer.Enabled)
+            {
+                this.ApplyPendingManualDragMove();
+                this.manualDragMoveTimer.Start();
+            }
+        }
+
+        private void ManualDragMoveTimer_Tick(object sender, EventArgs e)
+        {
+            if (!this.pendingManualDragLocation.HasValue)
+            {
+                this.manualDragMoveTimer.Stop();
+                return;
+            }
+
+            this.ApplyPendingManualDragMove();
+        }
+
+        private void ApplyPendingManualDragMove()
+        {
+            if (!this.pendingManualDragLocation.HasValue)
+            {
+                return;
+            }
+
+            Point location = this.pendingManualDragLocation.Value;
+            this.pendingManualDragLocation = null;
+
+            if (this.Location == location)
+            {
+                return;
+            }
+
+            if (!this.IsHandleCreated || this.IsDisposed)
+            {
+                this.Location = location;
+                return;
+            }
+
+            uint flags = SwpNoSize | SwpNoZOrder | SwpNoOwnerZOrder | SwpNoActivate;
+            if (!SetWindowPos(this.Handle, IntPtr.Zero, location.X, location.Y, this.Width, this.Height, flags))
+            {
+                this.Location = location;
+            }
         }
 
         private void Control_MouseUp(object sender, MouseEventArgs e)
@@ -10490,10 +10698,19 @@ namespace TrafficView
                 bool shouldCommitLocation = this.dragMoved;
                 if (shouldCommitLocation)
                 {
+                    this.ApplyPendingManualDragMove();
+                }
+
+                if (shouldCommitLocation)
+                {
                     this.TryToggleTaskbarSectionModeFromLeftDrag();
                 }
 
                 this.ResetOverlayDragState();
+                if (this.Visible && !this.IsDisposed)
+                {
+                    this.RefreshVisualSurface();
+                }
 
                 if (shouldCommitLocation)
                 {
@@ -10520,10 +10737,25 @@ namespace TrafficView
             }
         }
 
+        private void OnTaskbarSectionModeChangeRequested(PopupSectionMode popupSectionMode)
+        {
+            EventHandler<TaskbarSectionModeChangeRequestedEventArgs> handler = this.TaskbarSectionModeChangeRequested;
+            if (handler != null)
+            {
+                handler(this, new TaskbarSectionModeChangeRequestedEventArgs(popupSectionMode));
+            }
+        }
+
         private void ResetOverlayDragState()
         {
             this.leftMousePressed = false;
             this.dragMoved = false;
+            this.manualDragMoveApplied = false;
+            this.pendingManualDragLocation = null;
+            this.manualDragMoveTimer.Stop();
+            this.dragTaskbarSnapshot = null;
+            this.dragTaskbarSnapshotScreenBounds = Rectangle.Empty;
+            this.dragTaskbarSnapshotCapturedUtc = DateTime.MinValue;
 
             if (this.dragControl != null)
             {
@@ -11087,7 +11319,8 @@ namespace TrafficView
                 this.currentSettings.PopupSectionMode,
                 this.currentSettings.RotatingMeterGlossEnabled,
                 this.currentSettings.TaskbarIntegrationEnabled,
-                this.currentSettings.ActivityBorderGlowEnabled);
+                this.currentSettings.ActivityBorderGlowEnabled,
+                this.currentSettings.TaskbarPopupSectionMode);
 
             this.lastSnapshot = NetworkSnapshot.Capture(this.activeSettings);
             if (!this.lastSnapshot.HasAdapters)
@@ -11322,7 +11555,8 @@ namespace TrafficView
                 this.currentSettings.PopupSectionMode,
                 this.currentSettings.RotatingMeterGlossEnabled,
                 this.currentSettings.TaskbarIntegrationEnabled,
-                this.currentSettings.ActivityBorderGlowEnabled);
+                this.currentSettings.ActivityBorderGlowEnabled,
+                this.currentSettings.TaskbarPopupSectionMode);
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.CompletedStatus",
                 "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' bestätigen.",
@@ -11556,7 +11790,8 @@ namespace TrafficView
                 this.currentSettings.PopupSectionMode,
                 this.currentSettings.RotatingMeterGlossEnabled,
                 this.currentSettings.TaskbarIntegrationEnabled,
-                this.currentSettings.ActivityBorderGlowEnabled);
+                this.currentSettings.ActivityBorderGlowEnabled,
+                this.currentSettings.TaskbarPopupSectionMode);
         }
 
         private void LoadAdapterItems()
@@ -11682,6 +11917,16 @@ namespace TrafficView
         public long DownloadBytes { get; private set; }
 
         public long UploadBytes { get; private set; }
+    }
+
+    internal sealed class TaskbarSectionModeChangeRequestedEventArgs : EventArgs
+    {
+        public TaskbarSectionModeChangeRequestedEventArgs(PopupSectionMode popupSectionMode)
+        {
+            this.PopupSectionMode = popupSectionMode;
+        }
+
+        public PopupSectionMode PopupSectionMode { get; private set; }
     }
 
     internal struct TrafficHistorySample
