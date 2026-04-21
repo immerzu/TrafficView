@@ -72,6 +72,22 @@ function Remove-PortableNoise {
         }
     }
 
+    $excludedFilePatterns = @(
+        '*.bak',
+        '*.bak_*',
+        '*.bak-*',
+        '*.backup',
+        '*.old',
+        '*.tmp',
+        '*~'
+    )
+
+    foreach ($pattern in $excludedFilePatterns) {
+        Get-ChildItem -LiteralPath $TargetDirectory -Recurse -Force -File -Filter $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+            Remove-Item -LiteralPath $_.FullName -Force
+        }
+    }
+
     Get-ChildItem -LiteralPath $TargetDirectory -Recurse -Force -File -Filter 'Verbrauch.archiv.*.txt.gz' -ErrorAction SilentlyContinue | ForEach-Object {
         Remove-Item -LiteralPath $_.FullName -Force
     }
