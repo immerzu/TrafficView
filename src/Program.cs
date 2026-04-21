@@ -33,7 +33,8 @@ namespace TrafficView
     {
         Standard,
         MiniGraph,
-        MiniSoft
+        MiniSoft,
+        Simple
     }
 
     internal enum PopupSectionMode
@@ -343,7 +344,8 @@ namespace TrafficView
             {
                 PopupDisplayMode.Standard,
                 PopupDisplayMode.MiniGraph,
-                PopupDisplayMode.MiniSoft
+                PopupDisplayMode.MiniSoft,
+                PopupDisplayMode.Simple
             };
             for (int i = 0; i < popupDisplayModes.Length; i++)
             {
@@ -1712,6 +1714,8 @@ namespace TrafficView
                     return UiLanguage.Get("Menu.DisplayModeMiniGraph", "MiniGraph");
                 case PopupDisplayMode.MiniSoft:
                     return UiLanguage.Get("Menu.DisplayModeMiniSoft", "MiniSoft");
+                case PopupDisplayMode.Simple:
+                    return UiLanguage.Get("Menu.DisplayModeSimple", "Simple");
                 default:
                     return UiLanguage.Get("Menu.DisplayModeStandard", "Standard");
             }
@@ -2036,6 +2040,11 @@ namespace TrafficView
         private const int BaseMeterRightInset = 5;
         private const int MiniGraphMeterDiameter = 46;
         private const int MiniGraphMeterRightInset = 3;
+        private const int SimpleMeterDiameter = 42;
+        private const int SimpleMeterRightInset = 5;
+        private const int SimpleSparklineLeft = 10;
+        private const int SimpleSparklineTop = 41;
+        private const int SimpleSparklineHeight = 5;
         private const int BaseDragThreshold = 4;
         private const int BasePopupVisibleMargin = 8;
         private const int TaskbarMonitorIntervalMs = 350;
@@ -2067,6 +2076,7 @@ namespace TrafficView
         private const float BaseFormFontSize = 7.0F;
         private const float BaseCaptionFontSize = 6.0F;
         private const float BaseValueFontSize = 10.4F;
+        private const float SimpleValueFontSize = 9.2F;
         private const int WmNclButtonDown = 0xA1;
         private const int HtCaption = 0x2;
         private const int WmContextMenu = 0x007B;
@@ -2130,6 +2140,27 @@ namespace TrafficView
         private static readonly Color SparklineGuideColor = Color.FromArgb(74, 122, 156);
         private static readonly Color SparklineDownloadColor = Color.FromArgb(255, 178, 58);
         private static readonly Color SparklineUploadColor = Color.FromArgb(90, 255, 120);
+        private static readonly Color SimplePanelBackgroundColor = Color.FromArgb(5, 18, 22);
+        private static readonly Color SimpleBorderColor = Color.FromArgb(26, 238, 255);
+        private static readonly Color SimpleDividerColor = Color.FromArgb(34, 182, 196);
+        private static readonly Color SimpleDownloadCaptionColor = Color.FromArgb(255, 176, 22);
+        private static readonly Color SimpleDownloadValueColor = Color.FromArgb(255, 164, 18);
+        private static readonly Color SimpleDownloadRingLowColor = Color.FromArgb(255, 154, 22);
+        private static readonly Color SimpleDownloadRingHighColor = Color.FromArgb(255, 220, 108);
+        private static readonly Color SimpleUploadCaptionColor = Color.FromArgb(118, 255, 98);
+        private static readonly Color SimpleUploadValueColor = Color.FromArgb(98, 255, 86);
+        private static readonly Color SimpleUploadRingLowColor = Color.FromArgb(104, 255, 92);
+        private static readonly Color SimpleUploadRingHighColor = Color.FromArgb(214, 255, 168);
+        private static readonly Color SimpleMeterTrackColor = Color.FromArgb(42, 0, 230, 255);
+        private static readonly Color SimpleMeterTrackInnerColor = Color.FromArgb(44, 104, 255, 92);
+        private static readonly Color SimpleMeterCenterColor = Color.FromArgb(8, 24, 26);
+        private static readonly Color SimpleDownloadArrowBaseColor = Color.FromArgb(255, 166, 24);
+        private static readonly Color SimpleDownloadArrowHighColor = Color.FromArgb(255, 220, 110);
+        private static readonly Color SimpleUploadArrowBaseColor = Color.FromArgb(104, 255, 86);
+        private static readonly Color SimpleUploadArrowHighColor = Color.FromArgb(214, 255, 170);
+        private static readonly Color SimpleSparklineGuideColor = Color.FromArgb(60, 44, 190, 210);
+        private static readonly Color SimpleSparklineDownloadColor = Color.FromArgb(255, 166, 24);
+        private static readonly Color SimpleSparklineUploadColor = Color.FromArgb(104, 255, 92);
         private static readonly StringFormat TrafficTextStringFormat = CreateTrafficTextFormat(false);
         private static readonly StringFormat TrafficEllipsisTextFormat = CreateTrafficTextFormat(true);
         private const double LowTrafficVisualizationExponent = 0.72D;
@@ -2185,6 +2216,7 @@ namespace TrafficView
         private const int MiniGraphUploadPeakMarkerAlpha = 176;
         private const string PanelBackgroundAssetFileName = "TrafficView.panel.png";
         private const string PanelBackgroundScaledAssetFileNameFormat = "TrafficView.panel.{0}.png";
+        private const string SimpleModeAssetDirectoryName = "Simple";
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
         private static readonly object PanelBackgroundAssetSync = new object();
         private static readonly int[] PanelBackgroundPreparedScalePercents = new int[] { 90, 100, 110, 125, 150 };
@@ -2229,6 +2261,7 @@ namespace TrafficView
         private DateTime lastAnimationAdvanceUtc = DateTime.MinValue;
         private double meterGlossRotationDegrees;
         private double activityBorderRotationDegrees;
+        private double simpleActivityBorderDirection = 1D;
         private readonly Queue<double> recentDownloadSamples;
         private readonly Queue<double> recentUploadSamples;
         private readonly Queue<TrafficHistorySample> trafficHistory;
@@ -2501,23 +2534,23 @@ namespace TrafficView
 
             this.downloadCaptionLabel = CreateCaptionLabel(
                 "DL",
-                DownloadCaptionColor);
+                this.GetDownloadCaptionBaseColor());
             this.Controls.Add(this.downloadCaptionLabel);
             this.downloadCaptionLabel.Visible = false;
 
             this.downloadValueLabel = CreateValueLabel(
-                DownloadValueColor);
+                this.GetDownloadValueBaseColor());
             this.Controls.Add(this.downloadValueLabel);
             this.downloadValueLabel.Visible = false;
 
             this.uploadCaptionLabel = CreateCaptionLabel(
                 "UL",
-                UploadCaptionColor);
+                this.GetUploadCaptionBaseColor());
             this.Controls.Add(this.uploadCaptionLabel);
             this.uploadCaptionLabel.Visible = false;
 
             this.uploadValueLabel = CreateValueLabel(
-                UploadValueColor);
+                this.GetUploadValueBaseColor());
             this.Controls.Add(this.uploadValueLabel);
             this.uploadValueLabel.Visible = false;
 
@@ -2780,7 +2813,7 @@ namespace TrafficView
             int cornerRadius = this.ScaleValue(BaseWindowCornerRadius);
             float strokeWidth = Math.Max(1F, this.ScaleFloat(1F));
             float sharedRingWidth = Math.Max(2F, this.ScaleFloat(6.2F));
-            float centerInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftDisplayMode() ? 4.6F : 2.3F));
+            float centerInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftLikeDisplayMode() ? 4.6F : 2.3F));
             byte backgroundAlpha = this.GetStaticPanelBackgroundAlpha();
             Color panelBackgroundColor = this.GetPanelBackgroundBaseColor();
             Color panelBorderColor = this.GetPanelBorderBaseColor();
@@ -2812,7 +2845,7 @@ namespace TrafficView
                 ? this.CreateInsetBounds(meterBounds, sharedRingWidth + centerInset)
                 : RectangleF.Empty;
 
-            using (SolidBrush meterCenterBrush = new SolidBrush(MeterCenterColor))
+            using (SolidBrush meterCenterBrush = new SolidBrush(this.GetMeterCenterBaseColor()))
             using (Pen meterCenterPen = new Pen(MeterCenterBorderColor, strokeWidth))
             {
                 if (!this.TryDrawPanelBackgroundAsset(graphics, backgroundAlpha))
@@ -2899,12 +2932,12 @@ namespace TrafficView
                         sharedRingWidth,
                         0D,
                         0D,
-                        MeterTrackColor,
-                        MeterTrackInnerColor,
-                        DownloadRingLowColor,
-                        DownloadRingLowColor,
-                        UploadRingLowColor,
-                        UploadRingLowColor,
+                        this.GetMeterTrackBaseColor(),
+                        this.GetMeterTrackInnerBaseColor(),
+                        this.GetDownloadRingLowBaseColor(),
+                        this.GetDownloadRingLowBaseColor(),
+                        this.GetUploadRingLowBaseColor(),
+                        this.GetUploadRingLowBaseColor(),
                         true);
 
                     graphics.FillEllipse(meterCenterBrush, centerBounds);
@@ -2933,13 +2966,13 @@ namespace TrafficView
 
         private string GetCurrentMeterCenterAssetPath()
         {
-            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
-            if (definition == null || string.IsNullOrWhiteSpace(definition.DirectoryPath))
+            string assetDirectoryPath = this.GetActivePanelAssetDirectoryPath();
+            if (string.IsNullOrWhiteSpace(assetDirectoryPath))
             {
                 return null;
             }
 
-            string assetPath = Path.Combine(definition.DirectoryPath, "TrafficView.center_core.png");
+            string assetPath = Path.Combine(assetDirectoryPath, "TrafficView.center_core.png");
             return File.Exists(assetPath) ? assetPath : null;
         }
 
@@ -3008,6 +3041,11 @@ namespace TrafficView
 
         private bool ShouldDrawDynamicRing()
         {
+            if (this.IsSimpleDisplayMode())
+            {
+                return this.IsRightSectionVisible();
+            }
+
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
             return this.IsRightSectionVisible() &&
                 (definition == null || definition.DrawDynamicRing);
@@ -3015,6 +3053,11 @@ namespace TrafficView
 
         private bool ShouldDrawCenterTrafficArrows()
         {
+            if (this.IsSimpleDisplayMode())
+            {
+                return this.IsRightSectionVisible();
+            }
+
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
             return this.IsRightSectionVisible() &&
                 (definition == null || definition.DrawCenterArrows);
@@ -3022,6 +3065,11 @@ namespace TrafficView
 
         private bool ShouldDrawSparkline()
         {
+            if (this.IsSimpleDisplayMode())
+            {
+                return this.IsLeftSectionVisible();
+            }
+
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
             return this.IsLeftSectionVisible() &&
                 (definition == null || definition.DrawSparkline);
@@ -3029,6 +3077,11 @@ namespace TrafficView
 
         private bool ShouldDrawMeterValueSupport()
         {
+            if (this.IsSimpleDisplayMode())
+            {
+                return false;
+            }
+
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
             return this.IsLeftSectionVisible() &&
                 (definition == null || definition.DrawMeterValueSupport);
@@ -3057,7 +3110,9 @@ namespace TrafficView
 
         private bool TryDrawPanelBackgroundAsset(Graphics graphics, byte backgroundAlpha)
         {
-            Bitmap panelBackgroundAsset = GetPanelBackgroundAsset(this.settings.PanelSkinId, this.ClientSize);
+            Bitmap panelBackgroundAsset = GetPanelBackgroundAssetFromDirectory(
+                this.GetActivePanelAssetDirectoryPath(),
+                this.ClientSize);
             if (panelBackgroundAsset == null)
             {
                 return false;
@@ -3124,8 +3179,8 @@ namespace TrafficView
             graphics.CompositingQuality = CompositingQuality.HighQuality;
 
             float sharedRingWidth = Math.Max(2F, this.ScaleFloat(6.2F));
-            float centerInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftDisplayMode() ? 4.6F : 2.3F));
-            float iconInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftDisplayMode() ? 4.6F : 2.3F));
+            float centerInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftLikeDisplayMode() ? 4.6F : 2.3F));
+            float iconInset = Math.Max(1F, this.ScaleFloat(this.IsMiniSoftLikeDisplayMode() ? 4.6F : 2.3F));
 
             bool drawLeftSection = this.IsLeftSectionVisible();
             bool drawRightSection = this.IsRightSectionVisible();
@@ -3143,12 +3198,12 @@ namespace TrafficView
                 : RectangleF.Empty;
 
             Color downloadRingEndColor = GetInterpolatedColor(
-                DownloadRingLowColor,
-                DownloadRingHighColor,
+                this.GetDownloadRingLowBaseColor(),
+                this.GetDownloadRingHighBaseColor(),
                 SmoothStep(visualDownloadFillRatio));
             Color uploadRingEndColor = GetInterpolatedColor(
-                UploadRingLowColor,
-                UploadRingHighColor,
+                this.GetUploadRingLowBaseColor(),
+                this.GetUploadRingHighBaseColor(),
                 SmoothStep(visualUploadFillRatio));
 
             if (drawLeftSection &&
@@ -3190,11 +3245,11 @@ namespace TrafficView
                     sharedRingWidth,
                     visualDownloadFillRatio,
                     visualUploadFillRatio,
-                    MeterTrackColor,
-                    MeterTrackInnerColor,
-                    DownloadRingLowColor,
+                    this.GetMeterTrackBaseColor(),
+                    this.GetMeterTrackInnerBaseColor(),
+                    this.GetDownloadRingLowBaseColor(),
                     downloadRingEndColor,
-                    UploadRingLowColor,
+                    this.GetUploadRingLowBaseColor(),
                     uploadRingEndColor,
                     false);
             }
@@ -3202,7 +3257,7 @@ namespace TrafficView
             if (drawRightSection)
             {
                 RectangleF glossBounds = centerBounds;
-                if (!this.IsMiniSoftDisplayMode())
+                if (!this.IsMiniSoftLikeDisplayMode())
                 {
                     float glossInset = this.ScaleFloat(StandardMeterGlossExtraInset);
                     glossBounds = new RectangleF(
@@ -3402,10 +3457,10 @@ namespace TrafficView
         {
             this.Opacity = 1D;
             this.BackColor = this.GetPanelBackgroundBaseColor();
-            this.downloadCaptionLabel.ForeColor = DownloadCaptionColor;
-            this.downloadValueLabel.ForeColor = DownloadValueColor;
-            this.uploadCaptionLabel.ForeColor = UploadCaptionColor;
-            this.uploadValueLabel.ForeColor = UploadValueColor;
+            this.downloadCaptionLabel.ForeColor = this.GetDownloadCaptionBaseColor();
+            this.downloadValueLabel.ForeColor = this.GetDownloadValueBaseColor();
+            this.uploadCaptionLabel.ForeColor = this.GetUploadCaptionBaseColor();
+            this.uploadValueLabel.ForeColor = this.GetUploadValueBaseColor();
             this.staticSurfaceDirty = true;
 
             if (!this.IsHandleCreated)
@@ -3423,6 +3478,8 @@ namespace TrafficView
         {
             return this.activeTaskbarSnapshot != null
                 ? this.activeTaskbarSnapshot.Theme.BaseColor
+                : this.IsSimpleDisplayMode()
+                ? SimplePanelBackgroundColor
                 : BackgroundBlue;
         }
 
@@ -3430,6 +3487,8 @@ namespace TrafficView
         {
             return this.activeTaskbarSnapshot != null
                 ? this.activeTaskbarSnapshot.Theme.BorderColor
+                : this.IsSimpleDisplayMode()
+                ? SimpleBorderColor
                 : BorderColor;
         }
 
@@ -3437,6 +3496,8 @@ namespace TrafficView
         {
             return this.activeTaskbarSnapshot != null
                 ? this.activeTaskbarSnapshot.Theme.DividerColor
+                : this.IsSimpleDisplayMode()
+                ? SimpleDividerColor
                 : DividerColor;
         }
 
@@ -6419,12 +6480,22 @@ namespace TrafficView
 
         private void RefreshTimer_Tick(object sender, EventArgs e)
         {
+            if (this.IsOverlayDragInProgress())
+            {
+                return;
+            }
+
             this.RefreshTraffic();
         }
 
         private void AnimationTimer_Tick(object sender, EventArgs e)
         {
             if (!this.Visible || this.IsDisposed)
+            {
+                return;
+            }
+
+            if (this.IsOverlayDragInProgress())
             {
                 return;
             }
@@ -6608,9 +6679,127 @@ namespace TrafficView
             return this.settings != null && this.settings.PopupDisplayMode == PopupDisplayMode.MiniSoft;
         }
 
+        private bool IsSimpleDisplayMode()
+        {
+            return this.settings != null && this.settings.PopupDisplayMode == PopupDisplayMode.Simple;
+        }
+
+        private bool IsMiniSoftLikeDisplayMode()
+        {
+            return this.IsMiniSoftDisplayMode() || this.IsSimpleDisplayMode();
+        }
+
         private bool IsAlternativeDisplayMode()
         {
-            return this.IsMiniGraphDisplayMode() || this.IsMiniSoftDisplayMode();
+            return this.IsMiniGraphDisplayMode() || this.IsMiniSoftLikeDisplayMode();
+        }
+
+        private string GetActivePanelAssetDirectoryPath()
+        {
+            if (this.IsSimpleDisplayMode())
+            {
+                string simpleModeAssetDirectoryPath = Path.Combine(
+                    AppStorage.BaseDirectory,
+                    "DisplayModeAssets",
+                    SimpleModeAssetDirectoryName);
+                if (Directory.Exists(simpleModeAssetDirectoryPath))
+                {
+                    return simpleModeAssetDirectoryPath;
+                }
+            }
+
+            PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
+            return definition != null ? definition.DirectoryPath : string.Empty;
+        }
+
+        private Color GetDownloadCaptionBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleDownloadCaptionColor : DownloadCaptionColor;
+        }
+
+        private Color GetDownloadValueBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleDownloadValueColor : DownloadValueColor;
+        }
+
+        private Color GetUploadCaptionBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleUploadCaptionColor : UploadCaptionColor;
+        }
+
+        private Color GetUploadValueBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleUploadValueColor : UploadValueColor;
+        }
+
+        private Color GetDownloadRingLowBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleDownloadRingLowColor : DownloadRingLowColor;
+        }
+
+        private Color GetDownloadRingHighBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleDownloadRingHighColor : DownloadRingHighColor;
+        }
+
+        private Color GetUploadRingLowBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleUploadRingLowColor : UploadRingLowColor;
+        }
+
+        private Color GetUploadRingHighBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleUploadRingHighColor : UploadRingHighColor;
+        }
+
+        private Color GetMeterTrackBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleMeterTrackColor : MeterTrackColor;
+        }
+
+        private Color GetMeterTrackInnerBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleMeterTrackInnerColor : MeterTrackInnerColor;
+        }
+
+        private Color GetMeterCenterBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleMeterCenterColor : MeterCenterColor;
+        }
+
+        private Color GetDownloadArrowBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleDownloadArrowBaseColor : DownloadArrowBaseColor;
+        }
+
+        private Color GetDownloadArrowHighBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleDownloadArrowHighColor : DownloadArrowHighColor;
+        }
+
+        private Color GetUploadArrowBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleUploadArrowBaseColor : UploadArrowBaseColor;
+        }
+
+        private Color GetUploadArrowHighBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleUploadArrowHighColor : UploadArrowHighColor;
+        }
+
+        private Color GetSparklineGuideBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleSparklineGuideColor : SparklineGuideColor;
+        }
+
+        private Color GetSparklineDownloadBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleSparklineDownloadColor : SparklineDownloadColor;
+        }
+
+        private Color GetSparklineUploadBaseColor()
+        {
+            return this.IsSimpleDisplayMode() ? SimpleSparklineUploadColor : SparklineUploadColor;
         }
 
         private double GetRingDisplayNoiseFloorBytesPerSecond()
@@ -6786,7 +6975,11 @@ namespace TrafficView
             }
 
             bool miniGraphDisplayMode = this.IsAlternativeDisplayMode();
-            int baseDiameter = miniGraphDisplayMode ? MiniGraphMeterDiameter : BaseMeterDiameter;
+            int baseDiameter = this.IsSimpleDisplayMode()
+                ? SimpleMeterDiameter
+                : miniGraphDisplayMode
+                ? MiniGraphMeterDiameter
+                : BaseMeterDiameter;
             int diameter = this.ScaleValue(this.IsReadableInfoPanelSkinEnabled()
                 ? baseDiameter - 3
                 : baseDiameter);
@@ -6797,12 +6990,20 @@ namespace TrafficView
             }
             else
             {
-                int rightInset = this.ScaleValue(miniGraphDisplayMode ? MiniGraphMeterRightInset : BaseMeterRightInset);
+                int rightInset = this.ScaleValue(this.IsSimpleDisplayMode()
+                    ? SimpleMeterRightInset
+                    : miniGraphDisplayMode
+                    ? MiniGraphMeterRightInset
+                    : BaseMeterRightInset);
                 x = this.ClientSize.Width - diameter - rightInset;
             }
             int y = miniGraphDisplayMode
                 ? Math.Max(0, (this.ClientSize.Height - diameter) / 2)
                 : Math.Max(this.ScaleValue(6), (this.ClientSize.Height - diameter) / 2);
+            if (this.IsSimpleDisplayMode())
+            {
+                y = Math.Max(0, y - this.ScaleValue(1));
+            }
             return new Rectangle(x, y, diameter, diameter);
         }
 
@@ -6858,7 +7059,7 @@ namespace TrafficView
             Color uploadEndColor,
             bool drawTracks)
         {
-            if (this.IsMiniSoftDisplayMode())
+            if (this.IsMiniSoftLikeDisplayMode())
             {
                 int segmentCount = RingSegmentCount;
                 float slotSweep = 360F / segmentCount;
@@ -7114,7 +7315,7 @@ namespace TrafficView
                 startColor,
                 endColor,
                 SmoothStep(clampedRatio));
-            bool renderFullScaleRing = this.IsMiniSoftDisplayMode() && !drawTracks && clampedRatio >= 0.995D;
+            bool renderFullScaleRing = this.IsMiniSoftLikeDisplayMode() && !drawTracks && clampedRatio >= 0.995D;
 
             if (renderFullScaleRing)
             {
@@ -7348,12 +7549,12 @@ namespace TrafficView
             float downloadYOffset = ((downloadPulse - 0.5F) * bobAmplitude * 1.7F) + this.ScaleFloat(0.45F);
             float uploadYOffset = -((uploadPulse - 0.5F) * bobAmplitude * 1.7F) - this.ScaleFloat(0.45F);
             Color downloadColor = GetInterpolatedColor(
-                DownloadArrowBaseColor,
-                DownloadArrowHighColor,
+                this.GetDownloadArrowBaseColor(),
+                this.GetDownloadArrowHighBaseColor(),
                 SmoothStep(visualDownloadFillRatio));
             Color uploadColor = GetInterpolatedColor(
-                UploadArrowBaseColor,
-                UploadArrowHighColor,
+                this.GetUploadArrowBaseColor(),
+                this.GetUploadArrowHighBaseColor(),
                 SmoothStep(visualUploadFillRatio));
 
             using (GraphicsPath clipPath = new GraphicsPath())
@@ -8042,17 +8243,17 @@ namespace TrafficView
                     using (LinearGradientBrush centerBrush = new LinearGradientBrush(
                         new PointF(centerBounds.Left, centerBounds.Top),
                         new PointF(centerBounds.Right, centerBounds.Bottom),
-                        GetInterpolatedColor(MeterCenterColor, Color.FromArgb(48, 78, 132), 0.32D),
-                        GetInterpolatedColor(MeterCenterColor, Color.FromArgb(4, 10, 24), 0.42D)))
+                        GetInterpolatedColor(this.GetMeterCenterBaseColor(), Color.FromArgb(48, 78, 132), 0.32D),
+                        GetInterpolatedColor(this.GetMeterCenterBaseColor(), Color.FromArgb(4, 10, 24), 0.42D)))
                     {
                         ColorBlend blend = new ColorBlend();
                         blend.Positions = new float[] { 0F, 0.32F, 0.68F, 1F };
                         blend.Colors = new Color[]
                         {
-                            GetInterpolatedColor(MeterCenterColor, Color.FromArgb(66, 96, 154), 0.36D),
-                            GetInterpolatedColor(MeterCenterColor, Color.FromArgb(30, 52, 98), 0.20D),
-                            MeterCenterColor,
-                            GetInterpolatedColor(MeterCenterColor, Color.FromArgb(2, 8, 18), 0.50D)
+                            GetInterpolatedColor(this.GetMeterCenterBaseColor(), Color.FromArgb(66, 96, 154), 0.36D),
+                            GetInterpolatedColor(this.GetMeterCenterBaseColor(), Color.FromArgb(30, 52, 98), 0.20D),
+                            this.GetMeterCenterBaseColor(),
+                            GetInterpolatedColor(this.GetMeterCenterBaseColor(), Color.FromArgb(2, 8, 18), 0.50D)
                         };
                         centerBrush.InterpolationColors = blend;
                         graphics.FillEllipse(centerBrush, centerBounds);
@@ -8217,11 +8418,11 @@ namespace TrafficView
 
             double direction = this.GetActivityBorderDirection();
             Color glowColor = direction >= 0D
-                ? DownloadArrowBaseColor
-                : UploadArrowBaseColor;
+                ? this.GetDownloadArrowBaseColor()
+                : this.GetUploadArrowBaseColor();
             Color coreColor = direction >= 0D
-                ? DownloadArrowHighColor
-                : UploadArrowHighColor;
+                ? this.GetDownloadArrowHighBaseColor()
+                : this.GetUploadArrowHighBaseColor();
             int lightCount = Math.Max(16, Math.Min(34, (int)Math.Round(perimeter / Math.Max(7.5F, this.ScaleFloat(8.8F)))));
             double phase = this.activityBorderRotationDegrees / 360D;
             double smoothedIntensity = SmoothStep(intensity) * fadeRatio;
@@ -8328,6 +8529,25 @@ namespace TrafficView
 
         private double GetActivityBorderDirection()
         {
+            if (this.IsSimpleDisplayMode())
+            {
+                double simpleDownloadInfluence = Math.Max(0D, this.displayedDownloadBytesPerSecond);
+                double simpleUploadInfluence = Math.Max(0D, this.displayedUploadBytesPerSecond);
+                double dominantBaseline = Math.Max(simpleDownloadInfluence, simpleUploadInfluence);
+                double hysteresis = Math.Max(24D * 1024D, dominantBaseline * 0.18D);
+
+                if (simpleDownloadInfluence > simpleUploadInfluence + hysteresis)
+                {
+                    this.simpleActivityBorderDirection = 1D;
+                }
+                else if (simpleUploadInfluence > simpleDownloadInfluence + hysteresis)
+                {
+                    this.simpleActivityBorderDirection = -1D;
+                }
+
+                return this.simpleActivityBorderDirection;
+            }
+
             double downloadInfluence = this.GetVisualizedFillRatioForCurrentDownload();
             double uploadInfluence = this.GetVisualizedFillRatioForCurrentUpload();
             return uploadInfluence > downloadInfluence + 0.015D ? -1D : 1D;
@@ -8737,22 +8957,35 @@ namespace TrafficView
 
         private void DrawTrafficTexts(Graphics graphics)
         {
+            Rectangle downloadValueDrawBounds = this.GetPrimaryValueDrawBounds(this.downloadValueLabel.Bounds);
+            Rectangle uploadValueDrawBounds = this.GetPrimaryValueDrawBounds(this.uploadValueLabel.Bounds);
+            bool allowDownloadValueEllipsis = this.ShouldAllowPrimaryValueEllipsis(
+                graphics,
+                this.downloadValueLabel.Text,
+                this.valueFont,
+                downloadValueDrawBounds);
+            bool allowUploadValueEllipsis = this.ShouldAllowPrimaryValueEllipsis(
+                graphics,
+                this.uploadValueLabel.Text,
+                this.valueFont,
+                uploadValueDrawBounds);
+
             if (this.IsReadableInfoPanelSkinEnabled())
             {
                 Color downloadCaptionColor = GetInterpolatedColor(
-                    DownloadCaptionColor,
+                    this.GetDownloadCaptionBaseColor(),
                     Color.FromArgb(255, 244, 208, 136),
                     0.28D);
                 Color downloadValueColor = GetInterpolatedColor(
-                    DownloadValueColor,
+                    this.GetDownloadValueBaseColor(),
                     Color.FromArgb(255, 255, 214, 96),
                     0.22D);
                 Color uploadCaptionColor = GetInterpolatedColor(
-                    UploadCaptionColor,
+                    this.GetUploadCaptionBaseColor(),
                     Color.FromArgb(255, 198, 255, 194),
                     0.24D);
                 Color uploadValueColor = GetInterpolatedColor(
-                    UploadValueColor,
+                    this.GetUploadValueBaseColor(),
                     Color.FromArgb(255, 132, 255, 148),
                     0.18D);
 
@@ -8769,8 +9002,8 @@ namespace TrafficView
                     this.downloadValueLabel.Text,
                     this.valueFont,
                     downloadValueColor,
-                    this.downloadValueLabel.Bounds,
-                    true,
+                    downloadValueDrawBounds,
+                    allowDownloadValueEllipsis,
                     true);
                 DrawReadableTrafficText(
                     graphics,
@@ -8785,8 +9018,8 @@ namespace TrafficView
                     this.uploadValueLabel.Text,
                     this.valueFont,
                     uploadValueColor,
-                    this.uploadValueLabel.Bounds,
-                    true,
+                    uploadValueDrawBounds,
+                    allowUploadValueEllipsis,
                     true);
                 return;
             }
@@ -8795,7 +9028,7 @@ namespace TrafficView
                 graphics,
                 this.downloadCaptionLabel.Text,
                 this.captionFont,
-                DownloadCaptionColor,
+                this.GetDownloadCaptionBaseColor(),
                 this.downloadCaptionLabel.Bounds,
                 false,
                 false);
@@ -8803,15 +9036,15 @@ namespace TrafficView
                 graphics,
                 this.downloadValueLabel.Text,
                 this.valueFont,
-                DownloadValueColor,
-                this.downloadValueLabel.Bounds,
-                true,
+                this.GetDownloadValueBaseColor(),
+                downloadValueDrawBounds,
+                allowDownloadValueEllipsis,
                 true);
             DrawTrafficText(
                 graphics,
                 this.uploadCaptionLabel.Text,
                 this.captionFont,
-                UploadCaptionColor,
+                this.GetUploadCaptionBaseColor(),
                 this.uploadCaptionLabel.Bounds,
                 false,
                 false);
@@ -8819,10 +9052,44 @@ namespace TrafficView
                 graphics,
                 this.uploadValueLabel.Text,
                 this.valueFont,
-                UploadValueColor,
-                this.uploadValueLabel.Bounds,
-                true,
+                this.GetUploadValueBaseColor(),
+                uploadValueDrawBounds,
+                allowUploadValueEllipsis,
                 true);
+        }
+
+        private Rectangle GetPrimaryValueDrawBounds(Rectangle bounds)
+        {
+            if (!this.IsSimpleDisplayMode() ||
+                !this.IsBothSectionsVisible() ||
+                !this.IsRightSectionVisible())
+            {
+                return bounds;
+            }
+
+            Rectangle meterBounds = this.GetDownloadMeterBounds();
+            int expandedRight = Math.Max(bounds.Right, meterBounds.Left + this.ScaleValue(6));
+            return new Rectangle(
+                bounds.Left,
+                bounds.Top,
+                Math.Max(bounds.Width, expandedRight - bounds.Left),
+                bounds.Height);
+        }
+
+        private bool ShouldAllowPrimaryValueEllipsis(Graphics graphics, string text, Font font, Rectangle bounds)
+        {
+            if (!this.IsSimpleDisplayMode() || string.IsNullOrEmpty(text))
+            {
+                return true;
+            }
+
+            SizeF measuredSize = graphics.MeasureString(
+                text,
+                font,
+                new SizeF(1000F, Math.Max(1F, bounds.Height)),
+                TrafficTextStringFormat);
+            float horizontalPadding = this.ScaleFloat(3.5F);
+            return measuredSize.Width + horizontalPadding > bounds.Width;
         }
 
         private void DrawReadableTrafficInfoPanel(Graphics graphics, Rectangle meterBounds)
@@ -9064,7 +9331,7 @@ namespace TrafficView
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
 
-                Color supportColor = GetInterpolatedColor(this.GetPanelBackgroundBaseColor(), MeterTrackInnerColor, 0.14D);
+                Color supportColor = GetInterpolatedColor(this.GetPanelBackgroundBaseColor(), this.GetMeterTrackInnerBaseColor(), 0.14D);
                 using (LinearGradientBrush supportBrush = new LinearGradientBrush(
                     new PointF(supportBounds.Left, supportBounds.Top),
                     new PointF(supportBounds.Right, supportBounds.Top),
@@ -9128,7 +9395,7 @@ namespace TrafficView
 
                 if (!ultraTransparent)
                 {
-                    using (Pen guidePen = new Pen(Color.FromArgb(90, SparklineGuideColor), Math.Max(1F, this.ScaleFloat(1F))))
+                    using (Pen guidePen = new Pen(Color.FromArgb(90, this.GetSparklineGuideBaseColor()), Math.Max(1F, this.ScaleFloat(1F))))
                     {
                         graphics.DrawLine(guidePen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
                         graphics.DrawLine(guidePen, bounds.Left, bounds.Top + 1, bounds.Right, bounds.Top + 1);
@@ -9159,10 +9426,10 @@ namespace TrafficView
                     int glowAlpha = ultraTransparent ? 132 : 92;
                     float glowWidth = lineWidth + Math.Max(this.ScaleFloat(0.9F), ultraTransparent ? 0.9F : 0.6F);
 
-                    using (Pen downloadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineDownloadColor), glowWidth))
-                    using (Pen uploadGlowPen = new Pen(Color.FromArgb(glowAlpha, SparklineUploadColor), glowWidth))
-                    using (Pen downloadPen = new Pen(Color.FromArgb(lineAlpha, SparklineDownloadColor), lineWidth))
-                    using (Pen uploadPen = new Pen(Color.FromArgb(lineAlpha, SparklineUploadColor), lineWidth))
+                    using (Pen downloadGlowPen = new Pen(Color.FromArgb(glowAlpha, this.GetSparklineDownloadBaseColor()), glowWidth))
+                    using (Pen uploadGlowPen = new Pen(Color.FromArgb(glowAlpha, this.GetSparklineUploadBaseColor()), glowWidth))
+                    using (Pen downloadPen = new Pen(Color.FromArgb(lineAlpha, this.GetSparklineDownloadBaseColor()), lineWidth))
+                    using (Pen uploadPen = new Pen(Color.FromArgb(lineAlpha, this.GetSparklineUploadBaseColor()), lineWidth))
                     {
                         downloadGlowPen.LineJoin = LineJoin.Round;
                         downloadGlowPen.StartCap = LineCap.Round;
@@ -9203,10 +9470,10 @@ namespace TrafficView
                 int miniGraphGlowAlpha = ultraTransparent ? 132 : 92;
                 float miniGraphGlowWidth = miniGraphLineWidth + Math.Max(this.ScaleFloat(0.9F), ultraTransparent ? 0.9F : 0.6F);
 
-                using (Pen downloadGlowPen = new Pen(Color.FromArgb(miniGraphGlowAlpha, SparklineDownloadColor), miniGraphGlowWidth))
-                using (Pen uploadGlowPen = new Pen(Color.FromArgb(miniGraphGlowAlpha, SparklineUploadColor), miniGraphGlowWidth))
-                using (Pen downloadPen = new Pen(Color.FromArgb(miniGraphLineAlpha, SparklineDownloadColor), miniGraphLineWidth))
-                using (Pen uploadPen = new Pen(Color.FromArgb(miniGraphLineAlpha, SparklineUploadColor), miniGraphLineWidth))
+                using (Pen downloadGlowPen = new Pen(Color.FromArgb(miniGraphGlowAlpha, this.GetSparklineDownloadBaseColor()), miniGraphGlowWidth))
+                using (Pen uploadGlowPen = new Pen(Color.FromArgb(miniGraphGlowAlpha, this.GetSparklineUploadBaseColor()), miniGraphGlowWidth))
+                using (Pen downloadPen = new Pen(Color.FromArgb(miniGraphLineAlpha, this.GetSparklineDownloadBaseColor()), miniGraphLineWidth))
+                using (Pen uploadPen = new Pen(Color.FromArgb(miniGraphLineAlpha, this.GetSparklineUploadBaseColor()), miniGraphLineWidth))
                 {
                     downloadGlowPen.LineJoin = LineJoin.Round;
                     downloadGlowPen.StartCap = LineCap.Round;
@@ -9250,19 +9517,31 @@ namespace TrafficView
                 return this.ScaleSkinRectangle(definition.SparklineBounds.Value);
             }
 
-            int left = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineLeft : 8);
-            int top = this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineTop : 46);
+            int left = this.ScaleValue(this.IsSimpleDisplayMode()
+                ? SimpleSparklineLeft
+                : this.IsMiniGraphDisplayMode()
+                ? (int)MiniGraphSparklineLeft
+                : 8);
+            int top = this.ScaleValue(this.IsSimpleDisplayMode()
+                ? SimpleSparklineTop
+                : this.IsMiniGraphDisplayMode()
+                ? (int)MiniGraphSparklineTop
+                : 46);
             if (this.IsTaskbarIntegrationActive())
             {
                 top = Math.Max(0, top - this.ScaleValue(4));
             }
 
             int width = this.IsRightSectionVisible()
-                ? Math.Max(12, meterBounds.Left - left - this.ScaleValue(4))
+                ? Math.Max(12, meterBounds.Left - left - this.ScaleValue(this.IsSimpleDisplayMode() ? 12 : 4))
                 : Math.Max(18, this.ClientSize.Width - left - this.ScaleValue(6));
             int height = Math.Max(
                 this.IsMiniGraphDisplayMode() ? 8 : 4,
-                this.ScaleValue(this.IsMiniGraphDisplayMode() ? (int)MiniGraphSparklineHeight : 7));
+                this.ScaleValue(this.IsSimpleDisplayMode()
+                    ? SimpleSparklineHeight
+                    : this.IsMiniGraphDisplayMode()
+                    ? (int)MiniGraphSparklineHeight
+                    : 7));
             return new Rectangle(left, top, width, height);
         }
 
@@ -9504,7 +9783,8 @@ namespace TrafficView
 
         private static Color GetCrispTaskbarIntegratedValueColor(Color color)
         {
-            double whiteBoost = color.ToArgb() == DownloadValueColor.ToArgb()
+            double whiteBoost = color.ToArgb() == DownloadValueColor.ToArgb() ||
+                color.ToArgb() == SimpleDownloadValueColor.ToArgb()
                 ? 0.44D
                 : 0.28D;
             return GetInterpolatedColor(color, Color.White, whiteBoost);
@@ -10184,7 +10464,10 @@ namespace TrafficView
 
             Font newFormFont = new Font("Segoe UI", this.ScaleFloat(BaseFormFontSize), FontStyle.Regular, GraphicsUnit.Pixel);
             Font newCaptionFont = new Font("Segoe UI", this.ScaleFloat(BaseCaptionFontSize), FontStyle.Bold, GraphicsUnit.Pixel);
-            Font newValueFont = new Font("Segoe UI Semibold", this.ScaleFloat(BaseValueFontSize), FontStyle.Bold, GraphicsUnit.Pixel);
+            float valueFontSize = this.IsSimpleDisplayMode()
+                ? SimpleValueFontSize
+                : BaseValueFontSize;
+            Font newValueFont = new Font("Segoe UI Semibold", this.ScaleFloat(valueFontSize), FontStyle.Bold, GraphicsUnit.Pixel);
 
             Font previousFormFont = this.formFont;
             Font previousCaptionFont = this.captionFont;
@@ -10225,6 +10508,41 @@ namespace TrafficView
             Rectangle scaledUploadValueBounds = this.GetValueBoundsForCurrentSection(
                 defaultUploadValueBounds,
                 definition != null ? definition.UploadValueBounds : (Rectangle?)null);
+
+            if (this.IsSimpleDisplayMode() && this.IsBothSectionsVisible())
+            {
+                Rectangle simpleMeterBounds = this.GetDownloadMeterBounds();
+                int maxCaptionRight = Math.Max(
+                    this.ScaleValue(42),
+                    simpleMeterBounds.Left - this.ScaleValue(12));
+                int maxValueRight = Math.Max(
+                    this.ScaleValue(48),
+                    simpleMeterBounds.Left - this.ScaleValue(4));
+
+                scaledDownloadCaptionBounds = new Rectangle(
+                    scaledDownloadCaptionBounds.X + this.ScaleValue(2),
+                    scaledDownloadCaptionBounds.Y + this.ScaleValue(2),
+                    Math.Max(this.ScaleValue(12), Math.Min(scaledDownloadCaptionBounds.Width, maxCaptionRight - scaledDownloadCaptionBounds.Left)),
+                    scaledDownloadCaptionBounds.Height);
+
+                scaledUploadCaptionBounds = new Rectangle(
+                    scaledUploadCaptionBounds.X + this.ScaleValue(2),
+                    Math.Max(0, scaledUploadCaptionBounds.Y - this.ScaleValue(1)),
+                    Math.Max(this.ScaleValue(12), Math.Min(scaledUploadCaptionBounds.Width, maxCaptionRight - scaledUploadCaptionBounds.Left)),
+                    scaledUploadCaptionBounds.Height);
+
+                scaledDownloadValueBounds = new Rectangle(
+                    scaledDownloadValueBounds.X + this.ScaleValue(2),
+                    scaledDownloadValueBounds.Y + this.ScaleValue(2),
+                    Math.Max(this.ScaleValue(28), maxValueRight - (scaledDownloadValueBounds.X + this.ScaleValue(2))),
+                    scaledDownloadValueBounds.Height);
+
+                scaledUploadValueBounds = new Rectangle(
+                    scaledUploadValueBounds.X + this.ScaleValue(1),
+                    Math.Max(0, scaledUploadValueBounds.Y - this.ScaleValue(4)),
+                    Math.Max(this.ScaleValue(28), maxValueRight - (scaledUploadValueBounds.X + this.ScaleValue(1))),
+                    scaledUploadValueBounds.Height);
+            }
 
             if (this.IsTaskbarIntegrationActive() && !scaledUploadValueBounds.IsEmpty)
             {
@@ -10292,7 +10610,7 @@ namespace TrafficView
 
         private int GetPanelOuterInset()
         {
-            if (this.IsMiniSoftDisplayMode())
+            if (this.IsMiniSoftLikeDisplayMode())
             {
                 return Math.Max(1, BaseOuterInset - 1);
             }
@@ -10632,11 +10950,8 @@ namespace TrafficView
             }
 
             this.pendingManualDragLocation = location;
-            if (!this.manualDragMoveTimer.Enabled)
-            {
-                this.ApplyPendingManualDragMove();
-                this.manualDragMoveTimer.Start();
-            }
+            this.manualDragMoveTimer.Stop();
+            this.ApplyPendingManualDragMove();
         }
 
         private void ManualDragMoveTimer_Tick(object sender, EventArgs e)

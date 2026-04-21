@@ -1518,6 +1518,11 @@ namespace TrafficView
                 return PopupDisplayMode.MiniSoft;
             }
 
+            if (popupDisplayMode == PopupDisplayMode.Simple)
+            {
+                return PopupDisplayMode.Simple;
+            }
+
             return PopupDisplayMode.Standard;
         }
 
@@ -1570,6 +1575,12 @@ namespace TrafficView
             if (string.Equals(normalized, "MiniSoft", StringComparison.OrdinalIgnoreCase))
             {
                 popupDisplayMode = PopupDisplayMode.MiniSoft;
+                return true;
+            }
+
+            if (string.Equals(normalized, "Simple", StringComparison.OrdinalIgnoreCase))
+            {
+                popupDisplayMode = PopupDisplayMode.Simple;
                 return true;
             }
 

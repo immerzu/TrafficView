@@ -20,6 +20,8 @@ $manualSourceFile = Join-Path $root "Manual.txt"
 $manualOutputFile = Join-Path $outputDir "Manual.txt"
 $skinsSourceDirectory = Join-Path $root "Skins"
 $skinsOutputDirectory = Join-Path $outputDir "Skins"
+$displayModeAssetsSourceDirectory = Join-Path $root "DisplayModeAssets"
+$displayModeAssetsOutputDirectory = Join-Path $outputDir "DisplayModeAssets"
 $legacyPanelAssetFiles = @(
     "TrafficView.panel.png",
     "TrafficView.panel.90.png",
@@ -452,6 +454,13 @@ Copy-Item $configSourceFile $configOutputFile -Force
 Copy-Item $languageSourceFile $languageOutputFile -Force
 Copy-Item $manualSourceFile $manualOutputFile -Force
 Copy-SkinDirectoriesToOutput -SkinMetadataList $skinMetadataList -OutputDirectoryPath $skinsOutputDirectory
+if (Test-Path $displayModeAssetsSourceDirectory) {
+    if (Test-Path $displayModeAssetsOutputDirectory) {
+        Remove-Item $displayModeAssetsOutputDirectory -Recurse -Force
+    }
+
+    Copy-Item $displayModeAssetsSourceDirectory $displayModeAssetsOutputDirectory -Recurse -Force
+}
 
 foreach ($menuAssetFile in $menuAssetFiles) {
     $menuAssetSourceFile = Join-Path $root $menuAssetFile
