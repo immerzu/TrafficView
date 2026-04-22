@@ -24,6 +24,20 @@ Befindet sich TrafficView auf der Taskleiste, wird dort standardmaessig zuerst n
 
 Im Taskleistenmodus haelt TrafficView die Anzeige nun lokal vor der aktuellen Taskleiste, ohne globales TopMost und ohne Fokuswechsel. Normale Fenster wie Windows Explorer oder StartAllBack werden dadurch nicht in einen Vordergrundkonflikt gezogen.
 
+### Simple-Anzeige: Anzeigebilder erzeugen
+
+Die Quellbilder fuer die Simple-Anzeige liegen unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssetSources\Simple`.
+
+Die fertigen Laufzeitbilder fuer die App werden mit folgendem Skript erzeugt:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Build-DisplayModeAssets.ps1
+```
+
+Die erzeugten Dateien liegen danach unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple` und werden beim Build nach `F:\Codex\TrafficView_Moi\TrafficView\dist\DisplayModeAssets\Simple` kopiert.
+
+Die Anzeige `Simple blue` nutzt denselben Logikaufbau wie `Simple`, aber eigene blaue Bilddateien unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\SimpleBlue`.
+
 ## English
 
 TrafficView allows only one active instance during normal operation. A second launch shows an informational message and keeps the already running instance active.

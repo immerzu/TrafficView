@@ -1523,6 +1523,11 @@ namespace TrafficView
                 return PopupDisplayMode.Simple;
             }
 
+            if (popupDisplayMode == PopupDisplayMode.SimpleBlue)
+            {
+                return PopupDisplayMode.SimpleBlue;
+            }
+
             return PopupDisplayMode.Standard;
         }
 
@@ -1581,6 +1586,13 @@ namespace TrafficView
             if (string.Equals(normalized, "Simple", StringComparison.OrdinalIgnoreCase))
             {
                 popupDisplayMode = PopupDisplayMode.Simple;
+                return true;
+            }
+
+            if (string.Equals(normalized, "SimpleBlue", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "Simple blue", StringComparison.OrdinalIgnoreCase))
+            {
+                popupDisplayMode = PopupDisplayMode.SimpleBlue;
                 return true;
             }
 

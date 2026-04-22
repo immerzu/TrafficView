@@ -43,6 +43,60 @@ $requiredSkinFiles = @(
     "TrafficView.panel.125.png",
     "TrafficView.panel.150.png"
 )
+$requiredDisplayModeAssets = [ordered]@{
+    "Simple" = [ordered]@{
+        "TrafficView.panel.90.png" = @{
+            Width = 92
+            Height = 50
+        }
+        "TrafficView.panel.png" = @{
+            Width = 102
+            Height = 56
+        }
+        "TrafficView.panel.110.png" = @{
+            Width = 112
+            Height = 62
+        }
+        "TrafficView.panel.125.png" = @{
+            Width = 128
+            Height = 70
+        }
+        "TrafficView.panel.150.png" = @{
+            Width = 153
+            Height = 84
+        }
+        "TrafficView.center_core.png" = @{
+            Width = 512
+            Height = 512
+        }
+    }
+    "SimpleBlue" = [ordered]@{
+        "TrafficView.panel.90.png" = @{
+            Width = 92
+            Height = 50
+        }
+        "TrafficView.panel.png" = @{
+            Width = 102
+            Height = 56
+        }
+        "TrafficView.panel.110.png" = @{
+            Width = 112
+            Height = 62
+        }
+        "TrafficView.panel.125.png" = @{
+            Width = 128
+            Height = 70
+        }
+        "TrafficView.panel.150.png" = @{
+            Width = 153
+            Height = 84
+        }
+        "TrafficView.center_core.png" = @{
+            Width = 512
+            Height = 512
+        }
+    }
+}
 $deleteStagingDirectoryName = ".delete"
 $supportedSurfaceEffects = @(
     "none",
@@ -330,6 +384,44 @@ function Test-AllSkinDirectories {
     return $skinMetadataList
 }
 
+function Test-DisplayModeAssets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayModeAssetsDirectoryPath
+    )
+
+    if (-not (Test-Path $DisplayModeAssetsDirectoryPath)) {
+        throw "DisplayModeAssets-Ordner nicht gefunden: $DisplayModeAssetsDirectoryPath"
+    }
+
+    foreach ($displayModeEntry in $requiredDisplayModeAssets.GetEnumerator()) {
+        $displayModeDirectoryPath = Join-Path $DisplayModeAssetsDirectoryPath $displayModeEntry.Key
+        if (-not (Test-Path $displayModeDirectoryPath)) {
+            throw "DisplayModeAssets-Modusordner nicht gefunden: $displayModeDirectoryPath"
+        }
+
+        foreach ($assetEntry in $displayModeEntry.Value.GetEnumerator()) {
+            $assetPath = Join-Path $displayModeDirectoryPath $assetEntry.Key
+            if (-not (Test-Path $assetPath)) {
+                throw "DisplayModeAsset fehlt: $assetPath"
+            }
+
+            $bitmap = $null
+            try {
+                $bitmap = New-Object System.Drawing.Bitmap($assetPath)
+                if ($bitmap.Width -ne $assetEntry.Value.Width -or $bitmap.Height -ne $assetEntry.Value.Height) {
+                    throw "DisplayModeAsset hat falsche Groesse: $assetPath ($($bitmap.Width)x$($bitmap.Height) statt $($assetEntry.Value.Width)x$($assetEntry.Value.Height))"
+                }
+            }
+            finally {
+                if ($bitmap -ne $null) {
+                    $bitmap.Dispose()
+                }
+            }
+        }
+    }
+}
+
 function Copy-SkinDirectoriesToOutput {
     param(
         [Parameter(Mandatory = $true)]
@@ -430,6 +522,8 @@ if (-not (Test-Path $readmeSourceFile)) {
 if (-not $sourceFiles -or $sourceFiles.Count -eq 0) {
     throw "Keine C#-Quelldateien im Verzeichnis '$sourceDir' gefunden."
 }
+
+Test-DisplayModeAssets -DisplayModeAssetsDirectoryPath $displayModeAssetsSourceDirectory
 
 $skinMetadataList = @()
 if (Test-Path $skinsSourceDirectory) {
