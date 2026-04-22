@@ -61,9 +61,6 @@
     <None Include="Manual.txt" />
     <None Include="TrafficView.manifest" />
     <Content Include="TrafficView.ico" />
-    <Content Include="Skins\**\*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Content Include="LOLO-SOFT_00_SW.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

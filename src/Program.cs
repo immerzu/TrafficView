@@ -1763,9 +1763,8 @@ namespace TrafficView
             if (this.panelSkinMenuItems.Count > 0)
             {
                 this.skinItem.DropDownItems.Add(new ToolStripSeparator());
+                this.skinItem.DropDownItems.Add(this.deleteSkinItem);
             }
-
-            this.skinItem.DropDownItems.Add(this.deleteSkinItem);
         }
 
         private string GetFallbackSkinId(string deletedSkinId)

@@ -18,6 +18,8 @@ $languageSourceFile = Join-Path $root "TrafficView.languages.ini"
 $languageOutputFile = Join-Path $outputDir "TrafficView.languages.ini"
 $manualSourceFile = Join-Path $root "Manual.txt"
 $manualOutputFile = Join-Path $outputDir "Manual.txt"
+$readmeSourceFile = Join-Path $root "README.md"
+$readmeOutputFile = Join-Path $outputDir "README.md"
 $skinsSourceDirectory = Join-Path $root "Skins"
 $skinsOutputDirectory = Join-Path $outputDir "Skins"
 $displayModeAssetsSourceDirectory = Join-Path $root "DisplayModeAssets"
@@ -301,7 +303,7 @@ function Test-AllSkinDirectories {
         Where-Object { $_.Name -ne $deleteStagingDirectoryName } |
         Sort-Object Name
     if (-not $skinDirectories -or $skinDirectories.Count -eq 0) {
-        throw "Keine Skin-Ordner gefunden: $SkinsDirectoryPath"
+        return @()
     }
 
     $seenSkinIds = @{}
@@ -421,15 +423,18 @@ if (-not (Test-Path $manualSourceFile)) {
     throw "Manual-Datei nicht gefunden: $manualSourceFile"
 }
 
-if (-not (Test-Path $skinsSourceDirectory)) {
-    throw "Skin-Ordner nicht gefunden: $skinsSourceDirectory"
+if (-not (Test-Path $readmeSourceFile)) {
+    throw "README-Datei nicht gefunden: $readmeSourceFile"
 }
 
 if (-not $sourceFiles -or $sourceFiles.Count -eq 0) {
     throw "Keine C#-Quelldateien im Verzeichnis '$sourceDir' gefunden."
 }
 
-$skinMetadataList = Test-AllSkinDirectories -SkinsDirectoryPath $skinsSourceDirectory
+$skinMetadataList = @()
+if (Test-Path $skinsSourceDirectory) {
+    $skinMetadataList = Test-AllSkinDirectories -SkinsDirectoryPath $skinsSourceDirectory
+}
 
 & $compiler `
     /nologo `
@@ -453,7 +458,10 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item $configSourceFile $configOutputFile -Force
 Copy-Item $languageSourceFile $languageOutputFile -Force
 Copy-Item $manualSourceFile $manualOutputFile -Force
-Copy-SkinDirectoriesToOutput -SkinMetadataList $skinMetadataList -OutputDirectoryPath $skinsOutputDirectory
+Copy-Item $readmeSourceFile $readmeOutputFile -Force
+if ($skinMetadataList -and $skinMetadataList.Count -gt 0) {
+    Copy-SkinDirectoriesToOutput -SkinMetadataList $skinMetadataList -OutputDirectoryPath $skinsOutputDirectory
+}
 if (Test-Path $displayModeAssetsSourceDirectory) {
     if (Test-Path $displayModeAssetsOutputDirectory) {
         Remove-Item $displayModeAssetsOutputDirectory -Recurse -Force

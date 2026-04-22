@@ -1,6 +1,10 @@
 bin/
 obj/
+Skin_Work/
+_codex_versions/
+_portable_release/
 
+dist/TrafficView/
 dist/TrafficView.settings.ini
 dist/*.bak_*
 dist/*.ini_
