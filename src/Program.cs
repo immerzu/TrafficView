@@ -34,7 +34,8 @@ namespace TrafficView
         Standard,
         MiniGraph,
         MiniSoft,
-        Simple
+        Simple,
+        SimpleBlue
     }
 
     internal enum PopupSectionMode
@@ -345,7 +346,8 @@ namespace TrafficView
                 PopupDisplayMode.Standard,
                 PopupDisplayMode.MiniGraph,
                 PopupDisplayMode.MiniSoft,
-                PopupDisplayMode.Simple
+                PopupDisplayMode.Simple,
+                PopupDisplayMode.SimpleBlue
             };
             for (int i = 0; i < popupDisplayModes.Length; i++)
             {
@@ -1716,6 +1718,8 @@ namespace TrafficView
                     return UiLanguage.Get("Menu.DisplayModeMiniSoft", "MiniSoft");
                 case PopupDisplayMode.Simple:
                     return UiLanguage.Get("Menu.DisplayModeSimple", "Simple");
+                case PopupDisplayMode.SimpleBlue:
+                    return UiLanguage.Get("Menu.DisplayModeSimpleBlue", "Simple blue");
                 default:
                     return UiLanguage.Get("Menu.DisplayModeStandard", "Standard");
             }
@@ -2162,6 +2166,7 @@ namespace TrafficView
         private static readonly Color SimpleSparklineUploadColor = Color.FromArgb(104, 255, 92);
         private static readonly StringFormat TrafficTextStringFormat = CreateTrafficTextFormat(false);
         private static readonly StringFormat TrafficEllipsisTextFormat = CreateTrafficTextFormat(true);
+        private static readonly StringFormat TrafficRightAlignedTextFormat = CreateTrafficTextFormat(false, StringAlignment.Far);
         private const double LowTrafficVisualizationExponent = 0.72D;
         private const double ArrowMotionDeadZoneRatio = 0.05D;
         private const double ArrowMotionFullRatio = 0.30D;
@@ -2216,6 +2221,7 @@ namespace TrafficView
         private const string PanelBackgroundAssetFileName = "TrafficView.panel.png";
         private const string PanelBackgroundScaledAssetFileNameFormat = "TrafficView.panel.{0}.png";
         private const string SimpleModeAssetDirectoryName = "Simple";
+        private const string SimpleBlueModeAssetDirectoryName = "SimpleBlue";
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
         private static readonly object PanelBackgroundAssetSync = new object();
         private static readonly int[] PanelBackgroundPreparedScalePercents = new int[] { 90, 100, 110, 125, 150 };
@@ -6680,7 +6686,9 @@ namespace TrafficView
 
         private bool IsSimpleDisplayMode()
         {
-            return this.settings != null && this.settings.PopupDisplayMode == PopupDisplayMode.Simple;
+            return this.settings != null &&
+                (this.settings.PopupDisplayMode == PopupDisplayMode.Simple ||
+                 this.settings.PopupDisplayMode == PopupDisplayMode.SimpleBlue);
         }
 
         private bool IsMiniSoftLikeDisplayMode()
@@ -6700,7 +6708,7 @@ namespace TrafficView
                 string simpleModeAssetDirectoryPath = Path.Combine(
                     AppStorage.BaseDirectory,
                     "DisplayModeAssets",
-                    SimpleModeAssetDirectoryName);
+                    this.GetSimpleModeAssetDirectoryName());
                 if (Directory.Exists(simpleModeAssetDirectoryPath))
                 {
                     return simpleModeAssetDirectoryPath;
@@ -6709,6 +6717,13 @@ namespace TrafficView
 
             PanelSkinDefinition definition = this.GetCurrentPanelSkinDefinition();
             return definition != null ? definition.DirectoryPath : string.Empty;
+        }
+
+        private string GetSimpleModeAssetDirectoryName()
+        {
+            return this.settings != null && this.settings.PopupDisplayMode == PopupDisplayMode.SimpleBlue
+                ? SimpleBlueModeAssetDirectoryName
+                : SimpleModeAssetDirectoryName;
         }
 
         private Color GetDownloadCaptionBaseColor()
@@ -6995,6 +7010,10 @@ namespace TrafficView
                     ? MiniGraphMeterRightInset
                     : BaseMeterRightInset);
                 x = this.ClientSize.Width - diameter - rightInset;
+                if (this.settings != null && this.settings.PopupDisplayMode == PopupDisplayMode.SimpleBlue)
+                {
+                    x -= this.ScaleValue(2);
+                }
             }
             int y = miniGraphDisplayMode
                 ? Math.Max(0, (this.ClientSize.Height - diameter) / 2)
@@ -8803,14 +8822,29 @@ namespace TrafficView
 
         private static StringFormat CreateTrafficTextFormat(bool allowEllipsis)
         {
+            return CreateTrafficTextFormat(allowEllipsis, StringAlignment.Near);
+        }
+
+        private static StringFormat CreateTrafficTextFormat(bool allowEllipsis, StringAlignment alignment)
+        {
             StringFormat stringFormat = new StringFormat(StringFormat.GenericTypographic);
-            stringFormat.Alignment = StringAlignment.Near;
+            stringFormat.Alignment = alignment;
             stringFormat.LineAlignment = StringAlignment.Center;
             stringFormat.FormatFlags = StringFormatFlags.NoWrap;
             stringFormat.Trimming = allowEllipsis
                 ? StringTrimming.EllipsisCharacter
                 : StringTrimming.None;
             return stringFormat;
+        }
+
+        private StringFormat GetTrafficTextFormatForBounds(bool useEllipsis, bool isPrimaryValue)
+        {
+            if (this.IsSimpleDisplayMode() && isPrimaryValue)
+            {
+                return TrafficRightAlignedTextFormat;
+            }
+
+            return useEllipsis ? TrafficEllipsisTextFormat : TrafficTextStringFormat;
         }
 
         private static double SmoothStep(double value)
@@ -9067,11 +9101,13 @@ namespace TrafficView
             }
 
             Rectangle meterBounds = this.GetDownloadMeterBounds();
-            int expandedRight = Math.Max(bounds.Right, meterBounds.Left + this.ScaleValue(6));
+            int maxRight = Math.Max(
+                bounds.Left + this.ScaleValue(16),
+                meterBounds.Left - this.ScaleValue(3));
             return new Rectangle(
                 bounds.Left,
                 bounds.Top,
-                Math.Max(bounds.Width, expandedRight - bounds.Left),
+                Math.Max(1, Math.Min(bounds.Width, maxRight - bounds.Left)),
                 bounds.Height);
         }
 
@@ -9089,6 +9125,93 @@ namespace TrafficView
                 TrafficTextStringFormat);
             float horizontalPadding = this.ScaleFloat(3.5F);
             return measuredSize.Width + horizontalPadding > bounds.Width;
+        }
+
+        private Font GetTrafficTextFontForBounds(
+            Graphics graphics,
+            string text,
+            Font font,
+            RectangleF bounds,
+            bool isPrimaryValue,
+            out bool shouldDispose)
+        {
+            shouldDispose = false;
+            if (!this.IsSimpleDisplayMode() ||
+                !isPrimaryValue ||
+                string.IsNullOrEmpty(text) ||
+                font == null ||
+                bounds.Width <= 1F)
+            {
+                return font;
+            }
+
+            float availableWidth = Math.Max(1F, bounds.Width - this.ScaleFloat(0.6F));
+            SizeF measuredSize = graphics.MeasureString(
+                text,
+                font,
+                new SizeF(1000F, Math.Max(1F, bounds.Height)),
+                TrafficTextStringFormat);
+            float minFontSize = Math.Max(this.ScaleFloat(5.2F), 5.2F);
+            float maxFontSize = Math.Min(
+                Math.Max(font.Size, this.ScaleFloat(10.8F)),
+                Math.Max(font.Size, bounds.Height * 0.86F));
+            Font bestFont = null;
+
+            if (measuredSize.Width <= availableWidth)
+            {
+                float candidateSize = font.Size;
+                while (candidateSize < maxFontSize)
+                {
+                    candidateSize = Math.Min(maxFontSize, candidateSize + this.ScaleFloat(0.25F));
+                    Font candidateFont = new Font(font.FontFamily, candidateSize, font.Style, font.Unit);
+                    measuredSize = graphics.MeasureString(
+                        text,
+                        candidateFont,
+                        new SizeF(1000F, Math.Max(1F, bounds.Height)),
+                        TrafficTextStringFormat);
+                    if (measuredSize.Width > availableWidth)
+                    {
+                        candidateFont.Dispose();
+                        break;
+                    }
+
+                    if (bestFont != null)
+                    {
+                        bestFont.Dispose();
+                    }
+
+                    bestFont = candidateFont;
+                }
+
+                if (bestFont != null)
+                {
+                    shouldDispose = true;
+                    return bestFont;
+                }
+
+                return font;
+            }
+
+            float shrinkingSize = font.Size;
+            while (shrinkingSize > minFontSize)
+            {
+                shrinkingSize = Math.Max(minFontSize, shrinkingSize - this.ScaleFloat(0.25F));
+                Font candidateFont = new Font(font.FontFamily, shrinkingSize, font.Style, font.Unit);
+                measuredSize = graphics.MeasureString(
+                    text,
+                    candidateFont,
+                    new SizeF(1000F, Math.Max(1F, bounds.Height)),
+                    TrafficTextStringFormat);
+                if (measuredSize.Width <= availableWidth || Math.Abs(shrinkingSize - minFontSize) < 0.01F)
+                {
+                    shouldDispose = true;
+                    return candidateFont;
+                }
+
+                candidateFont.Dispose();
+            }
+
+            return font;
         }
 
         private void DrawReadableTrafficInfoPanel(Graphics graphics, Rectangle meterBounds)
@@ -9258,9 +9381,16 @@ namespace TrafficView
         {
             GraphicsState state = graphics.Save();
             RectangleF stableBounds = GetStableTextBounds(bounds);
-            StringFormat format = allowEllipsis
-                ? TrafficEllipsisTextFormat
-                : TrafficTextStringFormat;
+            bool disposeDrawingFont;
+            Font drawingFont = this.GetTrafficTextFontForBounds(
+                graphics,
+                text,
+                font,
+                stableBounds,
+                isPrimaryValue,
+                out disposeDrawingFont);
+            bool useEllipsis = allowEllipsis && !(this.IsSimpleDisplayMode() && isPrimaryValue);
+            StringFormat format = this.GetTrafficTextFormatForBounds(useEllipsis, isPrimaryValue);
             int transparencyPercent = this.settings != null ? this.settings.TransparencyPercent : 0;
             bool ultraTransparent = transparencyPercent >= 100;
             bool taskbarIntegrated = this.IsTaskbarIntegrationActive();
@@ -9291,13 +9421,18 @@ namespace TrafficView
                 graphics.PixelOffsetMode = PixelOffsetMode.Half;
                 graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-                graphics.DrawString(text, font, glowBrush, OffsetRectangle(stableBounds, 0F, 0.8F), format);
-                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, -0.8F, 0F), format);
-                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, 0.8F, 0F), format);
-                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, 0F, -0.8F), format);
-                graphics.DrawString(text, font, outlineBrush, OffsetRectangle(stableBounds, 0F, 0.8F), format);
-                graphics.DrawString(text, font, shadowBrush, OffsetRectangle(stableBounds, 0.35F, 1.15F), format);
-                graphics.DrawString(text, font, textBrush, stableBounds, format);
+                graphics.DrawString(text, drawingFont, glowBrush, OffsetRectangle(stableBounds, 0F, 0.8F), format);
+                graphics.DrawString(text, drawingFont, outlineBrush, OffsetRectangle(stableBounds, -0.8F, 0F), format);
+                graphics.DrawString(text, drawingFont, outlineBrush, OffsetRectangle(stableBounds, 0.8F, 0F), format);
+                graphics.DrawString(text, drawingFont, outlineBrush, OffsetRectangle(stableBounds, 0F, -0.8F), format);
+                graphics.DrawString(text, drawingFont, outlineBrush, OffsetRectangle(stableBounds, 0F, 0.8F), format);
+                graphics.DrawString(text, drawingFont, shadowBrush, OffsetRectangle(stableBounds, 0.35F, 1.15F), format);
+                graphics.DrawString(text, drawingFont, textBrush, stableBounds, format);
+            }
+
+            if (disposeDrawingFont)
+            {
+                drawingFont.Dispose();
             }
 
             graphics.Restore(state);
@@ -9532,7 +9667,7 @@ namespace TrafficView
             }
 
             int width = this.IsRightSectionVisible()
-                ? Math.Max(12, meterBounds.Left - left - this.ScaleValue(this.IsSimpleDisplayMode() ? 12 : 4))
+                ? Math.Max(12, meterBounds.Left - left - this.ScaleValue(this.IsSimpleDisplayMode() ? 3 : 4))
                 : Math.Max(18, this.ClientSize.Width - left - this.ScaleValue(6));
             int height = Math.Max(
                 this.IsMiniGraphDisplayMode() ? 8 : 4,
@@ -9732,6 +9867,15 @@ namespace TrafficView
         {
             GraphicsState state = graphics.Save();
             RectangleF stableBounds = GetStableTextBounds(bounds);
+            bool disposeDrawingFont;
+            Font drawingFont = this.GetTrafficTextFontForBounds(
+                graphics,
+                text,
+                font,
+                stableBounds,
+                isPrimaryValue,
+                out disposeDrawingFont);
+            bool useEllipsis = allowEllipsis && !(this.IsSimpleDisplayMode() && isPrimaryValue);
             RectangleF contrastBounds = OffsetRectangle(
                 stableBounds,
                 0F,
@@ -9761,20 +9905,21 @@ namespace TrafficView
                 graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
                 graphics.DrawString(
                     text,
-                    font,
+                    drawingFont,
                     contrastBrush,
                     contrastBounds,
-                    allowEllipsis
-                        ? TrafficEllipsisTextFormat
-                        : TrafficTextStringFormat);
+                    this.GetTrafficTextFormatForBounds(useEllipsis, isPrimaryValue));
                 graphics.DrawString(
                     text,
-                    font,
+                    drawingFont,
                     textBrush,
                     stableBounds,
-                    allowEllipsis
-                        ? TrafficEllipsisTextFormat
-                        : TrafficTextStringFormat);
+                    this.GetTrafficTextFormatForBounds(useEllipsis, isPrimaryValue));
+            }
+
+            if (disposeDrawingFont)
+            {
+                drawingFont.Dispose();
             }
 
             graphics.Restore(state);
@@ -10516,7 +10661,7 @@ namespace TrafficView
                     simpleMeterBounds.Left - this.ScaleValue(12));
                 int maxValueRight = Math.Max(
                     this.ScaleValue(48),
-                    simpleMeterBounds.Left - this.ScaleValue(4));
+                    simpleMeterBounds.Left - this.ScaleValue(3));
 
                 scaledDownloadCaptionBounds = new Rectangle(
                     scaledDownloadCaptionBounds.X + this.ScaleValue(2),

@@ -162,6 +162,53 @@ Nicht fest einbrennen, wenn dynamisches Overlay geplant ist:
 - dynamische Kreis-Symbole
 - dynamische Graphwerte
 
+## Aktueller Asset-Weg fuer die Simple-Anzeige
+
+Die fertigen Laufzeitbilder fuer die Simple-Anzeige liegen unter:
+
+`F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple`
+
+Diese Dateien werden beim normalen Build nach:
+
+`F:\Codex\TrafficView_Moi\TrafficView\dist\DisplayModeAssets\Simple`
+
+kopiert und von:
+
+`F:\Codex\TrafficView_Moi\TrafficView\dist\TrafficView.exe`
+
+geladen.
+
+Die reproduzierbaren Quellbilder liegen unter:
+
+`F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssetSources\Simple`
+
+Die Laufzeitbilder werden daraus mit folgendem Skript erzeugt:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Build-DisplayModeAssets.ps1
+```
+
+Das Skript erzeugt diese Pflichtdateien:
+
+- `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple\TrafficView.panel.90.png`
+- `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple\TrafficView.panel.png`
+- `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple\TrafficView.panel.110.png`
+- `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple\TrafficView.panel.125.png`
+- `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple\TrafficView.panel.150.png`
+- `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple\TrafficView.center_core.png`
+
+Die Variante `Simple blue` wird aus:
+
+`F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssetSources\SimpleBlue`
+
+nach:
+
+`F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\SimpleBlue`
+
+erzeugt. Sie verwendet dieselben TrafficView-Logiken wie `Simple`, aber eine glaenzend blaue leere Basis-Anzeigetafel.
+
+Der normale Build prueft diese Dateien auf Vorhandensein und erwartete Pixelgroesse.
+
 ## Zugehörige Vorlagendateien
 
 - Der frühere Template-Bestand ist im aktuellen Projektordner nicht mehr enthalten.
