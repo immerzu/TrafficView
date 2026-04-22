@@ -222,7 +222,7 @@ function Test-SkinDirectory {
 }
 
 if (-not (Test-Path $skinsRoot)) {
-    throw "Zielordner fuer Skins nicht gefunden: $skinsRoot"
+    New-Item -ItemType Directory -Force -Path $skinsRoot | Out-Null
 }
 
 $resolvedSource = (Resolve-Path $SourceSkinDirectory).Path

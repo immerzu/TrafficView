@@ -156,6 +156,8 @@ if (Test-Path $defaultsZipPath) {
 Compress-Archive -LiteralPath $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
 Compress-Archive -LiteralPath $stageWithDefaultsDir -DestinationPath $defaultsZipPath -CompressionLevel Optimal
 
+Remove-Item -LiteralPath $stageRoot -Recurse -Force
+
 Write-Host ''
 Write-Host "Portable-Paket fertig: $zipPath"
 Write-Host "Portable-Paket mit Standard-Einstellungen fertig: $defaultsZipPath"
