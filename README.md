@@ -1,4 +1,4 @@
-# TrafficView 1.4.23
+# TrafficView 1.4.24
 
 ## Deutsch
 
@@ -37,6 +37,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\Tra
 Die erzeugten Dateien liegen danach unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple` und werden beim Build nach `F:\Codex\TrafficView_Moi\TrafficView\dist\DisplayModeAssets\Simple` kopiert.
 
 Die Anzeige `Simple blue` nutzt denselben Logikaufbau wie `Simple`, aber eigene blaue Bilddateien unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\SimpleBlue`.
+
+### Saubere Portable-Ausgabe erstellen
+
+Eine weitergabefaehige Portable-Version ohne lokale Einstellungen, Verbrauchsdaten und Logs wird mit folgendem Skript erstellt:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Create-PortableRelease.ps1
+```
+
+Die Ausgabe landet standardmaessig unter `F:\Codex\TrafficView_Moi\Ausgabe`. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden.
 
 ## English
 
