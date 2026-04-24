@@ -38,8 +38,8 @@ function Get-TrafficViewVersion {
 }
 
 $version = Get-TrafficViewVersion -SourceDirectory $sourceDirectoryPath
-$zipPath = Join-Path $outputRoot ("TrafficView.Portable.{0}.zip" -f $version)
-$defaultsZipPath = Join-Path $outputRoot ("TrafficView.Portable.{0}.Standard.zip" -f $version)
+$zipPath = Join-Path $outputRoot ("TrafficView_Portable_{0}.zip" -f $version)
+$defaultsZipPath = Join-Path $outputRoot ("TrafficView_Portable_{0}_Standard.zip" -f $version)
 
 function Get-DefaultSettingsLines {
     return @(

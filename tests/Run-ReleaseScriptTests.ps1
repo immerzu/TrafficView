@@ -204,8 +204,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "portable-release.ps1 ist im Release-Skript-Test fehlgeschlagen."
 }
 
-$legacyZipPath = Join-Path $legacyOutputRoot ("TrafficView.Portable.{0}.zip" -f $version)
-$legacyDefaultsZipPath = Join-Path $legacyOutputRoot ("TrafficView.Portable.{0}.Standard.zip" -f $version)
+$legacyZipPath = Join-Path $legacyOutputRoot ("TrafficView_Portable_{0}.zip" -f $version)
+$legacyDefaultsZipPath = Join-Path $legacyOutputRoot ("TrafficView_Portable_{0}_Standard.zip" -f $version)
 
 $legacyEntries = Get-ZipEntryNames -ZipPath $legacyZipPath
 foreach ($requiredPath in $requiredReleasePaths) {
