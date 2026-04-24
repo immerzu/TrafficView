@@ -126,6 +126,7 @@
     <Compile Include="src\NetworkSnapshot.cs" />
     <Compile Include="src\OverlayInputLabel.cs" />
     <Compile Include="src\PanelSkinCatalog.cs" />
+    <Compile Include="src\SkinPathPolicy.cs" />
     <Compile Include="src\TaskbarIntegrationTypes.cs" />
     <Compile Include="src\TrafficRateFormatter.cs" />
     <Compile Include="src\TrafficRateSmoothing.cs" />

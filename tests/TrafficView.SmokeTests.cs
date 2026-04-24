@@ -40,6 +40,7 @@ namespace TrafficView
                 TestTrafficRateSmoothing();
                 TestTrafficUsageFormatter();
                 TestPanelSkinCatalogPrefersDefaultFallback();
+                TestSkinPathPolicyBlocksExternalPortableSkinPaths();
                 TestMonitorSettingsNormalizesInvalidStoredValues();
                 TestMonitorSettingsRoundTripPreservesSkinSelection();
                 TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage();
@@ -219,6 +220,19 @@ namespace TrafficView
                 PanelSkinCatalog.DefaultSkinId,
                 fallbackSkin.Id,
                 "Missing skin lookup should return the default skin when it exists.");
+        }
+
+        private static void TestSkinPathPolicyBlocksExternalPortableSkinPaths()
+        {
+            string outsideDirectoryPath = Path.Combine(Path.GetTempPath(), "TrafficViewExternalSkinSmokeTest");
+            string errorMessage;
+
+            AssertTrue(
+                !PanelSkinCatalog.TryValidateSkinDirectory(outsideDirectoryPath, out errorMessage),
+                "Portable skin validation should reject paths outside the app directory.");
+            AssertTrue(
+                errorMessage.IndexOf("ausserhalb des Portable-Verzeichnisses", StringComparison.OrdinalIgnoreCase) >= 0,
+                "External portable skin paths should produce a clear path boundary error.");
         }
 
         private static void TestTrafficUsageLogRoundTrip()

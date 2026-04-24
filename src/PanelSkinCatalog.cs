@@ -315,7 +315,7 @@ namespace TrafficView
 
             try
             {
-                EnsurePortableSkinPathAllowed(skinDirectoryPath, "Skin-Verzeichnis");
+                SkinPathPolicy.EnsurePortableSkinPathAllowed(skinDirectoryPath, "Skin-Verzeichnis");
             }
             catch (InvalidOperationException ex)
             {
@@ -477,7 +477,7 @@ namespace TrafficView
             string skinsDirectoryPath = GetSkinsDirectoryPath();
             List<PanelSkinDefinition> definitions = new List<PanelSkinDefinition>();
 
-            EnsurePortableSkinPathAllowed(skinsDirectoryPath, "Skin-Basisverzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(skinsDirectoryPath, "Skin-Basisverzeichnis");
 
             if (Directory.Exists(skinsDirectoryPath))
             {
@@ -552,7 +552,7 @@ namespace TrafficView
                 return;
             }
 
-            EnsurePortableSkinPathAllowed(skinsDirectoryPath, "Skin-Verzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(skinsDirectoryPath, "Skin-Verzeichnis");
 
             string deleteStagingDirectoryPath = Path.Combine(skinsDirectoryPath, DeleteStagingDirectoryName);
             if (!Directory.Exists(deleteStagingDirectoryPath))
@@ -582,7 +582,7 @@ namespace TrafficView
 
                 try
                 {
-                    EnsurePortableSkinPathAllowed(stagedDirectoryPath, "temporärer Skin-Löschrest");
+                    SkinPathPolicy.EnsurePortableSkinPathAllowed(stagedDirectoryPath, "temporärer Skin-Löschrest");
 
                     if (Directory.Exists(stagedDirectoryPath))
                     {
@@ -626,7 +626,7 @@ namespace TrafficView
                 return null;
             }
 
-            EnsurePortableSkinPathAllowed(skinDirectoryPath, "Skin-Verzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(skinDirectoryPath, "Skin-Verzeichnis");
 
             string validationError;
             if (!TryValidateSkinDirectory(skinDirectoryPath, out validationError))
@@ -1109,8 +1109,8 @@ namespace TrafficView
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             string comparisonPrefix = fullSkinsDirectoryPath + Path.DirectorySeparatorChar;
 
-            EnsurePortableSkinPathAllowed(fullSkinsDirectoryPath, "Skin-Basisverzeichnis");
-            EnsurePortableSkinPathAllowed(fullSkinDirectoryPath, "Skin-Verzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(fullSkinsDirectoryPath, "Skin-Basisverzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(fullSkinDirectoryPath, "Skin-Verzeichnis");
 
             if (!fullSkinDirectoryPath.StartsWith(comparisonPrefix, StringComparison.OrdinalIgnoreCase))
             {
@@ -1125,33 +1125,14 @@ namespace TrafficView
                     normalizedId,
                     Guid.NewGuid().ToString("N")));
 
-            EnsurePortableSkinPathAllowed(deleteStagingDirectoryPath, "Skin-Staging-Verzeichnis");
-            EnsurePortableSkinPathAllowed(stagedSkinDirectoryPath, "temporäres Skin-Staging-Verzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(deleteStagingDirectoryPath, "Skin-Staging-Verzeichnis");
+            SkinPathPolicy.EnsurePortableSkinPathAllowed(stagedSkinDirectoryPath, "temporäres Skin-Staging-Verzeichnis");
 
             return new SkinDeleteTarget(
                 fullSkinsDirectoryPath,
                 fullSkinDirectoryPath,
                 deleteStagingDirectoryPath,
                 stagedSkinDirectoryPath);
-        }
-
-        private static void EnsurePortableSkinPathAllowed(string path, string pathLabel)
-        {
-            if (!AppStorage.IsPortableMode)
-            {
-                return;
-            }
-
-            if (AppStorage.IsPathWithinBaseDirectory(path))
-            {
-                return;
-            }
-
-            throw new InvalidOperationException(
-                string.Format(
-                    "Der Pfad fuer {0} liegt ausserhalb des Portable-Verzeichnisses: '{1}'.",
-                    string.IsNullOrWhiteSpace(pathLabel) ? "Skin-Dateien" : pathLabel,
-                    path ?? string.Empty));
         }
 
         private struct SkinDeleteTarget
