@@ -2,14 +2,20 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sourceDir = Join-Path $root "src"
+$projectFile = Join-Path $root "TrafficView.csproj"
 $outputDir = Join-Path $root "dist"
 $outputFile = Join-Path $outputDir "TrafficView.exe"
+$buildStagingDirectory = Join-Path $root "_build_staging"
+$stagedOutputFile = Join-Path $buildStagingDirectory "TrafficView.exe"
+$fallbackOutputFile = Join-Path $outputDir "TrafficView.new.exe"
 $settingsOutputFile = Join-Path $outputDir "TrafficView.settings.ini"
 $settingsBackupOutputFile = Join-Path $outputDir "TrafficView.settings.ini_"
 $usageOutputFile = Join-Path $outputDir "Verbrauch.txt"
 $usageBackupOutputFile = Join-Path $outputDir "Verbrauch.txt_"
 $usageArchiveOutputFile = Join-Path $outputDir "Verbrauch.archiv.txt"
 $usageArchiveBackupOutputFile = Join-Path $outputDir "Verbrauch.archiv.txt_"
+$runtimeLogOutputDirectory = Join-Path $outputDir "TrafficView"
+$legacyLogOutputDirectory = Join-Path $outputDir "Logs"
 $manifestFile = Join-Path $root "TrafficView.manifest"
 $iconFile = Join-Path $root "TrafficView.ico"
 $configSourceFile = Join-Path $root "TrafficView.exe.config"
@@ -34,7 +40,7 @@ $legacyPanelAssetFiles = @(
 $menuAssetFiles = @(
     "LOLO-SOFT_00_SW.png"
 )
-$sourceFiles = Get-ChildItem -Path $sourceDir -Filter *.cs | Sort-Object Name | ForEach-Object { $_.FullName }
+$sourceFiles = @()
 $requiredSkinFiles = @(
     "skin.ini",
     "TrafficView.panel.90.png",
@@ -133,6 +139,145 @@ function Restore-TextFileIfAvailable {
     }
 
     Set-Content -LiteralPath $Path -Value $Lines -Encoding UTF8
+}
+
+function Get-ProjectCompileSourceFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectFilePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectRoot
+    )
+
+    if (-not (Test-Path -LiteralPath $ProjectFilePath)) {
+        throw "Projektdatei nicht gefunden: $ProjectFilePath"
+    }
+
+    [xml]$projectXml = Get-Content -LiteralPath $ProjectFilePath
+    $namespaceManager = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
+    $namespaceManager.AddNamespace("msb", $projectXml.Project.NamespaceURI)
+    $compileNodes = $projectXml.SelectNodes("//msb:Compile[@Include]", $namespaceManager)
+    $files = @()
+
+    foreach ($compileNode in $compileNodes) {
+        $includePath = $compileNode.Include
+        if ([string]::IsNullOrWhiteSpace($includePath)) {
+            continue
+        }
+
+        $sourcePath = Join-Path $ProjectRoot $includePath
+        if (-not (Test-Path -LiteralPath $sourcePath)) {
+            throw "Projekt-Quelldatei fehlt: $sourcePath"
+        }
+
+        $files += $sourcePath
+    }
+
+    return $files
+}
+
+function Remove-DirectoryIfAvailable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    try {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+    catch {
+        Write-Warning "$Description konnte nicht bereinigt werden: $Path"
+    }
+}
+
+function Test-FileLocked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None)
+        return $false
+    }
+    catch [System.IO.IOException] {
+        return $true
+    }
+    finally {
+        if ($stream -ne $null) {
+            $stream.Dispose()
+        }
+    }
+}
+
+function Get-ProcessesUsingPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return @()
+    }
+
+    $normalizedPath = [System.IO.Path]::GetFullPath($Path)
+
+    return @(
+        Get-Process |
+            Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_.Path) -and
+                ([System.IO.Path]::GetFullPath($_.Path)) -ieq $normalizedPath
+            } |
+            Sort-Object Id
+    )
+}
+
+function Publish-BuiltExecutable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StagedPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FallbackPath
+    )
+
+    if (-not (Test-Path -LiteralPath $StagedPath)) {
+        throw "Die neu kompilierte EXE wurde im Staging nicht gefunden: $StagedPath"
+    }
+
+    if (Test-FileLocked -Path $OutputPath) {
+        Copy-Item -LiteralPath $StagedPath -Destination $FallbackPath -Force
+
+        $processes = Get-ProcessesUsingPath -Path $OutputPath
+        $processHint = ""
+        if ($processes.Count -gt 0) {
+            $processHint = " Aktive Prozesse: " + (($processes | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ", ")
+        }
+
+        throw "Die fertige EXE konnte nicht nach '$OutputPath' kopiert werden, weil die Datei noch verwendet wird. Eine aktuelle Ersatzdatei liegt unter '$FallbackPath'.$processHint"
+    }
+
+    Copy-Item -LiteralPath $StagedPath -Destination $OutputPath -Force
 }
 
 function Remove-DeleteStagingDirectory {
@@ -441,6 +586,7 @@ function Copy-SkinDirectoriesToOutput {
 }
 
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+New-Item -ItemType Directory -Force -Path $buildStagingDirectory | Out-Null
 
 $preservedSettingsLines = Read-ExistingTextFile -Path $settingsOutputFile
 $preservedSettingsBackupLines = Read-ExistingTextFile -Path $settingsBackupOutputFile
@@ -473,6 +619,9 @@ if (Test-Path $usageArchiveBackupOutputFile) {
     Remove-Item -LiteralPath $usageArchiveBackupOutputFile -Force
 }
 
+Remove-DirectoryIfAvailable -Path $runtimeLogOutputDirectory -Description "Runtime-Logordner"
+Remove-DirectoryIfAvailable -Path $legacyLogOutputDirectory -Description "Legacy-Logordner"
+
 if (Test-Path $skinsOutputDirectory) {
     Remove-Item -LiteralPath $skinsOutputDirectory -Recurse -Force
 }
@@ -482,6 +631,10 @@ foreach ($legacyPanelAssetFile in $legacyPanelAssetFiles) {
     if (Test-Path $legacyPanelAssetOutputFile) {
         Remove-Item -LiteralPath $legacyPanelAssetOutputFile -Force
     }
+}
+
+if (Test-Path -LiteralPath $stagedOutputFile) {
+    Remove-Item -LiteralPath $stagedOutputFile -Force
 }
 
 $compilerCandidates = @(
@@ -519,8 +672,9 @@ if (-not (Test-Path $readmeSourceFile)) {
     throw "README-Datei nicht gefunden: $readmeSourceFile"
 }
 
+$sourceFiles = Get-ProjectCompileSourceFiles -ProjectFilePath $projectFile -ProjectRoot $root
 if (-not $sourceFiles -or $sourceFiles.Count -eq 0) {
-    throw "Keine C#-Quelldateien im Verzeichnis '$sourceDir' gefunden."
+    throw "Keine C#-Quelldateien in '$projectFile' gefunden."
 }
 
 Test-DisplayModeAssets -DisplayModeAssetsDirectoryPath $displayModeAssetsSourceDirectory
@@ -537,7 +691,7 @@ if (Test-Path $skinsSourceDirectory) {
     /platform:anycpu `
     /win32icon:$iconFile `
     /win32manifest:$manifestFile `
-    /out:$outputFile `
+    /out:$stagedOutputFile `
     /reference:System.dll `
     /reference:System.Core.dll `
     /reference:System.IO.Compression.dll `
@@ -548,6 +702,8 @@ if (Test-Path $skinsSourceDirectory) {
 if ($LASTEXITCODE -ne 0) {
     throw "Build fehlgeschlagen."
 }
+
+Publish-BuiltExecutable -StagedPath $stagedOutputFile -OutputPath $outputFile -FallbackPath $fallbackOutputFile
 
 Copy-Item $configSourceFile $configOutputFile -Force
 Copy-Item $languageSourceFile $languageOutputFile -Force

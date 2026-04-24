@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.Linq;
 
 namespace TrafficView
 {
@@ -173,7 +172,7 @@ namespace TrafficView
 
             if (string.IsNullOrEmpty(candidate))
             {
-                return definitions.Length > 0 ? definitions[0].Id : "08";
+                return GetDefaultOrFirstSkinId(definitions);
             }
 
             for (int i = 0; i < definitions.Length; i++)
@@ -184,13 +183,16 @@ namespace TrafficView
                 }
             }
 
-            return definitions.Length > 0 ? definitions[0].Id : "08";
+            return GetDefaultOrFirstSkinId(definitions);
         }
 
         public static string GetDefaultOrFirstSkinId()
         {
-            PanelSkinDefinition[] definitions = GetAvailableSkins();
+            return GetDefaultOrFirstSkinId(GetAvailableSkins());
+        }
 
+        private static string GetDefaultOrFirstSkinId(PanelSkinDefinition[] definitions)
+        {
             for (int i = 0; i < definitions.Length; i++)
             {
                 if (string.Equals(definitions[i].Id, DefaultSkinId, StringComparison.OrdinalIgnoreCase))
@@ -1074,7 +1076,6 @@ namespace TrafficView
         private static List<SkinDeleteTarget> GetDeleteTargets(string normalizedId, PanelSkinDefinition definition)
         {
             List<SkinDeleteTarget> targets = new List<SkinDeleteTarget>();
-            string skinDirectoryName = string.Empty;
 
             try
             {
@@ -1082,35 +1083,10 @@ namespace TrafficView
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 string runtimeSkinDirectoryPath = Path.GetFullPath(definition.DirectoryPath)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                skinDirectoryName = Path.GetFileName(runtimeSkinDirectoryPath);
 
                 if (Directory.Exists(runtimeSkinDirectoryPath))
                 {
                     targets.Add(CreateDeleteTarget(runtimeSkinsDirectoryPath, runtimeSkinDirectoryPath, normalizedId));
-                }
-
-                string developmentSkinsDirectoryPath = TryGetDevelopmentSkinsDirectoryPath(runtimeSkinsDirectoryPath);
-                if (!string.IsNullOrWhiteSpace(developmentSkinsDirectoryPath))
-                {
-                    string developmentSkinDirectoryPath = Path.Combine(developmentSkinsDirectoryPath, skinDirectoryName);
-                    string normalizedDevelopmentSkinDirectoryPath = Path.GetFullPath(developmentSkinDirectoryPath)
-                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-                    if (!targets.Any(
-                        delegate(SkinDeleteTarget target)
-                        {
-                            return string.Equals(
-                                target.FullSkinDirectoryPath,
-                                normalizedDevelopmentSkinDirectoryPath,
-                                StringComparison.OrdinalIgnoreCase);
-                        }) &&
-                        Directory.Exists(normalizedDevelopmentSkinDirectoryPath))
-                    {
-                        targets.Add(CreateDeleteTarget(
-                            developmentSkinsDirectoryPath,
-                            normalizedDevelopmentSkinDirectoryPath,
-                            normalizedId));
-                    }
                 }
             }
             catch (Exception ex)
@@ -1157,45 +1133,6 @@ namespace TrafficView
                 fullSkinDirectoryPath,
                 deleteStagingDirectoryPath,
                 stagedSkinDirectoryPath);
-        }
-
-        private static string TryGetDevelopmentSkinsDirectoryPath(string runtimeSkinsDirectoryPath)
-        {
-            if (string.IsNullOrWhiteSpace(runtimeSkinsDirectoryPath))
-            {
-                return string.Empty;
-            }
-
-            if (AppStorage.IsPortableMode)
-            {
-                return string.Empty;
-            }
-
-            try
-            {
-                DirectoryInfo runtimeSkinsDirectory = new DirectoryInfo(runtimeSkinsDirectoryPath);
-                DirectoryInfo runtimeBaseDirectory = runtimeSkinsDirectory.Parent;
-                if (runtimeBaseDirectory == null ||
-                    !string.Equals(runtimeBaseDirectory.Name, "dist", StringComparison.OrdinalIgnoreCase))
-                {
-                    return string.Empty;
-                }
-
-                DirectoryInfo projectBaseDirectory = runtimeBaseDirectory.Parent;
-                if (projectBaseDirectory == null)
-                {
-                    return string.Empty;
-                }
-
-                string developmentSkinsDirectoryPath = Path.Combine(projectBaseDirectory.FullName, "Skins");
-                return Directory.Exists(developmentSkinsDirectoryPath)
-                    ? developmentSkinsDirectoryPath
-                    : string.Empty;
-            }
-            catch
-            {
-                return string.Empty;
-            }
         }
 
         private static void EnsurePortableSkinPathAllowed(string path, string pathLabel)

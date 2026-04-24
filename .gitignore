@@ -3,8 +3,10 @@ obj/
 Skin_Work/
 _codex_versions/
 _portable_release/
+_build_staging/
 
 dist/TrafficView/
+dist/TrafficView.new.exe
 dist/TrafficView.settings.ini
 dist/*.bak_*
 dist/*.ini_

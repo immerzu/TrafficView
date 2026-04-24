@@ -7,7 +7,7 @@ $stageDir = Join-Path $stageRoot 'TrafficView'
 $stageWithDefaultsRoot = Join-Path $stageRoot 'standard'
 $stageWithDefaultsDir = Join-Path $stageWithDefaultsRoot 'TrafficView'
 $outputRoot = Join-Path (Split-Path -Parent $projectRoot) 'Ausgabe'
-$programCsPath = Join-Path $projectRoot 'src\Program.cs'
+$sourceDirectoryPath = Join-Path $projectRoot 'src'
 $settingsFileName = 'TrafficView.settings.ini'
 $settingsBackupFileName = 'TrafficView.settings.ini_'
 
@@ -15,17 +15,29 @@ if (-not (Test-Path $distDir)) {
     throw "Dist-Ordner nicht gefunden: $distDir"
 }
 
-if (-not (Test-Path $programCsPath)) {
-    throw "Programmdatei nicht gefunden: $programCsPath"
+if (-not (Test-Path $sourceDirectoryPath)) {
+    throw "Quellcodeordner nicht gefunden: $sourceDirectoryPath"
 }
 
-$programCsContent = Get-Content -LiteralPath $programCsPath -Raw
-$versionMatch = [regex]::Match($programCsContent, 'AssemblyVersion\("(?<version>\d+\.\d+\.\d+)\.\d+"\)')
-if (-not $versionMatch.Success) {
-    throw "Versionsnummer konnte nicht aus $programCsPath gelesen werden."
+function Get-TrafficViewVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory
+    )
+
+    $versionMatch = Get-ChildItem -LiteralPath $SourceDirectory -Filter *.cs |
+        Sort-Object Name |
+        Select-String -Pattern 'AssemblyVersion\("(?<version>\d+\.\d+\.\d+)\.\d+"\)' |
+        Select-Object -First 1
+
+    if ($null -eq $versionMatch -or -not $versionMatch.Matches[0].Groups['version'].Success) {
+        throw "Versionsnummer konnte nicht aus $SourceDirectory gelesen werden."
+    }
+
+    return $versionMatch.Matches[0].Groups['version'].Value
 }
 
-$version = $versionMatch.Groups['version'].Value
+$version = Get-TrafficViewVersion -SourceDirectory $sourceDirectoryPath
 $zipPath = Join-Path $outputRoot ("TrafficView.Portable.{0}.zip" -f $version)
 $defaultsZipPath = Join-Path $outputRoot ("TrafficView.Portable.{0}.Standard.zip" -f $version)
 
