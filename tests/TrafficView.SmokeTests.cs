@@ -40,7 +40,9 @@ namespace TrafficView
                 TestTrafficRateSmoothing();
                 TestTrafficUsageFormatter();
                 TestPanelSkinCatalogPrefersDefaultFallback();
+                TestMonitorSettingsNormalizesInvalidStoredValues();
                 TestMonitorSettingsRoundTripPreservesSkinSelection();
+                TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage();
                 TestTrafficUsageLogRoundTrip();
                 Console.WriteLine("Smoke tests passed.");
                 return 0;
@@ -159,6 +161,43 @@ namespace TrafficView
             AssertEqual("09", loaded.PanelSkinId, "Saved PanelSkinId should not be forced back to the default skin.");
         }
 
+        private static void TestMonitorSettingsNormalizesInvalidStoredValues()
+        {
+            CreateTestSkin(PanelSkinCatalog.DefaultSkinId, "DefaultSkin");
+            PanelSkinCatalog.Reload();
+
+            File.WriteAllLines(
+                MonitorSettingsTestPaths.SettingsPath,
+                new[]
+                {
+                    "AdapterId=adapter-invalid",
+                    "AdapterName=Invalid Adapter",
+                    "CalibrationPeakBytesPerSecond=-50",
+                    "CalibrationDownloadPeakBytesPerSecond=NaN",
+                    "CalibrationUploadPeakBytesPerSecond=Infinity",
+                    "TransparencyPercent=150",
+                    "LanguageCode=missing-language",
+                    "PopupScalePercent=123",
+                    "PanelSkinId=missing-skin",
+                    "PopupDisplayMode=unknown-mode",
+                    "PopupSectionMode=LeftOnly",
+                    "TaskbarPopupSectionMode=unknown-section"
+                });
+
+            MonitorSettings loaded = MonitorSettings.Load();
+            AssertEqual("adapter-invalid", loaded.AdapterId, "Recognized settings should load the adapter id.");
+            AssertEqual(0D, loaded.CalibrationPeakBytesPerSecond, "Negative calibration peaks should normalize to zero.");
+            AssertEqual(0D, loaded.CalibrationDownloadPeakBytesPerSecond, "NaN download peaks should normalize to zero.");
+            AssertEqual(0D, loaded.CalibrationUploadPeakBytesPerSecond, "Infinite upload peaks should normalize to zero.");
+            AssertEqual(100, loaded.TransparencyPercent, "Transparency should be clamped to the supported range.");
+            AssertEqual("de", loaded.LanguageCode, "Unknown language codes should fall back to German.");
+            AssertEqual(125, loaded.PopupScalePercent, "Unsupported popup scales should normalize to the nearest supported value.");
+            AssertEqual(PanelSkinCatalog.DefaultSkinId, loaded.PanelSkinId, "Unknown skins should fall back to the default skin.");
+            AssertEqual(PopupDisplayMode.Standard, loaded.PopupDisplayMode, "Unknown display modes should fall back to Standard.");
+            AssertEqual(PopupSectionMode.LeftOnly, loaded.PopupSectionMode, "Valid section modes should still be honored.");
+            AssertEqual(PopupSectionMode.RightOnly, loaded.TaskbarPopupSectionMode, "Unknown taskbar section modes should fall back to the taskbar default.");
+        }
+
         private static void TestPanelSkinCatalogPrefersDefaultFallback()
         {
             CreateTestSkin("07", "OlderSkin");
@@ -213,6 +252,52 @@ namespace TrafficView
             AssertEqual(0L, clearedSummaries.Daily.TotalBytes, "Daily total should be zero after clearing.");
             AssertTrue(!File.Exists(TrafficUsageLog.GetUsageFilePath()), "Active usage file should be gone after clearing.");
             AssertTrue(!File.Exists(TrafficUsageLog.GetUsageArchiveFilePath()), "Archive usage file should be gone after clearing.");
+        }
+
+        private static void TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage()
+        {
+            CleanupFile(TrafficUsageLog.GetUsageFilePath());
+            CleanupFile(TrafficUsageLog.GetUsageArchiveFilePath());
+
+            MonitorSettings settings = new MonitorSettings(
+                "adapter-pending",
+                "Pending Adapter",
+                900D,
+                panelSkinId: PanelSkinCatalog.DefaultSkinId);
+
+            TrafficUsageLog log = new TrafficUsageLog();
+            AssertTrue(!log.QueueUsage(null, 1L, 1L), "Null settings should not queue usage.");
+            AssertTrue(!log.QueueUsage(settings, 0L, 0L), "Empty usage samples should not be queued.");
+            AssertTrue(!log.QueueUsage(settings, -1L, -2L), "Fully negative samples should not be queued.");
+            AssertEqual(0, log.PendingRecordCount, "Rejected usage samples should not remain pending.");
+
+            AssertTrue(log.QueueUsage(settings, -10L, 20L), "Partially valid samples should be queued after clamping.");
+            AssertEqual(1, log.PendingRecordCount, "The valid clamped usage sample should be pending.");
+
+            TrafficUsageSummaries pendingSummaries = log.GetSummaries(settings);
+            AssertEqual(0L, pendingSummaries.Daily.DownloadBytes, "Negative pending download bytes should be clamped to zero.");
+            AssertEqual(20L, pendingSummaries.Daily.UploadBytes, "Pending upload bytes should be included in daily summaries.");
+            AssertEqual(20L, pendingSummaries.Daily.TotalBytes, "Pending totals should include clamped values.");
+
+            AssertTrue(log.FlushPending(), "Pending usage should flush successfully.");
+            AssertEqual(0, log.PendingRecordCount, "Flushed usage samples should be removed from the pending queue.");
+
+            File.AppendAllLines(
+                TrafficUsageLog.GetUsageFilePath(),
+                new[]
+                {
+                    "not-a-valid-record",
+                    string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "{0}|other-adapter|900|900",
+                        DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture))
+                });
+
+            TrafficUsageSummaries flushedSummaries = log.GetSummaries(settings);
+            AssertEqual(0L, flushedSummaries.Daily.DownloadBytes, "Invalid and other-adapter records should not affect download totals.");
+            AssertEqual(20L, flushedSummaries.Daily.UploadBytes, "Invalid and other-adapter records should not affect upload totals.");
+
+            AssertTrue(log.ClearAll(), "Usage data should be clearable after invalid records are ignored.");
         }
 
         private static void CreateTestSkin(string id, string directoryName)
