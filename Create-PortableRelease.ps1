@@ -192,6 +192,31 @@ function Test-NoLegacyReleaseFiles {
     }
 }
 
+function Assert-ReleaseExeVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedVersion
+    )
+
+    if ($ExpectedVersion -eq "dev") {
+        return
+    }
+
+    $exePath = Join-Path $ReleaseDirectory "TrafficView.exe"
+    if (-not (Test-Path -LiteralPath $exePath)) {
+        throw "TrafficView.exe fehlt fuer Versionspruefung: $exePath"
+    }
+
+    $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).FileVersion
+    if ([string]::IsNullOrWhiteSpace($fileVersion) -or
+        -not $fileVersion.StartsWith($ExpectedVersion + ".", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "EXE-Dateiversion ($fileVersion) passt nicht zur Release-Version ($ExpectedVersion)."
+    }
+}
+
 function ConvertTo-ZipPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -342,6 +367,7 @@ foreach ($releaseItem in $releaseItems) {
 Test-RequiredReleaseFiles -ReleaseDirectory $releaseDirectory
 Test-NoPrivateRuntimeFiles -ReleaseDirectory $releaseDirectory
 Test-NoLegacyReleaseFiles -ReleaseDirectory $releaseDirectory
+Assert-ReleaseExeVersion -ReleaseDirectory $releaseDirectory -ExpectedVersion $version
 
 Compress-Archive -LiteralPath $releaseDirectory -DestinationPath $zipPath -CompressionLevel Optimal
 Test-PortableZipContents -ZipPath $zipPath

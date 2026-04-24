@@ -120,6 +120,11 @@ namespace TrafficView
                 depth++;
             }
 
+            if (!string.IsNullOrWhiteSpace(exception.StackTrace))
+            {
+                parts.Add("StackTrace: " + exception.StackTrace);
+            }
+
             return string.Join(" -> ", parts.ToArray());
         }
 

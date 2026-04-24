@@ -25,6 +25,7 @@ function Invoke-CheckedScript {
 
 Invoke-CheckedScript -Name "Build" -ScriptPath (Join-Path $repoRoot "build.ps1")
 Invoke-CheckedScript -Name "Smoke tests" -ScriptPath (Join-Path $PSScriptRoot "Run-SmokeTests.ps1")
+Invoke-CheckedScript -Name "Tooling script tests" -ScriptPath (Join-Path $PSScriptRoot "Run-ToolingScriptTests.ps1")
 Invoke-CheckedScript -Name "Release script tests" -ScriptPath (Join-Path $PSScriptRoot "Run-ReleaseScriptTests.ps1")
 
 Write-Host ""

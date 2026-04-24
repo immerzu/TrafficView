@@ -24,6 +24,7 @@ $sourceFiles = @(
     (Join-Path $sourceDir "AppLog.cs"),
     (Join-Path $sourceDir "UiLanguage.cs"),
     (Join-Path $sourceDir "MonitorSettings.cs"),
+    (Join-Path $sourceDir "PanelSkinDefinition.cs"),
     (Join-Path $sourceDir "PanelSkinCatalog.cs"),
     (Join-Path $sourceDir "SkinPathPolicy.cs"),
     (Join-Path $sourceDir "TrafficRateFormatter.cs"),

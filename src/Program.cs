@@ -39,6 +39,7 @@ namespace TrafficView
                     return;
                 }
 
+                RegisterUnhandledExceptionLogging();
                 AppLog.Info(string.Format(
                     "Session started. Version={0}; OS={1}; 64BitOS={2}; Machine={3}",
                     typeof(Program).Assembly.GetName().Version,
@@ -73,6 +74,21 @@ namespace TrafficView
                     singleInstanceMutex.Dispose();
                 }
             }
+        }
+
+        private static void RegisterUnhandledExceptionLogging()
+        {
+            Application.ThreadException += delegate(object sender, System.Threading.ThreadExceptionEventArgs e)
+            {
+                AppLog.Error("Unhandled UI thread exception.", e.Exception);
+            };
+
+            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
+            {
+                AppLog.Error(
+                    string.Format("Unhandled AppDomain exception. IsTerminating={0}", e.IsTerminating ? "yes" : "no"),
+                    e.ExceptionObject as Exception);
+            };
         }
     }
 

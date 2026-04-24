@@ -58,6 +58,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\Tra
 
 Der Lauf baut die App, fuehrt die Smoke-Tests aus und prueft beide Portable-Release-Skripte inklusive ZIP-Inhalt.
 
+### Nutzerdaten sichern
+
+Lokale Einstellungen und Verbrauchsdaten koennen vor einem Test oder Update mit folgendem Skript gesichert werden:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Backup-UserData.ps1
+```
+
+Eine Sicherung kann bei Bedarf mit `-Mode Restore -BackupPath <BackupOrdner>` wiederhergestellt werden.
+
+### Release vorbereiten
+
+Versionsnummern werden mit einem Skript konsistent in README und AssemblyInfo aktualisiert:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
+```
+
+Vor einem Release sollte zusaetzlich die manuelle UI-Checkliste unter `docs\ui-release-checklist.md` abgearbeitet werden.
+
 ## English
 
 TrafficView allows only one active instance during normal operation. A second launch shows an informational message and keeps the already running instance active.
@@ -91,3 +111,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\Tra
 ```
 
 This builds the app, runs the smoke tests, and verifies both portable release scripts including ZIP contents.
+
+### Back Up User Data
+
+Local settings and usage data can be backed up before a test or update:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Backup-UserData.ps1
+```
+
+Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
+
+### Prepare a Release
+
+Version numbers are updated consistently in README files and AssemblyInfo with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
+```
+
+Before publishing a release, also walk through `docs\ui-release-checklist.md`.

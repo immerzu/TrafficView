@@ -67,7 +67,9 @@ function Assert-ZipContains {
 function Assert-ZipOmitsPrivateAndLegacyFiles {
     param(
         [Parameter(Mandatory = $true)]
-        [string[]]$EntryNames
+        [string[]]$EntryNames,
+
+        [switch]$AllowSettingsFile
     )
 
     $forbiddenEntries = @($EntryNames | Where-Object {
@@ -75,6 +77,7 @@ function Assert-ZipOmitsPrivateAndLegacyFiles {
         $_ -match "(^|/)Skins(/|$)" -or
         $leafName -eq "TrafficView_Code.txt" -or
         $leafName -eq "TrafficView.log" -or
+        ((-not $AllowSettingsFile) -and $leafName -eq "TrafficView.settings.ini") -or
         $leafName -eq "TrafficView.settings.ini_" -or
         $leafName -like "Verbrauch*.txt" -or
         $leafName -like "Verbrauch*.txt_" -or
@@ -126,6 +129,38 @@ function Get-ZipEntryText {
     }
 }
 
+function Assert-ZipExeVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ZipPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedVersion
+    )
+
+    $tempRoot = Join-Path $env:TEMP ("TrafficViewZipVersion_" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+
+    try {
+        Expand-Archive -LiteralPath $ZipPath -DestinationPath $tempRoot -Force
+        $exe = Get-ChildItem -LiteralPath $tempRoot -Recurse -File -Filter "TrafficView.exe" | Select-Object -First 1
+        if (-not $exe) {
+            throw "TrafficView.exe wurde im getesteten ZIP nicht gefunden: $ZipPath"
+        }
+
+        $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe.FullName).FileVersion
+        if ([string]::IsNullOrWhiteSpace($fileVersion) -or
+            -not $fileVersion.StartsWith($ExpectedVersion + ".", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "EXE-Dateiversion im ZIP ($fileVersion) passt nicht zur erwarteten Version ($ExpectedVersion)."
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
+}
+
 $requiredReleasePaths = @(
     "TrafficView.exe",
     "TrafficView.exe.config",
@@ -155,13 +190,14 @@ foreach ($requiredPath in $requiredReleasePaths) {
 }
 
 Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $modernEntries
+$version = Get-TrafficViewVersion
+Assert-ZipExeVersion -ZipPath $modernZipPath -ExpectedVersion $version
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "portable-release.ps1")
 if ($LASTEXITCODE -ne 0) {
     throw "portable-release.ps1 ist im Release-Skript-Test fehlgeschlagen."
 }
 
-$version = Get-TrafficViewVersion
 $legacyZipPath = Join-Path $legacyOutputRoot ("TrafficView.Portable.{0}.zip" -f $version)
 $legacyDefaultsZipPath = Join-Path $legacyOutputRoot ("TrafficView.Portable.{0}.Standard.zip" -f $version)
 
@@ -171,10 +207,12 @@ foreach ($requiredPath in $requiredReleasePaths) {
 }
 
 Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $legacyEntries
+Assert-ZipExeVersion -ZipPath $legacyZipPath -ExpectedVersion $version
 
 $legacyDefaultsEntries = Get-ZipEntryNames -ZipPath $legacyDefaultsZipPath
 Assert-ZipContains -EntryNames $legacyDefaultsEntries -RelativePath "TrafficView.settings.ini"
-Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $legacyDefaultsEntries
+Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $legacyDefaultsEntries -AllowSettingsFile
+Assert-ZipExeVersion -ZipPath $legacyDefaultsZipPath -ExpectedVersion $version
 
 $defaultSettingsText = Get-ZipEntryText -ZipPath $legacyDefaultsZipPath -RelativePath "TrafficView.settings.ini"
 $requiredDefaultSettingsLines = @(

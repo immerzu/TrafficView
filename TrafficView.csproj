@@ -125,6 +125,7 @@
     <Compile Include="src\NativeInteropTypes.cs" />
     <Compile Include="src\NetworkSnapshot.cs" />
     <Compile Include="src\OverlayInputLabel.cs" />
+    <Compile Include="src\PanelSkinDefinition.cs" />
     <Compile Include="src\PanelSkinCatalog.cs" />
     <Compile Include="src\SkinPathPolicy.cs" />
     <Compile Include="src\TaskbarIntegrationTypes.cs" />

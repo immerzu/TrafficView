@@ -31,3 +31,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\Tra
 ```
 
 This builds the app, runs the smoke tests, and verifies both portable release scripts including ZIP contents.
+
+## Back Up User Data
+
+Local settings and usage data can be backed up before a test or update:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Backup-UserData.ps1
+```
+
+Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
+
+## Prepare a Release
+
+Version numbers are updated consistently in README files and AssemblyInfo with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
+```
+
+Before publishing a release, also walk through `docs\ui-release-checklist.md`.
