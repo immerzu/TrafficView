@@ -185,6 +185,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $modernEntries = Get-ZipEntryNames -ZipPath $modernZipPath
+Assert-ZipContains -EntryNames $modernEntries -RelativePath "release-manifest.json"
 foreach ($requiredPath in $requiredReleasePaths) {
     Assert-ZipContains -EntryNames $modernEntries -RelativePath $requiredPath
 }
@@ -192,6 +193,11 @@ foreach ($requiredPath in $requiredReleasePaths) {
 Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $modernEntries
 $version = Get-TrafficViewVersion
 Assert-ZipExeVersion -ZipPath $modernZipPath -ExpectedVersion $version
+$manifestText = Get-ZipEntryText -ZipPath $modernZipPath -RelativePath "release-manifest.json"
+if ($manifestText.IndexOf('"version":  "' + $version + '"', [System.StringComparison]::OrdinalIgnoreCase) -lt 0 -and
+    $manifestText.IndexOf('"version":"' + $version + '"', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+    throw "Release-Manifest enthaelt die erwartete Version nicht: $version"
+}
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "portable-release.ps1")
 if ($LASTEXITCODE -ne 0) {

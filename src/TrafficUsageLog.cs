@@ -704,6 +704,8 @@ namespace TrafficView
 
                 lines.Add(ToCsvLine(record, adapterDisplayName));
             }
+
+            WarnIfUsageFileContainsInvalidRecords(path);
         }
 
         private static void AppendCsvLinesFromCompressedArchives(
@@ -752,6 +754,37 @@ namespace TrafficView
                 }
 
                 AccumulateSummaries(record, nowLocal, currentWeekStart, summaries);
+            }
+
+            WarnIfUsageFileContainsInvalidRecords(path);
+        }
+
+        private static void WarnIfUsageFileContainsInvalidRecords(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return;
+            }
+
+            int invalidLineCount = 0;
+            foreach (string line in File.ReadLines(path))
+            {
+                TrafficUsageRecord record;
+                if (!TryParseRecord(line, out record))
+                {
+                    invalidLineCount++;
+                }
+            }
+
+            if (invalidLineCount > 0)
+            {
+                AppLog.WarnOnce(
+                    "traffic-usage-invalid-lines-" + path,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "Verbrauchsdatei enthaelt {0} ungueltige Zeile(n), gueltige Zeilen werden weiter verwendet. Datei='{1}'.",
+                        invalidLineCount,
+                        path));
             }
         }
 

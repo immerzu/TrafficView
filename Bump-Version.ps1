@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Version
+    [string]$Version,
+
+    [switch]$AllowDirtyWorkingTree
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +16,13 @@ $readmePath = Join-Path $root "README.md"
 $readmeEnPath = Join-Path $root "README_EN.md"
 $assemblyInfoPath = Join-Path $root "src\AssemblyInfo.cs"
 $assemblyVersion = $Version + ".0"
+
+if (-not $AllowDirtyWorkingTree) {
+    $gitStatus = & git -C $root status --porcelain 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($gitStatus -join ""))) {
+        throw "Arbeitsbaum ist nicht sauber. Bitte erst committen oder -AllowDirtyWorkingTree bewusst setzen."
+    }
+}
 
 function Update-TextFile {
     param(

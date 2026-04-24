@@ -49,6 +49,25 @@ function Assert-PathIsInside {
     }
 }
 
+function Get-RelativePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ChildPath
+    )
+
+    $baseFullPath = Get-FullPath -Path $BasePath
+    if (-not $baseFullPath.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
+        $baseFullPath += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    $baseUri = New-Object System.Uri($baseFullPath)
+    $childUri = New-Object System.Uri((Get-FullPath -Path $ChildPath))
+    return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($childUri).ToString()).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+}
+
 function Get-TrafficViewVersion {
     param(
         [Parameter(Mandatory = $true)]
@@ -106,6 +125,7 @@ function Assert-ReleaseVersionMatchesAssembly {
 
 function Get-RequiredReleaseRelativePaths {
     return @(
+        "release-manifest.json",
         "TrafficView.exe",
         "TrafficView.exe.config",
         "TrafficView.languages.ini",
@@ -126,6 +146,59 @@ function Get-RequiredReleaseRelativePaths {
         "DisplayModeAssets\SimpleBlue\TrafficView.panel.150.png",
         "DisplayModeAssets\SimpleBlue\TrafficView.center_core.png"
     )
+}
+
+function Get-CurrentGitCommit {
+    try {
+        $commit = & git -C $root rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($commit)) {
+            return ($commit | Select-Object -First 1).Trim()
+        }
+    }
+    catch {
+    }
+
+    return "unknown"
+}
+
+function New-ReleaseManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Version
+    )
+
+    $manifestPath = Join-Path $ReleaseDirectory "release-manifest.json"
+    $fileEntries = @(
+        Get-ChildItem -LiteralPath $ReleaseDirectory -Recurse -File -Force |
+            Where-Object {
+                -not ([string]::Equals(
+                    (Get-FullPath -Path $_.FullName),
+                    (Get-FullPath -Path $manifestPath),
+                    [System.StringComparison]::OrdinalIgnoreCase))
+            } |
+            Sort-Object FullName |
+            ForEach-Object {
+                $relativePath = Get-RelativePath -BasePath $ReleaseDirectory -ChildPath $_.FullName
+                [PSCustomObject]@{
+                    path = ConvertTo-ZipPath -Path $relativePath
+                    bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+            }
+    )
+
+    $manifest = [PSCustomObject]@{
+        app = "TrafficView"
+        version = $Version
+        commit = Get-CurrentGitCommit
+        createdUtc = (Get-Date).ToUniversalTime().ToString("o")
+        files = $fileEntries
+    }
+
+    $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 }
 
 function Test-RequiredReleaseFiles {
@@ -364,6 +437,7 @@ foreach ($releaseItem in $releaseItems) {
         -RelativePath $releaseItem
 }
 
+New-ReleaseManifest -ReleaseDirectory $releaseDirectory -Version $version
 Test-RequiredReleaseFiles -ReleaseDirectory $releaseDirectory
 Test-NoPrivateRuntimeFiles -ReleaseDirectory $releaseDirectory
 Test-NoLegacyReleaseFiles -ReleaseDirectory $releaseDirectory

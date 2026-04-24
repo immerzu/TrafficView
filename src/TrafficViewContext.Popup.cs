@@ -437,6 +437,7 @@ namespace TrafficView
             this.taskbarIntegrationOnItem.Checked = this.settings.TaskbarIntegrationEnabled;
             this.taskbarIntegrationOffItem.Checked = !this.settings.TaskbarIntegrationEnabled;
             this.languageItem.Text = UiLanguage.Get("Menu.Language", "Sprache");
+            this.aboutItem.Text = UiLanguage.Get("Menu.About", "Über TrafficView");
             this.exitItem.Text = UiLanguage.Get("Menu.Exit", "Beenden");
             if (this.menuVersionLabel != null)
             {

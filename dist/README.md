@@ -46,7 +46,7 @@ Eine weitergabefaehige Portable-Version ohne lokale Einstellungen, Verbrauchsdat
 powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Create-PortableRelease.ps1
 ```
 
-Die Ausgabe landet standardmaessig unter `F:\Codex\TrafficView_Moi\Ausgabe`. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden.
+Die Ausgabe landet standardmaessig unter `F:\Codex\TrafficView_Moi\Ausgabe`. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden. Das ZIP enthaelt zusaetzlich `release-manifest.json` mit Version, Commit, Dateigroessen und SHA-256-Pruefsummen.
 
 ### Alles pruefen
 
@@ -76,7 +76,7 @@ Versionsnummern werden mit einem Skript konsistent in README und AssemblyInfo ak
 powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
 ```
 
-Vor einem Release sollte zusaetzlich die manuelle UI-Checkliste unter `docs\ui-release-checklist.md` abgearbeitet werden.
+Vor einem Release sollte zusaetzlich die manuelle UI-Checkliste unter `docs\ui-release-checklist.md` abgearbeitet und das Ergebnis in `docs\manual-test-log.md` notiert werden.
 
 ## English
 
@@ -130,4 +130,4 @@ Version numbers are updated consistently in README files and AssemblyInfo with:
 powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
 ```
 
-Before publishing a release, also walk through `docs\ui-release-checklist.md`.
+Before publishing a release, also walk through `docs\ui-release-checklist.md` and note the result in `docs\manual-test-log.md`.

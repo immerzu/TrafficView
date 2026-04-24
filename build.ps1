@@ -141,6 +141,25 @@ function Restore-TextFileIfAvailable {
     Set-Content -LiteralPath $Path -Value $Lines -Encoding UTF8
 }
 
+function Get-RelativePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ChildPath
+    )
+
+    $baseFullPath = [System.IO.Path]::GetFullPath($BasePath)
+    if (-not $baseFullPath.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
+        $baseFullPath += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    $baseUri = New-Object System.Uri($baseFullPath)
+    $childUri = New-Object System.Uri([System.IO.Path]::GetFullPath($ChildPath))
+    return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($childUri).ToString()).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+}
+
 function Get-ProjectCompileSourceFiles {
     param(
         [Parameter(Mandatory = $true)]
@@ -197,7 +216,7 @@ function Get-ProjectCompileSourceFiles {
 
     if ($unlistedSourceFiles.Count -gt 0) {
         $relativeFiles = $unlistedSourceFiles | ForEach-Object {
-            [System.IO.Path]::GetRelativePath($ProjectRoot, $_)
+            Get-RelativePath -BasePath $ProjectRoot -ChildPath $_
         }
         throw "Neue Quelldateien sind nicht in TrafficView.csproj eingetragen: $($relativeFiles -join ', ')"
     }

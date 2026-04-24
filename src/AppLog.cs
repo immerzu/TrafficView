@@ -38,6 +38,11 @@ namespace TrafficView
             Write("ERROR", message, exception);
         }
 
+        public static string GetCurrentLogPath()
+        {
+            return GetLogPath();
+        }
+
         private static bool TryMarkOnce(string key)
         {
             if (string.IsNullOrWhiteSpace(key))

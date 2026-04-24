@@ -650,6 +650,11 @@ namespace TrafficView
                 File.Exists(GetLegacySettingsPath());
         }
 
+        public static string GetCurrentSettingsPath()
+        {
+            return GetSettingsPath();
+        }
+
         public static bool HasStoredLanguageSetting()
         {
             string[] lines;

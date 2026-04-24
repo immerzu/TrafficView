@@ -52,6 +52,7 @@
     <Compile Include="src\TrafficViewContext.cs" />
     <Compile Include="src\TrafficViewContext.Popup.cs" />
     <Compile Include="src\TrafficViewContext.Branding.cs" />
+    <Compile Include="src\TrafficViewContext.Diagnostics.cs" />
     <Compile Include="src\TrafficViewContext.Settings.cs" />
     <Compile Include="src\TrafficViewContext.Skins.cs" />
     <Compile Include="src\TrafficViewContext.Usage.cs" />

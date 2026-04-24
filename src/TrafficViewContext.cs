@@ -41,6 +41,7 @@ namespace TrafficView
         private readonly ToolStripMenuItem skinItem;
         private readonly ToolStripMenuItem deleteSkinItem;
         private readonly ToolStripMenuItem languageItem;
+        private readonly ToolStripMenuItem aboutItem;
         private readonly ToolStripMenuItem exitItem;
         private readonly ContextMenuStrip sharedMenu;
         private readonly Icon notifyIconHandle;
@@ -110,6 +111,7 @@ namespace TrafficView
             this.skinItem = new ToolStripMenuItem(string.Empty);
             this.deleteSkinItem = new ToolStripMenuItem(string.Empty, null, this.DeleteSkinItem_Click);
             this.languageItem = new ToolStripMenuItem(string.Empty);
+            this.aboutItem = new ToolStripMenuItem(string.Empty, null, this.AboutItem_Click);
             this.exitItem = new ToolStripMenuItem(string.Empty, null, this.ExitItem_Click);
 
             LanguageOption[] languages = UiLanguage.GetSupportedLanguages();
@@ -180,6 +182,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.taskbarIntegrationItem);
             this.sharedMenu.Items.Add(this.languageItem);
             this.sharedMenu.Items.Add(new ToolStripSeparator());
+            this.sharedMenu.Items.Add(this.aboutItem);
             this.sharedMenu.Items.Add(this.exitItem);
             this.sharedMenu.Opening += this.Menu_Opening;
             this.sharedMenu.Closed += this.Menu_Closed;

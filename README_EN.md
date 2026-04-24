@@ -50,4 +50,4 @@ Version numbers are updated consistently in README files and AssemblyInfo with:
 powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
 ```
 
-Before publishing a release, also walk through `docs\ui-release-checklist.md`.
+Before publishing a release, also walk through `docs\ui-release-checklist.md` and note the result in `docs\manual-test-log.md`.
