@@ -48,6 +48,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\Tra
 
 Die Ausgabe landet standardmaessig unter `F:\Codex\TrafficView_Moi\Ausgabe`. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden.
 
+### Alles pruefen
+
+Vor einem Commit oder Release kann der komplette lokale Pruefpfad mit einem Befehl gestartet werden:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\tests\Run-AllTests.ps1
+```
+
+Der Lauf baut die App, fuehrt die Smoke-Tests aus und prueft beide Portable-Release-Skripte inklusive ZIP-Inhalt.
+
 ## English
 
 TrafficView allows only one active instance during normal operation. A second launch shows an informational message and keeps the already running instance active.
@@ -71,3 +81,13 @@ When TrafficView is placed on the taskbar, it starts there with only the right s
 ### Taskbar integration: local window order
 
 In taskbar mode, TrafficView now keeps the display locally in front of the current taskbar without using global TopMost or forcing focus. Normal windows, including Windows Explorer and StartAllBack, are not pulled into foreground conflicts.
+
+### Run all checks
+
+Before a commit or release, the complete local verification path can be started with one command:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\tests\Run-AllTests.ps1
+```
+
+This builds the app, runs the smoke tests, and verifies both portable release scripts including ZIP contents.

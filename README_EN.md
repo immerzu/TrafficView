@@ -21,3 +21,13 @@ When TrafficView is placed on the taskbar, it starts there with only the right s
 ## Taskbar Integration: Local Window Order
 
 In taskbar mode, TrafficView keeps the display locally in front of the current taskbar without using global TopMost or forcing focus. Normal windows, including Windows Explorer and StartAllBack, are not pulled into foreground conflicts.
+
+## Run All Checks
+
+Before a commit or release, the complete local verification path can be started with one command:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\tests\Run-AllTests.ps1
+```
+
+This builds the app, runs the smoke tests, and verifies both portable release scripts including ZIP contents.
