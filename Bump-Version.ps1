@@ -49,12 +49,12 @@ function Update-TextFile {
 
 Update-TextFile -Path $readmePath -Update {
     param($content)
-    return ($content -replace '(?m)^# TrafficView \d+\.\d+\.\d+\s*$', "# TrafficView $Version")
+    return ($content -replace '(?m)^# TrafficView \d+\.\d+\.\d+$', "# TrafficView $Version")
 }
 
 Update-TextFile -Path $readmeEnPath -Update {
     param($content)
-    return ($content -replace '(?m)^# TrafficView \d+\.\d+\.\d+\s*$', "# TrafficView $Version")
+    return ($content -replace '(?m)^# TrafficView \d+\.\d+\.\d+$', "# TrafficView $Version")
 }
 
 Update-TextFile -Path $assemblyInfoPath -Update {
