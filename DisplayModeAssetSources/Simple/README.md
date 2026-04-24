@@ -19,9 +19,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\Tra
 
 Hinweis: `TrafficView.panel.master.png` ist eine leere Basis-Anzeigetafel ohne
 statische Lampenpunkte, ohne festen Kreisring und ohne eingebaute Live-Elemente.
-Die TrafficView-Logiken zeichnen Zahlen, Graph, Kreis und Effekte zur Laufzeit.
-Eine Kopie der erzeugten Vorlage liegt unter
-`F:\Codex\TrafficView_Moi\Skins\TrafficView_empty_panel_1530x840.png`.
+Die TrafficView-Logiken zeichnen Zahlen, Graph, Kreis und Effekte zur Laufzeit;
+die Quelle bleibt deshalb bewusst in diesem Asset-Source-Ordner.
 
 ## Laufzeitdateien
 

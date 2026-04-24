@@ -154,11 +154,17 @@ function Get-ProjectCompileSourceFiles {
         throw "Projektdatei nicht gefunden: $ProjectFilePath"
     }
 
+    $sourceDirectoryPath = Join-Path $ProjectRoot "src"
+    if (-not (Test-Path -LiteralPath $sourceDirectoryPath)) {
+        throw "Quellcode-Ordner nicht gefunden: $sourceDirectoryPath"
+    }
+
     [xml]$projectXml = Get-Content -LiteralPath $ProjectFilePath
     $namespaceManager = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
     $namespaceManager.AddNamespace("msb", $projectXml.Project.NamespaceURI)
     $compileNodes = $projectXml.SelectNodes("//msb:Compile[@Include]", $namespaceManager)
     $files = @()
+    $includedByFullPath = @{}
 
     foreach ($compileNode in $compileNodes) {
         $includePath = $compileNode.Include
@@ -171,7 +177,29 @@ function Get-ProjectCompileSourceFiles {
             throw "Projekt-Quelldatei fehlt: $sourcePath"
         }
 
-        $files += $sourcePath
+        $fullSourcePath = [System.IO.Path]::GetFullPath($sourcePath)
+        if ($includedByFullPath.ContainsKey($fullSourcePath)) {
+            throw "Projektdatei enthaelt doppelte Compile-Eintraege fuer: $includePath"
+        }
+
+        $includedByFullPath[$fullSourcePath] = $includePath
+        $files += $fullSourcePath
+    }
+
+    $unlistedSourceFiles = @(
+        Get-ChildItem -LiteralPath $sourceDirectoryPath -Filter "*.cs" -File |
+            Where-Object {
+                $fullSourcePath = [System.IO.Path]::GetFullPath($_.FullName)
+                -not $includedByFullPath.ContainsKey($fullSourcePath)
+            } |
+            ForEach-Object { $_.FullName }
+    )
+
+    if ($unlistedSourceFiles.Count -gt 0) {
+        $relativeFiles = $unlistedSourceFiles | ForEach-Object {
+            [System.IO.Path]::GetRelativePath($ProjectRoot, $_)
+        }
+        throw "Neue Quelldateien sind nicht in TrafficView.csproj eingetragen: $($relativeFiles -join ', ')"
     }
 
     return $files

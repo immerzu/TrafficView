@@ -6,7 +6,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$sourceDirectory = Join-Path $root "src"
 $distDirectory = Join-Path $root "dist"
 $readmeFile = Join-Path $root "README.md"
 $buildAssetsScript = Join-Path $root "Build-DisplayModeAssets.ps1"
@@ -64,13 +67,45 @@ function Get-TrafficViewVersion {
     return "dev"
 }
 
-function Test-RequiredReleaseFiles {
+function Get-TrafficViewAssemblyVersion {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ReleaseDirectory
+        [string]$SourceDirectory
     )
 
-    $requiredPaths = @(
+    $versionMatch = Get-ChildItem -LiteralPath $SourceDirectory -Filter "*.cs" -File |
+        Sort-Object Name |
+        Select-String -Pattern 'AssemblyVersion\("(?<Version>\d+\.\d+\.\d+)\.\d+"\)' |
+        Select-Object -First 1
+
+    if (-not $versionMatch) {
+        throw "AssemblyVersion wurde im Quellcode nicht gefunden."
+    }
+
+    return $versionMatch.Matches[0].Groups["Version"].Value
+}
+
+function Assert-ReleaseVersionMatchesAssembly {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReadmeVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory
+    )
+
+    if ($ReadmeVersion -eq "dev") {
+        return
+    }
+
+    $assemblyVersion = Get-TrafficViewAssemblyVersion -SourceDirectory $SourceDirectory
+    if ($ReadmeVersion -ne $assemblyVersion) {
+        throw "README-Version ($ReadmeVersion) passt nicht zur AssemblyVersion ($assemblyVersion)."
+    }
+}
+
+function Get-RequiredReleaseRelativePaths {
+    return @(
         "TrafficView.exe",
         "TrafficView.exe.config",
         "TrafficView.languages.ini",
@@ -91,8 +126,15 @@ function Test-RequiredReleaseFiles {
         "DisplayModeAssets\SimpleBlue\TrafficView.panel.150.png",
         "DisplayModeAssets\SimpleBlue\TrafficView.center_core.png"
     )
+}
 
-    foreach ($relativePath in $requiredPaths) {
+function Test-RequiredReleaseFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseDirectory
+    )
+
+    foreach ($relativePath in (Get-RequiredReleaseRelativePaths)) {
         $requiredPath = Join-Path $ReleaseDirectory $relativePath
         if (-not (Test-Path -LiteralPath $requiredPath)) {
             throw "Pflichtdatei fehlt in der Portable-Ausgabe: $requiredPath"
@@ -118,6 +160,100 @@ function Test-NoPrivateRuntimeFiles {
     if ($forbiddenFiles) {
         $forbiddenList = ($forbiddenFiles | ForEach-Object { $_.FullName }) -join [Environment]::NewLine
         throw "Private Laufzeitdaten duerfen nicht in die Portable-Ausgabe:$([Environment]::NewLine)$forbiddenList"
+    }
+}
+
+function Test-NoLegacyReleaseFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseDirectory
+    )
+
+    $legacySkinDirectory = Join-Path $ReleaseDirectory "Skins"
+    if (Test-Path -LiteralPath $legacySkinDirectory) {
+        throw "Veralteter Skins-Ordner darf nicht in die Portable-Ausgabe: $legacySkinDirectory"
+    }
+
+    $legacyRootFiles = @(
+        "TrafficView_Code.txt",
+        "TrafficView.panel.png",
+        "TrafficView.panel.90.png",
+        "TrafficView.panel.110.png",
+        "TrafficView.panel.125.png",
+        "TrafficView.panel.150.png",
+        "TrafficView.center_core.png"
+    )
+
+    foreach ($legacyRootFile in $legacyRootFiles) {
+        $legacyPath = Join-Path $ReleaseDirectory $legacyRootFile
+        if (Test-Path -LiteralPath $legacyPath) {
+            throw "Veraltete Root-Asset-Datei darf nicht in die Portable-Ausgabe: $legacyPath"
+        }
+    }
+}
+
+function ConvertTo-ZipPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return ($Path -replace "\\", "/").Trim([char]'/')
+}
+
+function Test-ZipEntryIsForbidden {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EntryName
+    )
+
+    $normalizedEntryName = ConvertTo-ZipPath -Path $EntryName
+    $leafName = ($normalizedEntryName -split "/")[-1]
+
+    return (
+        $normalizedEntryName -match "(^|/)Skins(/|$)" -or
+        $leafName -eq "TrafficView_Code.txt" -or
+        $leafName -eq "TrafficView.settings.ini" -or
+        $leafName -eq "TrafficView.settings.ini_" -or
+        $leafName -eq "TrafficView.log" -or
+        $leafName -like "Verbrauch*.txt" -or
+        $leafName -like "Verbrauch*.txt_" -or
+        $leafName -like "Verbrauch*.txt.gz"
+    )
+}
+
+function Test-PortableZipContents {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ZipPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ZipPath)) {
+        throw "Portable-ZIP wurde nicht erstellt: $ZipPath"
+    }
+
+    $zipArchive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        $entryNames = @($zipArchive.Entries | ForEach-Object { ConvertTo-ZipPath -Path $_.FullName })
+
+        foreach ($requiredPath in (Get-RequiredReleaseRelativePaths)) {
+            $requiredZipPath = ConvertTo-ZipPath -Path $requiredPath
+            $hasRequiredEntry = @($entryNames | Where-Object {
+                $_ -eq $requiredZipPath -or $_.EndsWith("/$requiredZipPath", [System.StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0
+
+            if (-not $hasRequiredEntry) {
+                throw "Pflichtdatei fehlt im Portable-ZIP: $requiredPath"
+            }
+        }
+
+        $forbiddenEntries = @($entryNames | Where-Object { Test-ZipEntryIsForbidden -EntryName $_ })
+        if ($forbiddenEntries.Count -gt 0) {
+            throw "Private oder veraltete Dateien im Portable-ZIP gefunden: $($forbiddenEntries -join ', ')"
+        }
+    }
+    finally {
+        $zipArchive.Dispose()
     }
 }
 
@@ -161,6 +297,7 @@ if (-not (Test-Path -LiteralPath $distDirectory)) {
 }
 
 $version = Get-TrafficViewVersion -ReadmePath $readmeFile
+Assert-ReleaseVersionMatchesAssembly -ReadmeVersion $version -SourceDirectory $sourceDirectory
 if ([string]::IsNullOrWhiteSpace($ReleaseName)) {
     $ReleaseName = "TrafficView_Portable_$version"
 }
@@ -204,8 +341,10 @@ foreach ($releaseItem in $releaseItems) {
 
 Test-RequiredReleaseFiles -ReleaseDirectory $releaseDirectory
 Test-NoPrivateRuntimeFiles -ReleaseDirectory $releaseDirectory
+Test-NoLegacyReleaseFiles -ReleaseDirectory $releaseDirectory
 
 Compress-Archive -LiteralPath $releaseDirectory -DestinationPath $zipPath -CompressionLevel Optimal
+Test-PortableZipContents -ZipPath $zipPath
 
 Write-Host ""
 Write-Host "Portable-Ausgabe erstellt:" $releaseDirectory
