@@ -1,4 +1,4 @@
-# TrafficView 1.4.26
+# TrafficView 1.4.27
 
 TrafficView allows only one active instance during normal operation. A second launch shows an informational message and keeps the already running instance active.
 
@@ -27,7 +27,7 @@ In taskbar mode, TrafficView keeps the display locally in front of the current t
 Before a commit or release, the complete local verification path can be started with one command:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\tests\Run-AllTests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-AllTests.ps1
 ```
 
 This builds the app, runs the smoke tests, and verifies both portable release scripts including ZIP contents.
@@ -37,7 +37,7 @@ This builds the app, runs the smoke tests, and verifies both portable release sc
 Local settings and usage data can be backed up before a test or update:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Backup-UserData.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Backup-UserData.ps1
 ```
 
 Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
@@ -47,7 +47,7 @@ Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
 Version numbers are updated consistently in README files and AssemblyInfo with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.28
 ```
 
 Before publishing a release, also walk through `docs\ui-release-checklist.md` and note the result in `docs\manual-test-log.md`.

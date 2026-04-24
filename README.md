@@ -1,4 +1,4 @@
-# TrafficView 1.4.26
+# TrafficView 1.4.27
 
 ## Deutsch
 
@@ -26,34 +26,34 @@ Im Taskleistenmodus haelt TrafficView die Anzeige nun lokal vor der aktuellen Ta
 
 ### Simple-Anzeige: Anzeigebilder erzeugen
 
-Die Quellbilder fuer die Simple-Anzeige liegen unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssetSources\Simple`.
+Die Quellbilder fuer die Simple-Anzeige liegen im Repository unter `DisplayModeAssetSources\Simple`.
 
 Die fertigen Laufzeitbilder fuer die App werden mit folgendem Skript erzeugt:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Build-DisplayModeAssets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-DisplayModeAssets.ps1
 ```
 
-Die erzeugten Dateien liegen danach unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple` und werden beim Build nach `F:\Codex\TrafficView_Moi\TrafficView\dist\DisplayModeAssets\Simple` kopiert.
+Die erzeugten Dateien liegen danach unter `DisplayModeAssets\Simple` und werden beim Build nach `dist\DisplayModeAssets\Simple` kopiert.
 
-Die Anzeige `Simple blue` nutzt denselben Logikaufbau wie `Simple`, aber eigene blaue Bilddateien unter `F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\SimpleBlue`.
+Die Anzeige `Simple blue` nutzt denselben Logikaufbau wie `Simple`, aber eigene blaue Bilddateien unter `DisplayModeAssets\SimpleBlue`.
 
 ### Saubere Portable-Ausgabe erstellen
 
 Eine weitergabefaehige Portable-Version ohne lokale Einstellungen, Verbrauchsdaten und Logs wird mit folgendem Skript erstellt:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Create-PortableRelease.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Create-PortableRelease.ps1
 ```
 
-Die Ausgabe landet standardmaessig unter `F:\Codex\TrafficView_Moi\Ausgabe`. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden. Das ZIP enthaelt zusaetzlich `release-manifest.json` mit Version, Commit, Dateigroessen und SHA-256-Pruefsummen.
+Die Ausgabe landet standardmaessig im Ordner `Ausgabe` neben dem Repository. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden. Das ZIP enthaelt zusaetzlich `release-manifest.json` mit Version, Commit, Dateigroessen und SHA-256-Pruefsummen.
 
 ### Alles pruefen
 
 Vor einem Commit oder Release kann der komplette lokale Pruefpfad mit einem Befehl gestartet werden:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\tests\Run-AllTests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-AllTests.ps1
 ```
 
 Der Lauf baut die App, fuehrt die Smoke-Tests aus und prueft beide Portable-Release-Skripte inklusive ZIP-Inhalt.
@@ -63,7 +63,7 @@ Der Lauf baut die App, fuehrt die Smoke-Tests aus und prueft beide Portable-Rele
 Lokale Einstellungen und Verbrauchsdaten koennen vor einem Test oder Update mit folgendem Skript gesichert werden:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Backup-UserData.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Backup-UserData.ps1
 ```
 
 Eine Sicherung kann bei Bedarf mit `-Mode Restore -BackupPath <BackupOrdner>` wiederhergestellt werden.
@@ -73,7 +73,7 @@ Eine Sicherung kann bei Bedarf mit `-Mode Restore -BackupPath <BackupOrdner>` wi
 Versionsnummern werden mit einem Skript konsistent in README und AssemblyInfo aktualisiert:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.28
 ```
 
 Vor einem Release sollte zusaetzlich die manuelle UI-Checkliste unter `docs\ui-release-checklist.md` abgearbeitet und das Ergebnis in `docs\manual-test-log.md` notiert werden.
@@ -107,7 +107,7 @@ In taskbar mode, TrafficView now keeps the display locally in front of the curre
 Before a commit or release, the complete local verification path can be started with one command:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\tests\Run-AllTests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-AllTests.ps1
 ```
 
 This builds the app, runs the smoke tests, and verifies both portable release scripts including ZIP contents.
@@ -117,7 +117,7 @@ This builds the app, runs the smoke tests, and verifies both portable release sc
 Local settings and usage data can be backed up before a test or update:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Backup-UserData.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Backup-UserData.ps1
 ```
 
 Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
@@ -127,7 +127,7 @@ Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
 Version numbers are updated consistently in README files and AssemblyInfo with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Bump-Version.ps1 -Version 1.4.26
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.28
 ```
 
 Before publishing a release, also walk through `docs\ui-release-checklist.md` and note the result in `docs\manual-test-log.md`.
