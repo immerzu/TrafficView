@@ -52,6 +52,7 @@ namespace TrafficView
                 TestTrafficUsageLogRoundTrip();
                 TestAppLogRotatesLargeLogFile();
                 TestDiagnosticsExportIncludesRotatedLogs();
+                TestDiagnosticsExportSurvivesLockedLogFile();
                 TestStorageDiagnosticsReportsWritableSettingsPath();
                 TestRuntimeDiagnosticsReportsMemoryAndStartup();
                 Console.WriteLine("Smoke tests passed.");
@@ -509,6 +510,31 @@ namespace TrafficView
                 AssertTrue(archive.GetEntry("TrafficView.log.1") != null, "Diagnostics ZIP should contain the first rotated log.");
                 AssertTrue(archive.GetEntry("TrafficView.log.2") != null, "Diagnostics ZIP should contain the second rotated log.");
                 AssertTrue(archive.GetEntry("TrafficView.log.3") != null, "Diagnostics ZIP should contain the third rotated log.");
+            }
+
+            CleanupFile(diagnosticsZipPath);
+        }
+
+        private static void TestDiagnosticsExportSurvivesLockedLogFile()
+        {
+            string logPath = AppLog.GetCurrentLogPath();
+            string diagnosticsZipPath = Path.Combine(BaseDirectory, "diagnostics-export-locked.zip");
+            CleanupFile(diagnosticsZipPath);
+            CleanupFile(logPath);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath));
+            File.WriteAllText(logPath, "locked-log");
+
+            using (FileStream lockedLog = new FileStream(logPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                DiagnosticsExport.WriteZip(diagnosticsZipPath, "diagnostics-body");
+            }
+
+            using (ZipArchive archive = ZipFile.OpenRead(diagnosticsZipPath))
+            {
+                AssertTrue(archive.GetEntry("diagnostics.txt") != null, "Diagnostics ZIP should still contain diagnostics text when a log is locked.");
+                AssertTrue(archive.GetEntry("TrafficView.log") == null, "Diagnostics ZIP should not contain an empty entry for a locked log.");
+                AssertTrue(archive.GetEntry("diagnostics-export-warnings.txt") != null, "Diagnostics ZIP should describe skipped locked logs.");
             }
 
             CleanupFile(diagnosticsZipPath);

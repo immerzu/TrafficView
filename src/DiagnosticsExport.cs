@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -26,8 +27,17 @@ namespace TrafficView
                 using (FileStream stream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
                 using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
+                    List<string> warnings = new List<string>();
                     WriteTextEntry(archive, "diagnostics.txt", diagnosticsText ?? string.Empty);
-                    AddLogFiles(archive);
+                    AddLogFiles(archive, warnings);
+
+                    if (warnings.Count > 0)
+                    {
+                        WriteTextEntry(
+                            archive,
+                            "diagnostics-export-warnings.txt",
+                            string.Join("\r\n", warnings.ToArray()));
+                    }
                 }
 
                 if (File.Exists(targetPath))
@@ -45,7 +55,7 @@ namespace TrafficView
             }
         }
 
-        private static void AddLogFiles(ZipArchive archive)
+        private static void AddLogFiles(ZipArchive archive, List<string> warnings)
         {
             string[] logPaths = AppLog.GetLogFilePathsForDiagnostics();
             for (int i = 0; i < logPaths.Length; i++)
@@ -62,11 +72,27 @@ namespace TrafficView
                     continue;
                 }
 
-                ZipArchiveEntry logEntry = archive.CreateEntry(entryName);
-                using (Stream entryStream = logEntry.Open())
-                using (FileStream logStream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                try
                 {
-                    logStream.CopyTo(entryStream);
+                    using (FileStream logStream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                    {
+                        ZipArchiveEntry logEntry = archive.CreateEntry(entryName);
+                        using (Stream entryStream = logEntry.Open())
+                        {
+                            logStream.CopyTo(entryStream);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (warnings != null)
+                    {
+                        warnings.Add(string.Format(
+                            "Log file could not be added: {0} ({1}: {2})",
+                            entryName,
+                            ex.GetType().Name,
+                            ex.Message));
+                    }
                 }
             }
         }

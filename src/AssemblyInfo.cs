@@ -5,5 +5,5 @@ using System.Reflection;
 [assembly: AssemblyCompany("Codex")]
 [assembly: AssemblyProduct("TrafficView")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]
-[assembly: AssemblyVersion("1.4.28.0")]
-[assembly: AssemblyFileVersion("1.4.28.0")]
+[assembly: AssemblyVersion("1.4.29.0")]
+[assembly: AssemblyFileVersion("1.4.29.0")]
