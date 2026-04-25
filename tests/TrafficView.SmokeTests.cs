@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 
 namespace TrafficView
@@ -41,10 +42,18 @@ namespace TrafficView
                 TestTrafficUsageFormatter();
                 TestPanelSkinCatalogPrefersDefaultFallback();
                 TestSkinPathPolicyBlocksExternalPortableSkinPaths();
+                TestPanelSkinCatalogIgnoresIncompleteSkins();
                 TestMonitorSettingsNormalizesInvalidStoredValues();
+                TestMonitorSettingsRecoversFromBackupWhenPrimaryIsInvalid();
                 TestMonitorSettingsRoundTripPreservesSkinSelection();
                 TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage();
+                TestTrafficUsageLogHandlesLargeFilesAndInvalidRecords();
+                TestTrafficUsageLogAppendsAfterPartialLine();
                 TestTrafficUsageLogRoundTrip();
+                TestAppLogRotatesLargeLogFile();
+                TestDiagnosticsExportIncludesRotatedLogs();
+                TestStorageDiagnosticsReportsWritableSettingsPath();
+                TestRuntimeDiagnosticsReportsMemoryAndStartup();
                 Console.WriteLine("Smoke tests passed.");
                 return 0;
             }
@@ -199,6 +208,41 @@ namespace TrafficView
             AssertEqual(PopupSectionMode.RightOnly, loaded.TaskbarPopupSectionMode, "Unknown taskbar section modes should fall back to the taskbar default.");
         }
 
+        private static void TestMonitorSettingsRecoversFromBackupWhenPrimaryIsInvalid()
+        {
+            CreateTestSkin(PanelSkinCatalog.DefaultSkinId, "DefaultSkin");
+            PanelSkinCatalog.Reload();
+
+            File.WriteAllLines(
+                MonitorSettingsTestPaths.SettingsPath,
+                new[]
+                {
+                    "this is not a settings file",
+                    "still invalid"
+                });
+
+            File.WriteAllLines(
+                MonitorSettingsTestPaths.SettingsBackupPath,
+                new[]
+                {
+                    "AdapterId=adapter-backup",
+                    "AdapterName=Recovered Adapter",
+                    "CalibrationPeakBytesPerSecond=4096",
+                    "LanguageCode=en",
+                    "PanelSkinId=" + PanelSkinCatalog.DefaultSkinId
+                });
+
+            MonitorSettings loaded = MonitorSettings.Load();
+            AssertEqual("adapter-backup", loaded.AdapterId, "Backup settings should be used when the primary settings file is invalid.");
+            AssertEqual("Recovered Adapter", loaded.AdapterName, "Backup settings should preserve adapter details.");
+            AssertEqual("en", loaded.LanguageCode, "Backup settings should preserve language.");
+
+            string restoredPrimaryText = File.ReadAllText(MonitorSettingsTestPaths.SettingsPath);
+            AssertTrue(
+                restoredPrimaryText.IndexOf("AdapterId=adapter-backup", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Recovered backup settings should be written back to the primary settings file.");
+        }
+
         private static void TestPanelSkinCatalogPrefersDefaultFallback()
         {
             CreateTestSkin("07", "OlderSkin");
@@ -233,6 +277,35 @@ namespace TrafficView
             AssertTrue(
                 errorMessage.IndexOf("ausserhalb des Portable-Verzeichnisses", StringComparison.OrdinalIgnoreCase) >= 0,
                 "External portable skin paths should produce a clear path boundary error.");
+        }
+
+        private static void TestPanelSkinCatalogIgnoresIncompleteSkins()
+        {
+            CreateTestSkin(PanelSkinCatalog.DefaultSkinId, "DefaultSkin");
+            string brokenSkinDirectoryPath = Path.Combine(BaseDirectory, "Skins", "BrokenSkin");
+            Directory.CreateDirectory(brokenSkinDirectoryPath);
+            File.WriteAllLines(
+                Path.Combine(brokenSkinDirectoryPath, "skin.ini"),
+                new[]
+                {
+                    "Id=99",
+                    "DisplayNameFallback=BrokenSkin",
+                    "SurfaceEffect=none"
+                });
+
+            string validationError;
+            AssertTrue(
+                !PanelSkinCatalog.TryValidateSkinDirectory(brokenSkinDirectoryPath, out validationError),
+                "Incomplete skin directories should fail validation.");
+            AssertTrue(
+                validationError.IndexOf("fehlt", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Incomplete skin validation should describe missing files.");
+
+            PanelSkinCatalog.Reload();
+            AssertEqual(
+                PanelSkinCatalog.DefaultSkinId,
+                PanelSkinCatalog.NormalizeSkinId("99"),
+                "Incomplete skins should be ignored and the default skin should remain available.");
         }
 
         private static void TestTrafficUsageLogRoundTrip()
@@ -312,6 +385,158 @@ namespace TrafficView
             AssertEqual(20L, flushedSummaries.Daily.UploadBytes, "Invalid and other-adapter records should not affect upload totals.");
 
             AssertTrue(log.ClearAll(), "Usage data should be clearable after invalid records are ignored.");
+        }
+
+        private static void TestTrafficUsageLogHandlesLargeFilesAndInvalidRecords()
+        {
+            CleanupFile(TrafficUsageLog.GetUsageFilePath());
+            CleanupFile(TrafficUsageLog.GetUsageArchiveFilePath());
+
+            MonitorSettings settings = new MonitorSettings(
+                "adapter-large",
+                "Large Adapter",
+                900D,
+                panelSkinId: PanelSkinCatalog.DefaultSkinId);
+
+            List<string> lines = new List<string>();
+            string timestamp = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            for (int i = 0; i < 5000; i++)
+            {
+                lines.Add(string.Format(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    "{0}|adapter-large|1|2",
+                    timestamp));
+            }
+
+            lines.Add(string.Empty);
+            lines.Add("invalid|adapter-large|x|y");
+            lines.Add(string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0}|other-adapter|100|100",
+                timestamp));
+            File.WriteAllLines(TrafficUsageLog.GetUsageFilePath(), lines.ToArray());
+
+            TrafficUsageLog log = new TrafficUsageLog();
+            TrafficUsageSummaries summaries = log.GetSummaries(settings);
+            AssertEqual(5000L, summaries.Daily.DownloadBytes, "Large usage files should preserve valid download totals.");
+            AssertEqual(10000L, summaries.Daily.UploadBytes, "Large usage files should preserve valid upload totals.");
+
+            AssertTrue(log.QueueUsage(settings, 3L, 4L), "A new sample should still be queued after reading a large usage file.");
+            AssertTrue(log.FlushPending(), "Atomic usage flush should succeed after reading a large usage file.");
+
+            TrafficUsageSummaries updatedSummaries = log.GetSummaries(settings);
+            AssertEqual(5003L, updatedSummaries.Daily.DownloadBytes, "Atomic append should keep existing valid records.");
+            AssertEqual(10004L, updatedSummaries.Daily.UploadBytes, "Atomic append should add new records exactly once.");
+
+            AssertTrue(log.ClearAll(), "Large usage data should be clearable.");
+        }
+
+        private static void TestTrafficUsageLogAppendsAfterPartialLine()
+        {
+            CleanupFile(TrafficUsageLog.GetUsageFilePath());
+            CleanupFile(TrafficUsageLog.GetUsageArchiveFilePath());
+
+            MonitorSettings settings = new MonitorSettings(
+                "adapter-partial",
+                "Partial Adapter",
+                900D,
+                panelSkinId: PanelSkinCatalog.DefaultSkinId);
+
+            File.WriteAllText(TrafficUsageLog.GetUsageFilePath(), "crash-partial-line-without-newline");
+
+            TrafficUsageLog log = new TrafficUsageLog();
+            AssertTrue(log.QueueUsage(settings, 7L, 8L), "A sample after a partial usage line should be queued.");
+            AssertTrue(log.FlushPending(), "A sample after a partial usage line should flush successfully.");
+
+            TrafficUsageSummaries summaries = log.GetSummaries(settings);
+            AssertEqual(7L, summaries.Daily.DownloadBytes, "Appended usage should not be glued to a partial invalid line.");
+            AssertEqual(8L, summaries.Daily.UploadBytes, "Appended usage should remain parseable after a partial invalid line.");
+
+            AssertTrue(log.ClearAll(), "Usage data with a partial line should be clearable.");
+        }
+
+        private static void TestAppLogRotatesLargeLogFile()
+        {
+            string logPath = AppLog.GetCurrentLogPath();
+            string logDirectory = Path.GetDirectoryName(logPath);
+            Directory.CreateDirectory(logDirectory);
+            CleanupFile(logPath);
+            CleanupFile(logPath + ".1");
+            CleanupFile(logPath + ".2");
+            CleanupFile(logPath + ".3");
+            CleanupFile(logPath + ".4");
+
+            File.WriteAllText(logPath, new string('x', 300 * 1024));
+            File.WriteAllText(logPath + ".1", "old-one");
+            File.WriteAllText(logPath + ".2", "old-two");
+            File.WriteAllText(logPath + ".3", "old-three");
+            AppLog.Info("rotation smoke test");
+
+            AssertTrue(File.Exists(logPath + ".1"), "Large log files should rotate to a .1 backup.");
+            AssertTrue(File.Exists(logPath + ".2"), "Existing .1 log backup should rotate to .2.");
+            AssertTrue(File.Exists(logPath + ".3"), "Existing .2 log backup should rotate to .3.");
+            AssertTrue(!File.Exists(logPath + ".4"), "Log rotation should keep only the configured backup count.");
+            AssertTrue(File.Exists(logPath), "A new current log file should be created after rotation.");
+            AssertEqual("old-one", File.ReadAllText(logPath + ".2"), "The previous .1 backup should move to .2.");
+            AssertEqual("old-two", File.ReadAllText(logPath + ".3"), "The previous .2 backup should move to .3.");
+
+            FileInfo currentLog = new FileInfo(logPath);
+            AssertTrue(currentLog.Length < 32 * 1024, "The current log file should only contain new entries after rotation.");
+        }
+
+        private static void TestDiagnosticsExportIncludesRotatedLogs()
+        {
+            string logPath = AppLog.GetCurrentLogPath();
+            string diagnosticsZipPath = Path.Combine(BaseDirectory, "diagnostics-export.zip");
+            CleanupFile(diagnosticsZipPath);
+            CleanupFile(logPath);
+            CleanupFile(logPath + ".1");
+            CleanupFile(logPath + ".2");
+            CleanupFile(logPath + ".3");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath));
+            File.WriteAllText(logPath, "current-log");
+            File.WriteAllText(logPath + ".1", "backup-one");
+            File.WriteAllText(logPath + ".2", "backup-two");
+            File.WriteAllText(logPath + ".3", "backup-three");
+
+            DiagnosticsExport.WriteZip(diagnosticsZipPath, "diagnostics-body");
+
+            using (ZipArchive archive = ZipFile.OpenRead(diagnosticsZipPath))
+            {
+                AssertTrue(archive.GetEntry("diagnostics.txt") != null, "Diagnostics ZIP should contain diagnostics text.");
+                AssertTrue(archive.GetEntry("TrafficView.log") != null, "Diagnostics ZIP should contain the current log.");
+                AssertTrue(archive.GetEntry("TrafficView.log.1") != null, "Diagnostics ZIP should contain the first rotated log.");
+                AssertTrue(archive.GetEntry("TrafficView.log.2") != null, "Diagnostics ZIP should contain the second rotated log.");
+                AssertTrue(archive.GetEntry("TrafficView.log.3") != null, "Diagnostics ZIP should contain the third rotated log.");
+            }
+
+            CleanupFile(diagnosticsZipPath);
+        }
+
+        private static void TestStorageDiagnosticsReportsWritableSettingsPath()
+        {
+            string diagnostics = AppStorage.CreateStorageDiagnosticsText();
+            AssertTrue(
+                diagnostics.IndexOf("Settings path writable: yes", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Storage diagnostics should report the portable test settings path as writable.");
+        }
+
+        private static void TestRuntimeDiagnosticsReportsMemoryAndStartup()
+        {
+            RuntimeDiagnostics.MarkStartupCompleted();
+            string diagnostics = RuntimeDiagnostics.CreateDiagnosticsText("Timers: smoke");
+
+            AssertTrue(
+                diagnostics.IndexOf("Startup ready:", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Runtime diagnostics should report startup readiness.");
+            AssertTrue(
+                diagnostics.IndexOf("Working set:", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Runtime diagnostics should report process memory.");
+            AssertTrue(
+                diagnostics.IndexOf("Timers: smoke", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Runtime diagnostics should include timer details.");
+            AssertEqual("1.0 KB", RuntimeDiagnostics.FormatBytes(1024L), "Byte formatting should use binary units.");
         }
 
         private static void CreateTestSkin(string id, string directoryName)

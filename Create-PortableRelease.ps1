@@ -224,6 +224,7 @@ function Test-NoPrivateRuntimeFiles {
     $forbiddenFiles = Get-ChildItem -LiteralPath $ReleaseDirectory -Recurse -File -Force | Where-Object {
         $_.Name -eq "TrafficView.settings.ini" -or
         $_.Name -eq "TrafficView.settings.ini_" -or
+        $_.Name -eq "TrafficView.new.exe" -or
         $_.Name -eq "TrafficView.log" -or
         $_.Name -like "Verbrauch*.txt" -or
         $_.Name -like "Verbrauch*.txt_" -or
@@ -311,6 +312,7 @@ function Test-ZipEntryIsForbidden {
     return (
         $normalizedEntryName -match "(^|/)Skins(/|$)" -or
         $leafName -eq "TrafficView_Code.txt" -or
+        $leafName -eq "TrafficView.new.exe" -or
         $leafName -eq "TrafficView.settings.ini" -or
         $leafName -eq "TrafficView.settings.ini_" -or
         $leafName -eq "TrafficView.log" -or

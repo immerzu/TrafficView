@@ -1,3 +1,7 @@
+param(
+    [string]$OutputRoot
+)
+
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = $PSScriptRoot
@@ -6,10 +10,60 @@ $stageRoot = Join-Path $projectRoot '_portable_release'
 $stageDir = Join-Path $stageRoot 'TrafficView'
 $stageWithDefaultsRoot = Join-Path $stageRoot 'standard'
 $stageWithDefaultsDir = Join-Path $stageWithDefaultsRoot 'TrafficView'
-$outputRoot = Join-Path (Split-Path -Parent $projectRoot) 'Ausgabe'
 $sourceDirectoryPath = Join-Path $projectRoot 'src'
 $settingsFileName = 'TrafficView.settings.ini'
 $settingsBackupFileName = 'TrafficView.settings.ini_'
+
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+    $OutputRoot = Join-Path (Split-Path -Parent $projectRoot) 'Ausgabe'
+}
+
+function Get-FullPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return [System.IO.Path]::GetFullPath($Path)
+}
+
+function Assert-PathIsInside {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ParentPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ChildPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    $fullParentPath = Get-FullPath -Path $ParentPath
+    $fullChildPath = Get-FullPath -Path $ChildPath
+
+    if (-not $fullParentPath.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
+        $fullParentPath += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    if (-not $fullChildPath.StartsWith($fullParentPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Description liegt ausserhalb des erwarteten Basisordners: $fullChildPath"
+    }
+}
+
+$projectRoot = Get-FullPath -Path $projectRoot
+$distDir = Get-FullPath -Path $distDir
+$stageRoot = Get-FullPath -Path $stageRoot
+$stageDir = Get-FullPath -Path $stageDir
+$stageWithDefaultsRoot = Get-FullPath -Path $stageWithDefaultsRoot
+$stageWithDefaultsDir = Get-FullPath -Path $stageWithDefaultsDir
+$sourceDirectoryPath = Get-FullPath -Path $sourceDirectoryPath
+$OutputRoot = Get-FullPath -Path $OutputRoot
+
+Assert-PathIsInside -ParentPath $projectRoot -ChildPath $stageRoot -Description 'Portable-Staging-Ordner'
+Assert-PathIsInside -ParentPath $stageRoot -ChildPath $stageDir -Description 'Portable-Stufe'
+Assert-PathIsInside -ParentPath $stageRoot -ChildPath $stageWithDefaultsRoot -Description 'Portable-Standard-Staging-Ordner'
+Assert-PathIsInside -ParentPath $stageWithDefaultsRoot -ChildPath $stageWithDefaultsDir -Description 'Portable-Standard-Stufe'
 
 if (-not (Test-Path $distDir)) {
     throw "Dist-Ordner nicht gefunden: $distDir"
@@ -37,9 +91,93 @@ function Get-TrafficViewVersion {
     return $versionMatch.Matches[0].Groups['version'].Value
 }
 
+function ConvertTo-ZipPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return ($Path -replace '\\', '/').Trim([char]'/')
+}
+
+function Get-RelativePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ChildPath
+    )
+
+    $baseFullPath = Get-FullPath -Path $BasePath
+    if (-not $baseFullPath.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
+        $baseFullPath += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    $baseUri = New-Object System.Uri($baseFullPath)
+    $childUri = New-Object System.Uri((Get-FullPath -Path $ChildPath))
+    return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($childUri).ToString()).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+}
+
+function Get-CurrentGitCommit {
+    try {
+        $commit = & git -C $projectRoot rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($commit)) {
+            return ($commit | Select-Object -First 1).Trim()
+        }
+    }
+    catch {
+    }
+
+    return 'unknown'
+}
+
+function New-ReleaseManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Version
+    )
+
+    $manifestPath = Join-Path $ReleaseDirectory 'release-manifest.json'
+    $fileEntries = @(
+        Get-ChildItem -LiteralPath $ReleaseDirectory -Recurse -File -Force |
+            Where-Object {
+                -not ([string]::Equals(
+                    (Get-FullPath -Path $_.FullName),
+                    (Get-FullPath -Path $manifestPath),
+                    [System.StringComparison]::OrdinalIgnoreCase))
+            } |
+            Sort-Object FullName |
+            ForEach-Object {
+                $relativePath = Get-RelativePath -BasePath $ReleaseDirectory -ChildPath $_.FullName
+                [PSCustomObject]@{
+                    path = ConvertTo-ZipPath -Path $relativePath
+                    bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                }
+            }
+    )
+
+    $manifest = [PSCustomObject]@{
+        app = 'TrafficView'
+        version = $Version
+        commit = Get-CurrentGitCommit
+        createdUtc = (Get-Date).ToUniversalTime().ToString('o')
+        files = $fileEntries
+    }
+
+    $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+}
+
 $version = Get-TrafficViewVersion -SourceDirectory $sourceDirectoryPath
-$zipPath = Join-Path $outputRoot ("TrafficView_Portable_{0}.zip" -f $version)
-$defaultsZipPath = Join-Path $outputRoot ("TrafficView_Portable_{0}_Standard.zip" -f $version)
+$zipPath = Join-Path $OutputRoot ("TrafficView_Portable_{0}.zip" -f $version)
+$defaultsZipPath = Join-Path $OutputRoot ("TrafficView_Portable_{0}_Standard.zip" -f $version)
+
+Assert-PathIsInside -ParentPath $OutputRoot -ChildPath $zipPath -Description 'Portable-ZIP'
+Assert-PathIsInside -ParentPath $OutputRoot -ChildPath $defaultsZipPath -Description 'Portable-Standard-ZIP'
 
 function Get-DefaultSettingsLines {
     return @(
@@ -93,6 +231,7 @@ function Remove-PortableNoise {
         '*.bak_*',
         '*.bak-*',
         '*.backup',
+        '*.new.exe',
         '*.old',
         '*.tmp',
         '*~'
@@ -177,6 +316,7 @@ function Test-PortableStage {
     )
 
     $requiredPaths = @(
+        'release-manifest.json',
         'TrafficView.exe',
         'TrafficView.exe.config',
         'TrafficView.languages.ini',
@@ -213,6 +353,7 @@ function Test-PortableStage {
     $forbiddenFiles = Get-ChildItem -LiteralPath $TargetDirectory -Recurse -File -Force | Where-Object {
         $_.Name -eq $settingsBackupFileName -or
         $_.Name -eq 'TrafficView_Code.txt' -or
+        $_.Name -eq 'TrafficView.new.exe' -or
         $_.Name -eq 'TrafficView.log' -or
         $_.Name -like 'Verbrauch*.txt' -or
         $_.Name -like 'Verbrauch*.txt_' -or
@@ -226,30 +367,37 @@ function Test-PortableStage {
     }
 }
 
-New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 
 if (Test-Path $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
 }
 
-New-PortableStageFromDist -TargetDirectory $stageDir
-Test-PortableStage -TargetDirectory $stageDir
-Copy-Item -LiteralPath $stageDir -Destination $stageWithDefaultsDir -Recurse -Force
-Set-Content -LiteralPath (Join-Path $stageWithDefaultsDir $settingsFileName) -Value (Get-DefaultSettingsLines) -Encoding ASCII
-Test-PortableStage -TargetDirectory $stageWithDefaultsDir -AllowDefaultSettings
+try {
+    New-PortableStageFromDist -TargetDirectory $stageDir
+    New-ReleaseManifest -ReleaseDirectory $stageDir -Version $version
+    Test-PortableStage -TargetDirectory $stageDir
+    Copy-Item -LiteralPath $stageDir -Destination $stageWithDefaultsDir -Recurse -Force
+    Set-Content -LiteralPath (Join-Path $stageWithDefaultsDir $settingsFileName) -Value (Get-DefaultSettingsLines) -Encoding ASCII
+    New-ReleaseManifest -ReleaseDirectory $stageWithDefaultsDir -Version $version
+    Test-PortableStage -TargetDirectory $stageWithDefaultsDir -AllowDefaultSettings
 
-if (Test-Path $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+    if (Test-Path $zipPath) {
+        Remove-Item -LiteralPath $zipPath -Force
+    }
+
+    if (Test-Path $defaultsZipPath) {
+        Remove-Item -LiteralPath $defaultsZipPath -Force
+    }
+
+    Compress-Archive -LiteralPath $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
+    Compress-Archive -LiteralPath $stageWithDefaultsDir -DestinationPath $defaultsZipPath -CompressionLevel Optimal
 }
-
-if (Test-Path $defaultsZipPath) {
-    Remove-Item -LiteralPath $defaultsZipPath -Force
+finally {
+    if (Test-Path $stageRoot) {
+        Remove-Item -LiteralPath $stageRoot -Recurse -Force
+    }
 }
-
-Compress-Archive -LiteralPath $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
-Compress-Archive -LiteralPath $stageWithDefaultsDir -DestinationPath $defaultsZipPath -CompressionLevel Optimal
-
-Remove-Item -LiteralPath $stageRoot -Recurse -Force
 
 Write-Host ''
 Write-Host "Portable-Paket fertig: $zipPath"

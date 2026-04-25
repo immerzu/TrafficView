@@ -124,7 +124,7 @@ namespace TrafficView
             try
             {
                 EnsureUsageDirectoryExists();
-                File.AppendAllLines(path, linesToWrite);
+                AtomicAppendAllLines(path, linesToWrite);
 
                 lock (this.syncRoot)
                 {
@@ -517,8 +517,8 @@ namespace TrafficView
 
                 try
                 {
-                    File.AppendAllLines(archivePath, archivedLines);
-                    File.WriteAllLines(activePath, retainedLines);
+                    AtomicAppendAllLines(archivePath, archivedLines);
+                    AtomicWriteAllLines(activePath, retainedLines);
                     return true;
                 }
                 catch
@@ -624,7 +624,7 @@ namespace TrafficView
 
                     if (retainedArchiveLines.Count > 0)
                     {
-                        File.WriteAllLines(archivePath, retainedArchiveLines);
+                        AtomicWriteAllLines(archivePath, retainedArchiveLines);
                     }
                     else
                     {
@@ -689,11 +689,13 @@ namespace TrafficView
                 return;
             }
 
+            int invalidLineCount = 0;
             foreach (string line in File.ReadLines(path))
             {
                 TrafficUsageRecord record;
                 if (!TryParseRecord(line, out record))
                 {
+                    invalidLineCount++;
                     continue;
                 }
 
@@ -705,7 +707,7 @@ namespace TrafficView
                 lines.Add(ToCsvLine(record, adapterDisplayName));
             }
 
-            WarnIfUsageFileContainsInvalidRecords(path);
+            WarnIfUsageFileContainsInvalidRecords(path, invalidLineCount);
         }
 
         private static void AppendCsvLinesFromCompressedArchives(
@@ -740,11 +742,13 @@ namespace TrafficView
             DateTime currentWeekStart,
             TrafficUsageSummaries summaries)
         {
+            int invalidLineCount = 0;
             foreach (string line in File.ReadLines(path))
             {
                 TrafficUsageRecord record;
                 if (!TryParseRecord(line, out record))
                 {
+                    invalidLineCount++;
                     continue;
                 }
 
@@ -756,36 +760,23 @@ namespace TrafficView
                 AccumulateSummaries(record, nowLocal, currentWeekStart, summaries);
             }
 
-            WarnIfUsageFileContainsInvalidRecords(path);
+            WarnIfUsageFileContainsInvalidRecords(path, invalidLineCount);
         }
 
-        private static void WarnIfUsageFileContainsInvalidRecords(string path)
+        private static void WarnIfUsageFileContainsInvalidRecords(string path, int invalidLineCount)
         {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            if (string.IsNullOrWhiteSpace(path) || invalidLineCount <= 0)
             {
                 return;
             }
 
-            int invalidLineCount = 0;
-            foreach (string line in File.ReadLines(path))
-            {
-                TrafficUsageRecord record;
-                if (!TryParseRecord(line, out record))
-                {
-                    invalidLineCount++;
-                }
-            }
-
-            if (invalidLineCount > 0)
-            {
-                AppLog.WarnOnce(
-                    "traffic-usage-invalid-lines-" + path,
-                    string.Format(
-                        CultureInfo.InvariantCulture,
-                        "Verbrauchsdatei enthaelt {0} ungueltige Zeile(n), gueltige Zeilen werden weiter verwendet. Datei='{1}'.",
-                        invalidLineCount,
-                        path));
-            }
+            AppLog.WarnOnce(
+                "traffic-usage-invalid-lines-" + path,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Verbrauchsdatei enthaelt {0} ungueltige Zeile(n), gueltige Zeilen werden weiter verwendet. Datei='{1}'.",
+                    invalidLineCount,
+                    path));
         }
 
         private static void AppendSummariesFromCompressedArchives(
@@ -951,11 +942,149 @@ namespace TrafficView
                     }
                 }
 
-                File.Copy(tempPath, path, true);
+                AtomicReplaceFile(tempPath, path);
             }
             finally
             {
                 DeleteIfExists(tempPath);
+            }
+        }
+
+        private static void AtomicAppendAllLines(string path, IEnumerable<string> appendedLines)
+        {
+            if (string.IsNullOrWhiteSpace(path) || appendedLines == null)
+            {
+                return;
+            }
+
+            EnsurePortablePathAllowed(path, "Verbrauchsdatei");
+
+            string directoryPath = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            string tempPath = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}.{1}.tmp",
+                path,
+                Guid.NewGuid().ToString("N"));
+
+            try
+            {
+                using (FileStream tempStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    bool appendLineBreakBeforeNewLines = false;
+
+                    if (File.Exists(path))
+                    {
+                        using (FileStream sourceStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        {
+                            appendLineBreakBeforeNewLines = DoesStreamNeedTrailingLineBreak(sourceStream);
+                            sourceStream.CopyTo(tempStream);
+                        }
+                    }
+
+                    using (StreamWriter writer = new StreamWriter(tempStream, new UTF8Encoding(false)))
+                    {
+                        if (appendLineBreakBeforeNewLines)
+                        {
+                            writer.WriteLine();
+                        }
+
+                        foreach (string line in appendedLines)
+                        {
+                            writer.WriteLine(line ?? string.Empty);
+                        }
+                    }
+                }
+
+                AtomicReplaceFile(tempPath, path);
+            }
+            finally
+            {
+                DeleteIfExists(tempPath);
+            }
+        }
+
+        private static bool DoesStreamNeedTrailingLineBreak(FileStream stream)
+        {
+            if (stream == null || stream.Length == 0L)
+            {
+                return false;
+            }
+
+            long originalPosition = stream.Position;
+            try
+            {
+                stream.Seek(-1L, SeekOrigin.End);
+                int lastByte = stream.ReadByte();
+                return lastByte != '\n' && lastByte != '\r';
+            }
+            finally
+            {
+                stream.Seek(originalPosition, SeekOrigin.Begin);
+            }
+        }
+
+        private static void AtomicWriteAllLines(string path, IEnumerable<string> lines)
+        {
+            if (string.IsNullOrWhiteSpace(path) || lines == null)
+            {
+                return;
+            }
+
+            EnsurePortablePathAllowed(path, "Verbrauchsdatei");
+
+            string directoryPath = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            string tempPath = string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}.{1}.tmp",
+                path,
+                Guid.NewGuid().ToString("N"));
+
+            try
+            {
+                using (FileStream fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (StreamWriter writer = new StreamWriter(fileStream, new UTF8Encoding(false)))
+                {
+                    foreach (string line in lines)
+                    {
+                        writer.WriteLine(line ?? string.Empty);
+                    }
+                }
+
+                AtomicReplaceFile(tempPath, path);
+            }
+            finally
+            {
+                DeleteIfExists(tempPath);
+            }
+        }
+
+        private static void AtomicReplaceFile(string tempPath, string targetPath)
+        {
+            if (string.IsNullOrWhiteSpace(tempPath) || string.IsNullOrWhiteSpace(targetPath))
+            {
+                return;
+            }
+
+            EnsurePortablePathAllowed(targetPath, "Verbrauchsdatei");
+            EnsurePortablePathAllowed(tempPath, "Temporaere Verbrauchsdatei");
+
+            if (File.Exists(targetPath))
+            {
+                File.Replace(tempPath, targetPath, null, true);
+            }
+            else
+            {
+                File.Move(tempPath, targetPath);
             }
         }
 

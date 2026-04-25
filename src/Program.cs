@@ -10,6 +10,8 @@ namespace TrafficView
         [STAThread]
         private static void Main()
         {
+            RuntimeDiagnostics.MarkProcessStarted();
+
             System.Threading.Mutex singleInstanceMutex = null;
             bool ownsSingleInstanceMutex = false;
 
@@ -41,11 +43,12 @@ namespace TrafficView
 
                 RegisterUnhandledExceptionLogging();
                 AppLog.Info(string.Format(
-                    "Session started. Version={0}; OS={1}; 64BitOS={2}; Machine={3}",
+                    "Session started. Version={0}; OS={1}; 64BitOS={2}; Machine={3}; {4}",
                     typeof(Program).Assembly.GetName().Version,
                     Environment.OSVersion.VersionString,
                     Environment.Is64BitOperatingSystem ? "yes" : "no",
-                    Environment.MachineName));
+                    Environment.MachineName,
+                    RuntimeDiagnostics.CreateDiagnosticsText(string.Empty).Replace("\r\n", "; ")));
                 DpiHelper.EnableHighDpiSupport();
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);

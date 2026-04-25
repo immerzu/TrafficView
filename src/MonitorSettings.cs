@@ -1321,6 +1321,11 @@ namespace TrafficView
                     Directory.CreateDirectory(directory);
                 }
 
+                if (File.Exists(path) && AreSerializedLinesEqual(path, lines))
+                {
+                    return true;
+                }
+
                 tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 File.WriteAllLines(tempPath, lines);
 
@@ -1366,6 +1371,37 @@ namespace TrafficView
             finally
             {
                 TryDeleteFile(tempPath);
+            }
+        }
+
+        private static bool AreSerializedLinesEqual(string path, string[] lines)
+        {
+            if (string.IsNullOrWhiteSpace(path) || lines == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                string[] existingLines = File.ReadAllLines(path);
+                if (existingLines.Length != lines.Length)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < existingLines.Length; i++)
+                {
+                    if (!string.Equals(existingLines[i], lines[i] ?? string.Empty, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

@@ -10,6 +10,7 @@ namespace TrafficView
         private const string LogDirectoryName = "Logs";
         private const string LogFileName = "TrafficView.log";
         private const long MaxLogFileBytes = 256L * 1024L;
+        private const int MaxLogBackupFiles = 3;
         private static readonly object SyncRoot = new object();
         private static readonly HashSet<string> LoggedOnceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -41,6 +42,22 @@ namespace TrafficView
         public static string GetCurrentLogPath()
         {
             return GetLogPath();
+        }
+
+        public static string[] GetLogFilePathsForDiagnostics()
+        {
+            string logPath = GetLogPath();
+            List<string> paths = new List<string>();
+            if (!string.IsNullOrWhiteSpace(logPath))
+            {
+                paths.Add(logPath);
+                for (int index = 1; index <= MaxLogBackupFiles; index++)
+                {
+                    paths.Add(GetBackupLogPath(logPath, index));
+                }
+            }
+
+            return paths.ToArray();
         }
 
         private static bool TryMarkOnce(string key)
@@ -185,18 +202,40 @@ namespace TrafficView
                     return;
                 }
 
-                string backupPath = logPath + ".1";
-                EnsurePortableLogPathAllowed(backupPath);
-                if (File.Exists(backupPath))
+                string oldestBackupPath = GetBackupLogPath(logPath, MaxLogBackupFiles);
+                EnsurePortableLogPathAllowed(oldestBackupPath);
+                if (File.Exists(oldestBackupPath))
                 {
-                    File.Delete(backupPath);
+                    File.Delete(oldestBackupPath);
                 }
 
-                File.Move(logPath, backupPath);
+                for (int index = MaxLogBackupFiles - 1; index >= 1; index--)
+                {
+                    string sourceBackupPath = GetBackupLogPath(logPath, index);
+                    string targetBackupPath = GetBackupLogPath(logPath, index + 1);
+                    EnsurePortableLogPathAllowed(sourceBackupPath);
+                    EnsurePortableLogPathAllowed(targetBackupPath);
+
+                    if (File.Exists(sourceBackupPath))
+                    {
+                        File.Move(sourceBackupPath, targetBackupPath);
+                    }
+                }
+
+                File.Move(logPath, GetBackupLogPath(logPath, 1));
             }
             catch
             {
             }
+        }
+
+        private static string GetBackupLogPath(string logPath, int index)
+        {
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{0}.{1}",
+                logPath,
+                Math.Max(1, index));
         }
 
         private static void EnsurePortableLogPathAllowed(string path)

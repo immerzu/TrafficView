@@ -201,6 +201,7 @@ namespace TrafficView
                 Application.Idle -= showOnStartup;
                 try
                 {
+                    this.ShowStorageWarningIfNeeded();
                     this.PromptInitialLanguageOnFirstStart();
                     this.BringPopupToFront();
                     this.PromptInitialCalibrationOnFirstStart();
@@ -209,6 +210,11 @@ namespace TrafficView
                 catch (Exception ex)
                 {
                     AppLog.Error("Startup prompt sequence failed; continuing with degraded startup behavior.", ex);
+                }
+                finally
+                {
+                    RuntimeDiagnostics.MarkStartupCompleted();
+                    AppLog.Info(RuntimeDiagnostics.CreateDiagnosticsText(TrafficPopupForm.CreateTimerDiagnosticsText()).Replace("\r\n", "; "));
                 }
             };
 
@@ -271,6 +277,22 @@ namespace TrafficView
             }
 
             return NetworkSnapshot.GetAdapterAvailabilityState(settings);
+        }
+
+        private void ShowStorageWarningIfNeeded()
+        {
+            string warningMessage;
+            if (!AppStorage.TryGetStorageWarningMessage(out warningMessage))
+            {
+                return;
+            }
+
+            AppLog.WarnOnce("storage-write-warning-shown", warningMessage);
+            MessageBox.Show(
+                warningMessage,
+                "TrafficView",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
     }
 

@@ -325,6 +325,10 @@ function Publish-BuiltExecutable {
     }
 
     Copy-Item -LiteralPath $StagedPath -Destination $OutputPath -Force
+
+    if (Test-Path -LiteralPath $FallbackPath) {
+        Remove-Item -LiteralPath $FallbackPath -Force
+    }
 }
 
 function Remove-DeleteStagingDirectory {
@@ -682,6 +686,10 @@ foreach ($legacyPanelAssetFile in $legacyPanelAssetFiles) {
 
 if (Test-Path -LiteralPath $stagedOutputFile) {
     Remove-Item -LiteralPath $stagedOutputFile -Force
+}
+
+if (Test-Path -LiteralPath $fallbackOutputFile) {
+    Remove-Item -LiteralPath $fallbackOutputFile -Force
 }
 
 $compilerCandidates = @(

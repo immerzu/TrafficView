@@ -118,6 +118,17 @@ namespace TrafficView
         private static readonly Color UploadRingHighColor = Color.FromArgb(214, 255, 214);
         private static readonly Color MeterTrackColor = Color.FromArgb(64, 94, 148);
         private static readonly Color MeterTrackInnerColor = Color.FromArgb(82, 112, 166);
+
+        internal static string CreateTimerDiagnosticsText()
+        {
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Timers: refresh=1000 ms; animation=140 ms; top-most guard={0} ms; taskbar monitor={1} ms; taskbar debounce={2} ms; manual drag={3} ms",
+                KeepTopMostRefreshIntervalMs,
+                TaskbarMonitorIntervalMs,
+                TaskbarRefreshDebounceMs,
+                ManualDragMoveIntervalMs);
+        }
         private static readonly Color MeterCenterColor = Color.FromArgb(11, 24, 60);
         private static readonly Color MeterCenterBorderColor = Color.FromArgb(84, 132, 196);
         private static readonly Color MeterDepthHighlightColor = Color.FromArgb(92, 228, 236, 255);

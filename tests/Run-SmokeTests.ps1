@@ -22,10 +22,12 @@ $sourceFiles = @(
     (Join-Path $sourceDir "AppEnums.cs"),
     (Join-Path $sourceDir "AppStorage.cs"),
     (Join-Path $sourceDir "AppLog.cs"),
+    (Join-Path $sourceDir "DiagnosticsExport.cs"),
     (Join-Path $sourceDir "UiLanguage.cs"),
     (Join-Path $sourceDir "MonitorSettings.cs"),
     (Join-Path $sourceDir "PanelSkinDefinition.cs"),
     (Join-Path $sourceDir "PanelSkinCatalog.cs"),
+    (Join-Path $sourceDir "RuntimeDiagnostics.cs"),
     (Join-Path $sourceDir "SkinPathPolicy.cs"),
     (Join-Path $sourceDir "TrafficRateFormatter.cs"),
     (Join-Path $sourceDir "TrafficRateSmoothing.cs"),
@@ -44,6 +46,7 @@ $sourceFiles = @(
     /reference:System.Core.dll `
     /reference:System.Drawing.dll `
     /reference:System.IO.Compression.dll `
+    /reference:System.IO.Compression.FileSystem.dll `
     $sourceFiles
 
 if ($LASTEXITCODE -ne 0) {

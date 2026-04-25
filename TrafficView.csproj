@@ -118,6 +118,7 @@
     <Compile Include="src\AppStorage.cs" />
     <Compile Include="src\AppLog.cs" />
     <Compile Include="src\AppIconFactory.cs" />
+    <Compile Include="src\DiagnosticsExport.cs" />
     <Compile Include="src\CalibrationForm.cs" />
     <Compile Include="src\DialogForms.cs" />
     <Compile Include="src\DpiHelper.cs" />
@@ -128,6 +129,7 @@
     <Compile Include="src\OverlayInputLabel.cs" />
     <Compile Include="src\PanelSkinDefinition.cs" />
     <Compile Include="src\PanelSkinCatalog.cs" />
+    <Compile Include="src\RuntimeDiagnostics.cs" />
     <Compile Include="src\SkinPathPolicy.cs" />
     <Compile Include="src\TaskbarIntegrationTypes.cs" />
     <Compile Include="src\TrafficRateFormatter.cs" />

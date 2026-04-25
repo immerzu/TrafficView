@@ -6,7 +6,43 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRoot = Join-Path $repoRoot "_build_staging\release-script-tests"
 $modernReleaseName = "TrafficView_Portable_ScriptTest"
 $modernZipPath = Join-Path $outputRoot ($modernReleaseName + ".zip")
-$legacyOutputRoot = Join-Path (Split-Path -Parent $repoRoot) "Ausgabe"
+$legacyOutputRoot = Join-Path $outputRoot "legacy-portable-release"
+
+function Get-FullPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return [System.IO.Path]::GetFullPath($Path)
+}
+
+function Assert-PathIsInside {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ParentPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ChildPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    $fullParentPath = Get-FullPath -Path $ParentPath
+    $fullChildPath = Get-FullPath -Path $ChildPath
+
+    if (-not $fullParentPath.EndsWith([System.IO.Path]::DirectorySeparatorChar.ToString())) {
+        $fullParentPath += [System.IO.Path]::DirectorySeparatorChar
+    }
+
+    if (-not $fullChildPath.StartsWith($fullParentPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Description liegt ausserhalb des erwarteten Test-Ausgabeordners: $fullChildPath"
+    }
+}
+
+Assert-PathIsInside -ParentPath $repoRoot -ChildPath $outputRoot -Description "Release-Test-Ausgabeordner"
+Assert-PathIsInside -ParentPath $outputRoot -ChildPath $legacyOutputRoot -Description "Legacy-Release-Test-Ausgabeordner"
 
 function Get-TrafficViewVersion {
     $versionMatch = Get-ChildItem -LiteralPath (Join-Path $repoRoot "src") -Filter "*.cs" -File |
@@ -76,6 +112,7 @@ function Assert-ZipOmitsPrivateAndLegacyFiles {
         $leafName = ($_ -split "/")[-1]
         $_ -match "(^|/)Skins(/|$)" -or
         $leafName -eq "TrafficView_Code.txt" -or
+        $leafName -eq "TrafficView.new.exe" -or
         $leafName -eq "TrafficView.log" -or
         ((-not $AllowSettingsFile) -and $leafName -eq "TrafficView.settings.ini") -or
         $leafName -eq "TrafficView.settings.ini_" -or
@@ -199,7 +236,7 @@ if ($manifestText.IndexOf('"version":  "' + $version + '"', [System.StringCompar
     throw "Release-Manifest enthaelt die erwartete Version nicht: $version"
 }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "portable-release.ps1")
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "portable-release.ps1") -OutputRoot $legacyOutputRoot
 if ($LASTEXITCODE -ne 0) {
     throw "portable-release.ps1 ist im Release-Skript-Test fehlgeschlagen."
 }
@@ -208,14 +245,21 @@ $legacyZipPath = Join-Path $legacyOutputRoot ("TrafficView_Portable_{0}.zip" -f 
 $legacyDefaultsZipPath = Join-Path $legacyOutputRoot ("TrafficView_Portable_{0}_Standard.zip" -f $version)
 
 $legacyEntries = Get-ZipEntryNames -ZipPath $legacyZipPath
+Assert-ZipContains -EntryNames $legacyEntries -RelativePath "release-manifest.json"
 foreach ($requiredPath in $requiredReleasePaths) {
     Assert-ZipContains -EntryNames $legacyEntries -RelativePath $requiredPath
 }
 
 Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $legacyEntries
 Assert-ZipExeVersion -ZipPath $legacyZipPath -ExpectedVersion $version
+$legacyManifestText = Get-ZipEntryText -ZipPath $legacyZipPath -RelativePath "release-manifest.json"
+if ($legacyManifestText.IndexOf('"version":  "' + $version + '"', [System.StringComparison]::OrdinalIgnoreCase) -lt 0 -and
+    $legacyManifestText.IndexOf('"version":"' + $version + '"', [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+    throw "Legacy-Release-Manifest enthaelt die erwartete Version nicht: $version"
+}
 
 $legacyDefaultsEntries = Get-ZipEntryNames -ZipPath $legacyDefaultsZipPath
+Assert-ZipContains -EntryNames $legacyDefaultsEntries -RelativePath "release-manifest.json"
 Assert-ZipContains -EntryNames $legacyDefaultsEntries -RelativePath "TrafficView.settings.ini"
 Assert-ZipOmitsPrivateAndLegacyFiles -EntryNames $legacyDefaultsEntries -AllowSettingsFile
 Assert-ZipExeVersion -ZipPath $legacyDefaultsZipPath -ExpectedVersion $version
