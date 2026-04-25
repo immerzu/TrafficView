@@ -164,41 +164,30 @@ namespace TrafficView
             {
                 string activePath = GetUsageFilePath();
                 string archivePath = GetUsageArchiveFilePath();
-                string activeBackupPath = CreateDeleteBackupPath(activePath);
-                string archiveBackupPath = CreateDeleteBackupPath(archivePath);
-                bool activeMoved = false;
-                bool archiveMoved = false;
+                List<DeleteBackupEntry> deleteBackups = new List<DeleteBackupEntry>();
 
                 try
                 {
-                    if (File.Exists(activePath))
+                    MoveToDeleteBackupIfExists(activePath, deleteBackups);
+                    MoveToDeleteBackupIfExists(archivePath, deleteBackups);
+                    foreach (string compressedArchivePath in EnumerateCompressedArchiveFilePaths())
                     {
-                        File.Move(activePath, activeBackupPath);
-                        activeMoved = true;
-                    }
-
-                    if (File.Exists(archivePath))
-                    {
-                        File.Move(archivePath, archiveBackupPath);
-                        archiveMoved = true;
+                        MoveToDeleteBackupIfExists(compressedArchivePath, deleteBackups);
                     }
                 }
                 catch
                 {
-                    RestoreDeleteBackup(activeBackupPath, activePath, activeMoved);
-                    RestoreDeleteBackup(archiveBackupPath, archivePath, archiveMoved);
+                    RestoreDeleteBackups(deleteBackups);
                     throw;
                 }
 
                 try
                 {
-                    DeleteIfExists(activeBackupPath);
-                    DeleteIfExists(archiveBackupPath);
+                    DeleteDeleteBackups(deleteBackups);
                 }
                 catch
                 {
-                    RestoreDeleteBackup(activeBackupPath, activePath, activeMoved);
-                    RestoreDeleteBackup(archiveBackupPath, archivePath, archiveMoved);
+                    RestoreDeleteBackups(deleteBackups);
                     throw;
                 }
 
@@ -1180,6 +1169,44 @@ namespace TrafficView
                 Guid.NewGuid().ToString("N"));
         }
 
+        private static void MoveToDeleteBackupIfExists(string originalPath, List<DeleteBackupEntry> deleteBackups)
+        {
+            if (string.IsNullOrWhiteSpace(originalPath) || !File.Exists(originalPath))
+            {
+                return;
+            }
+
+            string backupPath = CreateDeleteBackupPath(originalPath);
+            File.Move(originalPath, backupPath);
+            deleteBackups.Add(new DeleteBackupEntry(originalPath, backupPath));
+        }
+
+        private static void DeleteDeleteBackups(List<DeleteBackupEntry> deleteBackups)
+        {
+            if (deleteBackups == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < deleteBackups.Count; i++)
+            {
+                DeleteIfExists(deleteBackups[i].BackupPath);
+            }
+        }
+
+        private static void RestoreDeleteBackups(List<DeleteBackupEntry> deleteBackups)
+        {
+            if (deleteBackups == null)
+            {
+                return;
+            }
+
+            for (int i = deleteBackups.Count - 1; i >= 0; i--)
+            {
+                RestoreDeleteBackup(deleteBackups[i].BackupPath, deleteBackups[i].OriginalPath, true);
+            }
+        }
+
         private static void EnsurePortablePathAllowed(string path, string pathLabel)
         {
             if (!AppStorage.IsPortableMode)
@@ -1301,6 +1328,18 @@ namespace TrafficView
                 this.DownloadBytes = downloadBytes;
                 this.UploadBytes = uploadBytes;
             }
+        }
+
+        private struct DeleteBackupEntry
+        {
+            public DeleteBackupEntry(string originalPath, string backupPath)
+            {
+                this.OriginalPath = originalPath;
+                this.BackupPath = backupPath;
+            }
+
+            public readonly string OriginalPath;
+            public readonly string BackupPath;
         }
     }
 }

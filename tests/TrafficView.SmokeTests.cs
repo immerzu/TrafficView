@@ -74,6 +74,7 @@ namespace TrafficView
             CleanupFile(MonitorSettingsTestPaths.SettingsBackupPath);
             CleanupFile(TrafficUsageLog.GetUsageFilePath());
             CleanupFile(TrafficUsageLog.GetUsageArchiveFilePath());
+            CleanupCompressedUsageArchives();
             CleanupFile(ExportPath);
             CleanupDirectory(Path.Combine(BaseDirectory, "Skins"));
             CleanupDirectory(Path.Combine(BaseDirectory, "TrafficView"));
@@ -335,11 +336,15 @@ namespace TrafficView
             AssertEqual(3, csvLines.Length, "CSV export should contain one header row and two data rows.");
             AssertTrue(csvLines.Skip(1).All(line => line.Contains(";adapter-usage;Fiber;")), "CSV rows should reference the selected adapter.");
 
+            string compressedArchivePath = Path.Combine(BaseDirectory, "Verbrauch.archiv.2026-04.txt.gz");
+            File.WriteAllText(compressedArchivePath, "compressed-archive-placeholder");
+
             AssertTrue(log.ClearAll(), "Usage data should be clearable.");
             TrafficUsageSummaries clearedSummaries = log.GetSummaries(settings);
             AssertEqual(0L, clearedSummaries.Daily.TotalBytes, "Daily total should be zero after clearing.");
             AssertTrue(!File.Exists(TrafficUsageLog.GetUsageFilePath()), "Active usage file should be gone after clearing.");
             AssertTrue(!File.Exists(TrafficUsageLog.GetUsageArchiveFilePath()), "Archive usage file should be gone after clearing.");
+            AssertTrue(!File.Exists(compressedArchivePath), "Compressed usage archives should be gone after clearing.");
         }
 
         private static void TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage()
@@ -613,6 +618,19 @@ namespace TrafficView
             if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
             {
                 Directory.Delete(path, true);
+            }
+        }
+
+        private static void CleanupCompressedUsageArchives()
+        {
+            if (!Directory.Exists(BaseDirectory))
+            {
+                return;
+            }
+
+            foreach (string path in Directory.GetFiles(BaseDirectory, "Verbrauch.archiv.*.txt.gz", SearchOption.TopDirectoryOnly))
+            {
+                File.Delete(path);
             }
         }
 
