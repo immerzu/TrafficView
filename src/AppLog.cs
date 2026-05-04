@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 
 namespace TrafficView
@@ -108,8 +109,9 @@ namespace TrafficView
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                SafeTraceAppLogFailure("Write", level, message, ex);
             }
         }
 
@@ -171,8 +173,9 @@ namespace TrafficView
                 {
                     baseDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    SafeTraceAppLogFailure("GetLogPath", null, null, ex);
                     baseDirectory = string.Empty;
                 }
             }
@@ -224,8 +227,9 @@ namespace TrafficView
 
                 File.Move(logPath, GetBackupLogPath(logPath, 1));
             }
-            catch
+            catch (Exception ex)
             {
+                SafeTraceAppLogFailure("RotateIfNeeded", null, null, ex);
             }
         }
 
@@ -254,6 +258,22 @@ namespace TrafficView
                 string.Format(
                     "Der Log-Pfad liegt ausserhalb des Portable-Verzeichnisses: '{0}'.",
                     path ?? string.Empty));
+        }
+
+        private static void SafeTraceAppLogFailure(string method, string level, string message, Exception exception)
+        {
+            try
+            {
+                Trace.WriteLine(string.Format(
+                    "[TrafficView] AppLog.{0} failed. Level={1} Message={2} Exception={3}",
+                    method ?? "?",
+                    level ?? "?",
+                    (message ?? string.Empty).Replace("\r", " ").Replace("\n", " "),
+                    exception != null ? exception.GetType().Name : "null"));
+            }
+            catch
+            {
+            }
         }
     }
 }

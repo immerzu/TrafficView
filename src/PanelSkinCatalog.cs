@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -206,6 +206,18 @@ namespace TrafficView
             }
             catch (Exception ex)
             {
+                try
+                {
+                    Reload();
+                }
+                catch (Exception reloadEx)
+                {
+                    AppLog.WarnOnce(
+                        "skin-delete-reload-failed-" + normalizedId,
+                        string.Format("Skin-Katalog konnte nach fehlgeschlagenem Loeschen von Skin '{0}' nicht neu geladen werden.", normalizedId),
+                        reloadEx);
+                }
+
                 AppLog.WarnOnce(
                     "skin-delete-failed-" + normalizedId,
                     string.Format("Skin '{0}' konnte nicht geloescht werden.", normalizedId),
@@ -215,10 +227,10 @@ namespace TrafficView
             }
         }
 
+
         public static bool TryValidateSkinDirectory(string skinDirectoryPath, out string errorMessage)
         {
             errorMessage = string.Empty;
-
             if (string.IsNullOrWhiteSpace(skinDirectoryPath))
             {
                 errorMessage = "Der Skin-Ordner ist leer oder ungueltig.";

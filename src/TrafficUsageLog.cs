@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -108,7 +108,7 @@ namespace TrafficView
         {
             this.RunMaintenanceIfNeeded();
 
-            string[] linesToWrite;
+            List<string> linesToWrite;
             lock (this.syncRoot)
             {
                 if (this.pendingLines.Count == 0)
@@ -116,7 +116,8 @@ namespace TrafficView
                     return true;
                 }
 
-                linesToWrite = this.pendingLines.ToArray();
+                linesToWrite = new List<string>(this.pendingLines);
+                this.pendingLines.Clear();
             }
 
             string path = GetUsageFilePath();
@@ -124,25 +125,18 @@ namespace TrafficView
             try
             {
                 EnsureUsageDirectoryExists();
-                AtomicAppendAllLines(path, linesToWrite);
-
-                lock (this.syncRoot)
-                {
-                    if (this.pendingLines.Count >= linesToWrite.Length)
-                    {
-                        this.pendingLines.RemoveRange(0, linesToWrite.Length);
-                    }
-                    else
-                    {
-                        this.pendingLines.Clear();
-                    }
-                }
+                AtomicAppendAllLines(path, linesToWrite.ToArray());
 
                 this.RunMaintenanceIfNeeded();
                 return true;
             }
             catch (Exception ex)
             {
+                lock (this.syncRoot)
+                {
+                    this.pendingLines.InsertRange(0, linesToWrite);
+                }
+
                 AppLog.WarnOnce(
                     "traffic-usage-flush-failed",
                     string.Format("Verbrauchsdaten konnten nicht nach '{0}' geschrieben werden.", path),
@@ -150,7 +144,6 @@ namespace TrafficView
                 return false;
             }
         }
-
         public bool ClearAll()
         {
             List<string> pendingBackup;

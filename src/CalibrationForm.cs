@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Threading.Tasks;
 
 namespace TrafficView
 {
@@ -54,8 +55,9 @@ namespace TrafficView
         private double peakDownloadBytesPerSecond;
         private double peakUploadBytesPerSecond;
         private int elapsedSeconds;
-        private bool allowClose;
         private bool calibrationDialogSizeLocked;
+        private bool allowClose;
+        private bool isCapturing;
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -636,7 +638,6 @@ namespace TrafficView
             this.DialogResult = DialogResult.OK;
             this.Close();
         }
-
         private void CalibrationTimer_Tick(object sender, EventArgs e)
         {
             if (this.activeSettings == null)
@@ -649,7 +650,7 @@ namespace TrafficView
                 this.progressBar.Value = 0;
                 this.statusLabel.Text = UiLanguage.Get(
                     "Calibration.ReadyStatus",
-                    "Bereit für die Kalibration. Bitte mit 'Starten' beginnen und später mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.");
+                    "Bereit fur die Kalibration. Bitte mit Starten beginnen und spater mit Speichern bestatigen oder mit Abbrechen schliessen.");
                 this.startButton.Enabled = true;
                 this.SetCalibrationButtonText(this.startButton, UiLanguage.Get("Calibration.Start", "Starten"));
                 this.saveButton.Enabled = false;
@@ -661,53 +662,10 @@ namespace TrafficView
             }
 
             this.elapsedSeconds++;
-
-            NetworkSnapshot snapshot = NetworkSnapshot.Capture(this.activeSettings);
-            DateTime nowUtc = DateTime.UtcNow;
-
-            if (!snapshot.HasAdapters)
-            {
-                AppLog.WarnOnce(
-                    "calibration-snapshot-unavailable-" + GetCalibrationAdapterLogKey(this.activeSettings),
-                    string.Format(
-                        "Calibration snapshot is temporarily unavailable for '{0}'. Existing measurement state will be preserved.",
-                        this.activeSettings.GetAdapterDisplayName()));
-            }
-
-            if (this.lastSampleUtc != DateTime.MinValue && this.lastSnapshot.HasAdapters && snapshot.HasAdapters)
-            {
-                double elapsed = (nowUtc - this.lastSampleUtc).TotalSeconds;
-                if (elapsed > 0.1D)
-                {
-                    long downloadDiff = snapshot.BytesReceived - this.lastSnapshot.BytesReceived;
-                    long uploadDiff = snapshot.BytesSent - this.lastSnapshot.BytesSent;
-                    long totalDiff = snapshot.TotalBytes - this.lastSnapshot.TotalBytes;
-                    double downloadBytesPerSecond = Math.Max(0L, downloadDiff) / elapsed;
-                    double uploadBytesPerSecond = Math.Max(0L, uploadDiff) / elapsed;
-                    double totalBytesPerSecond = Math.Max(0L, totalDiff) / elapsed;
-                    if (downloadBytesPerSecond > this.peakDownloadBytesPerSecond)
-                    {
-                        this.peakDownloadBytesPerSecond = downloadBytesPerSecond;
-                    }
-
-                    if (uploadBytesPerSecond > this.peakUploadBytesPerSecond)
-                    {
-                        this.peakUploadBytesPerSecond = uploadBytesPerSecond;
-                    }
-
-                    if (totalBytesPerSecond > this.peakBytesPerSecond)
-                    {
-                        this.peakBytesPerSecond = totalBytesPerSecond;
-                    }
-                }
-            }
-
-            this.lastSnapshot = snapshot;
-            this.lastSampleUtc = nowUtc;
             this.progressBar.Value = Math.Min(CalibrationDurationSeconds, this.elapsedSeconds);
             this.statusLabel.Text = UiLanguage.Format(
                 "Calibration.RunningStatus",
-                "Kalibration läuft... {0} / 30 s | DL {1} | UL {2}",
+                "Kalibration laeuft... {0} / 30 s | DL {1} | UL {2}",
                 this.elapsedSeconds,
                 TrafficRateFormatter.FormatSpeed(this.peakDownloadBytesPerSecond),
                 TrafficRateFormatter.FormatSpeed(this.peakUploadBytesPerSecond));
@@ -715,9 +673,85 @@ namespace TrafficView
             if (this.elapsedSeconds >= CalibrationDurationSeconds)
             {
                 this.FinishCalibration();
+                return;
             }
-        }
 
+            if (this.isCapturing)
+            {
+                return;
+            }
+
+            MonitorSettings captureSettings = this.activeSettings.Clone();
+            this.isCapturing = true;
+            Task.Run(() =>
+            {
+                try
+                {
+                    NetworkSnapshot snapshot = NetworkSnapshot.Capture(captureSettings);
+                    DateTime nowUtc = DateTime.UtcNow;
+                    this.BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            if (!snapshot.HasAdapters)
+                            {
+                                AppLog.WarnOnce(
+                                    "calibration-snapshot-unavailable-" + GetCalibrationAdapterLogKey(captureSettings),
+                                    string.Format(
+                                        "Calibration snapshot is temporarily unavailable for {0}. Existing measurement state will be preserved.",
+                                        captureSettings.GetAdapterDisplayName()));
+                            }
+
+                            if (this.lastSampleUtc != DateTime.MinValue && this.lastSnapshot.HasAdapters && snapshot.HasAdapters)
+                            {
+                                double elapsed = (nowUtc - this.lastSampleUtc).TotalSeconds;
+                                if (elapsed > 0.1D)
+                                {
+                                    long downloadDiff = snapshot.BytesReceived - this.lastSnapshot.BytesReceived;
+                                    long uploadDiff = snapshot.BytesSent - this.lastSnapshot.BytesSent;
+                                    long totalDiff = snapshot.TotalBytes - this.lastSnapshot.TotalBytes;
+                                    double downloadBytesPerSecond = Math.Max(0L, downloadDiff) / elapsed;
+                                    double uploadBytesPerSecond = Math.Max(0L, uploadDiff) / elapsed;
+                                    double totalBytesPerSecond = Math.Max(0L, totalDiff) / elapsed;
+                                    if (downloadBytesPerSecond > this.peakDownloadBytesPerSecond)
+                                    {
+                                        this.peakDownloadBytesPerSecond = downloadBytesPerSecond;
+                                    }
+                                    if (uploadBytesPerSecond > this.peakUploadBytesPerSecond)
+                                    {
+                                        this.peakUploadBytesPerSecond = uploadBytesPerSecond;
+                                    }
+                                    if (totalBytesPerSecond > this.peakBytesPerSecond)
+                                    {
+                                        this.peakBytesPerSecond = totalBytesPerSecond;
+                                    }
+                                }
+                            }
+
+                            this.lastSnapshot = snapshot;
+                            this.lastSampleUtc = nowUtc;
+                            this.statusLabel.Text = UiLanguage.Format(
+                                "Calibration.RunningStatus",
+                                "Kalibration laeuft... {0} / 30 s | DL {1} | UL {2}",
+                                this.elapsedSeconds,
+                                TrafficRateFormatter.FormatSpeed(this.peakDownloadBytesPerSecond),
+                                TrafficRateFormatter.FormatSpeed(this.peakUploadBytesPerSecond));
+                        }
+                        catch
+                        {
+                        }
+                        finally
+                        {
+                            this.isCapturing = false;
+                        }
+                    }));
+                }
+                catch
+                {
+                    this.BeginInvoke(new Action(() => { this.isCapturing = false; }));
+                }
+            });
+        }
         private void FinishCalibration()
         {
             this.calibrationTimer.Stop();
@@ -1114,6 +1148,7 @@ namespace TrafficView
                     "Bereit für die Kalibration. Bitte mit 'Starten' beginnen und später mit 'Speichern' bestätigen oder mit 'Abbrechen' schließen.");
             }
         }
+
     }
 
 }
