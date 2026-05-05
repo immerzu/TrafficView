@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -152,6 +152,12 @@ namespace TrafficView
             try
             {
                 List<SkinDeleteTarget> deleteTargets = GetDeleteTargets(normalizedId, definition);
+                if (deleteTargets == null)
+                {
+                    errorMessage = "Der Skin-Pfad konnte nicht aufgeloest werden.";
+                    return false;
+                }
+
                 if (deleteTargets.Count == 0)
                 {
                     errorMessage = "Der Skin-Ordner ist nicht mehr vorhanden.";
@@ -1019,7 +1025,7 @@ namespace TrafficView
                     "skin-delete-path-normalize-failed-" + normalizedId,
                     string.Format("Skin-Pfad konnte nicht normalisiert werden: '{0}'.", definition.DirectoryPath),
                     ex);
-                return new List<SkinDeleteTarget>();
+                return null;
             }
 
             return targets;
