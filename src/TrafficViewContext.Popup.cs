@@ -476,7 +476,13 @@ namespace TrafficView
                 "Leuchtrand");
             this.activityBorderGlowItem.Checked = this.settings.ActivityBorderGlowEnabled;
             this.activityBorderGlowItem.Enabled = !this.settings.TaskbarIntegrationEnabled;
+            this.skinItem.Text = UiLanguage.Get("Menu.Skins", "Skins");
+            this.deleteSkinItem.Text = UiLanguage.Get("Menu.DeleteSkin", "Skin löschen");
 
+            foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.panelSkinMenuItems)
+            {
+                pair.Value.Checked = string.Equals(pair.Key, this.settings.PanelSkinId, StringComparison.OrdinalIgnoreCase);
+            }
             AdapterAvailabilityState adapterAvailabilityState = GetAdapterAvailabilityState(this.settings);
 
             if (this.settings.HasCalibrationData() &&

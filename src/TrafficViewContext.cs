@@ -150,6 +150,8 @@ namespace TrafficView
             this.displayModeItem.DropDownItems.Add(new ToolStripSeparator());
             this.displayModeItem.DropDownItems.Add(this.rotatingGlossItem);
             this.displayModeItem.DropDownItems.Add(this.activityBorderGlowItem);
+            this.displayModeItem.DropDownItems.Add(new ToolStripSeparator());
+            this.displayModeItem.DropDownItems.Add(this.skinItem);
 
             PopupSectionMode[] popupSectionModes = new PopupSectionMode[]
             {
@@ -186,6 +188,7 @@ namespace TrafficView
             this.sharedMenu.Items.Add(this.exitItem);
             this.sharedMenu.Opening += this.Menu_Opening;
             this.sharedMenu.Closed += this.Menu_Closed;
+            this.RebuildPanelSkinMenuItems();
             this.UpdateMenuState();
 
             this.notifyIconHandle = AppIconFactory.CreateAppIcon();

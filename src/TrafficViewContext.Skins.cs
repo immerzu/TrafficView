@@ -236,6 +236,7 @@ namespace TrafficView
                 item.Tag = panelSkinIds[i];
                 this.panelSkinMenuItems[panelSkinIds[i]] = item;
                 this.skinItem.DropDownItems.Add(item);
+                item.Text = this.GetPanelSkinDisplayName(panelSkinIds[i]);
             }
 
             if (this.panelSkinMenuItems.Count > 0)
