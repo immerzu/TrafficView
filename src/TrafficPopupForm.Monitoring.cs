@@ -84,14 +84,8 @@ namespace TrafficView
             }
         }
 
-        private void ApplyTrafficRates(NetworkSnapshot snapshot, DateTime nowUtc, double rawDownloadBytesPerSecond, double rawUploadBytesPerSecond)
+        private void UpdateVisualizationPeaks(double rawDownloadBytesPerSecond, double rawUploadBytesPerSecond)
         {
-            this.lastSampleUtc = nowUtc;
-            this.lastReceivedBytes = snapshot.BytesReceived;
-            this.lastSentBytes = snapshot.BytesSent;
-            this.latestDownloadBytesPerSecond = rawDownloadBytesPerSecond;
-            this.latestUploadBytesPerSecond = rawUploadBytesPerSecond;
-            this.UpdateRingDisplayRates(rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
             this.visualDownloadPeakBytesPerSecond = this.GetVisualizationPeak(
                 rawDownloadBytesPerSecond,
                 this.visualDownloadPeakBytesPerSecond,
@@ -102,6 +96,17 @@ namespace TrafficView
                 this.visualUploadPeakBytesPerSecond,
                 this.settings.GetUploadVisualizationPeak(),
                 false);
+        }
+
+        private void ApplyTrafficRates(DateTime nowUtc, long receivedBytes, long sentBytes, double rawDownloadBytesPerSecond, double rawUploadBytesPerSecond)
+        {
+            this.lastSampleUtc = nowUtc;
+            this.lastReceivedBytes = receivedBytes;
+            this.lastSentBytes = sentBytes;
+            this.latestDownloadBytesPerSecond = rawDownloadBytesPerSecond;
+            this.latestUploadBytesPerSecond = rawUploadBytesPerSecond;
+            this.UpdateRingDisplayRates(rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
+            this.UpdateVisualizationPeaks(rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
 
             TrafficRateSmoothing.AddSample(this.recentDownloadSamples, rawDownloadBytesPerSecond, DisplaySmoothingSampleCount);
             TrafficRateSmoothing.AddSample(this.recentUploadSamples, rawUploadBytesPerSecond, DisplaySmoothingSampleCount);
@@ -165,7 +170,7 @@ namespace TrafficView
                 out rawDownloadBytesPerSecond,
                 out rawUploadBytesPerSecond);
 
-            this.ApplyTrafficRates(snapshot, nowUtc, rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
+            this.ApplyTrafficRates(nowUtc, snapshot.BytesReceived, snapshot.BytesSent, rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
 
             this.downloadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedDownloadBytesPerSecond);
             this.uploadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedUploadBytesPerSecond);
