@@ -215,7 +215,14 @@ namespace TrafficView
 
                 if (!this.IsDisposed)
                 {
-                    this.ProcessTrafficSnapshot(snapshot);
+                    try
+                    {
+                        this.ProcessTrafficSnapshot(snapshot);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] ProcessTrafficSnapshot fehlgeschlagen: {0}", ex.Message));
+                    }
                 }
             }
             finally
