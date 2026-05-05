@@ -4,8 +4,15 @@ namespace TrafficView
 {
     internal sealed partial class TrafficPopupForm
     {
+        private bool isCapturingTrafficSnapshot;
+
         private void RefreshTimer_Tick(object sender, EventArgs e)
         {
+            if (this.isCapturingTrafficSnapshot)
+            {
+                return;
+            }
+
             if (this.IsOverlayDragInProgress())
             {
                 return;
@@ -182,10 +189,39 @@ namespace TrafficView
             this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
         }
 
-        private void RefreshTraffic()
+        private async void RefreshTraffic()
         {
-            NetworkSnapshot snapshot = NetworkSnapshot.Capture(this.settings);
-            this.ProcessTrafficSnapshot(snapshot);
+            if (this.isCapturingTrafficSnapshot)
+            {
+                return;
+            }
+
+            this.isCapturingTrafficSnapshot = true;
+
+            try
+            {
+                MonitorSettings settings = this.settings;
+                NetworkSnapshot snapshot;
+
+                try
+                {
+                    snapshot = await System.Threading.Tasks.Task.Run(() => NetworkSnapshot.Capture(settings));
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] RefreshTraffic-Capture fehlgeschlagen: {0}", ex.Message));
+                    return;
+                }
+
+                if (!this.IsDisposed)
+                {
+                    this.ProcessTrafficSnapshot(snapshot);
+                }
+            }
+            finally
+            {
+                this.isCapturingTrafficSnapshot = false;
+            }
         }
     }
 }
