@@ -118,6 +118,7 @@ namespace TrafficView
             }
             catch
             {
+                System.Diagnostics.Trace.WriteLine("[TrafficView] DiagnosticsExport.TryDeleteFile schlug fehl.");
             }
         }
     }
