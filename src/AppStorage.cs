@@ -239,6 +239,7 @@ namespace TrafficView
             }
             catch
             {
+                System.Diagnostics.Trace.WriteLine("[TrafficView] AppStorage.NormalizePath schlug fehl.");
                 return string.Empty;
             }
         }
