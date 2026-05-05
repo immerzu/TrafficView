@@ -739,6 +739,7 @@ namespace TrafficView
                         }
                         catch
                         {
+                            System.Diagnostics.Trace.WriteLine("[TrafficView] CalibrationForm Capture-Task-Verarbeitung schlug fehl.");
                         }
                         finally
                         {
