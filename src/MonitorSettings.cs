@@ -1401,6 +1401,7 @@ namespace TrafficView
             }
             catch
             {
+                System.Diagnostics.Trace.WriteLine("[TrafficView] MonitorSettings.AreSerializedLinesEqual schlug fehl.");
                 return false;
             }
         }
