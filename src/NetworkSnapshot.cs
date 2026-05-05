@@ -450,9 +450,10 @@ namespace TrafficView
                     AppLog.WarnOnce(
                         "network-getifentry2-result-" + interfaceIndex.ToString(),
                         string.Format(
-                            "GetIfEntry2 failed for interface index {0} with result {1}; falling back if possible.",
+                            "GetIfEntry2 failed for interface index {0} with result {1} (Win32 error 0x{2:X8}); falling back if possible.",
                             interfaceIndex,
-                            result));
+                            result,
+                            System.Runtime.InteropServices.Marshal.GetLastWin32Error()));
                     return false;
                 }
 
@@ -502,8 +503,9 @@ namespace TrafficView
                     return true;
                 }
             }
-            catch (NetworkInformationException)
+            catch (NetworkInformationException ex)
             {
+                System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] IPv4 properties unavailable: {0}", ex.Message));
             }
 
             try
@@ -515,8 +517,9 @@ namespace TrafficView
                     return true;
                 }
             }
-            catch (NetworkInformationException)
+            catch (NetworkInformationException ex2)
             {
+                System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] IPv6 properties unavailable: {0}", ex2.Message));
             }
 
             return false;
