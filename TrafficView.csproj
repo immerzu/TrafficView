@@ -126,6 +126,7 @@
     <Compile Include="src\MonitorSettings.cs" />
     <Compile Include="src\NativeInteropTypes.cs" />
     <Compile Include="src\NetworkSnapshot.cs" />
+    <Compile Include="src\NetworkAdapterClassifier.cs" />
     <Compile Include="src\OverlayInputLabel.cs" />
     <Compile Include="src\PanelSkinDefinition.cs" />
     <Compile Include="src\PanelSkinCatalog.cs" />

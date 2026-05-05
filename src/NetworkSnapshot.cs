@@ -128,14 +128,14 @@ namespace TrafficView
 
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectableInSetup(networkInterface))
+                if (!NetworkAdapterClassifier.IsSelectableInSetup(networkInterface))
                 {
                     continue;
                 }
 
-                bool isAvailable = IsCapturable(networkInterface);
+                bool isAvailable = NetworkAdapterClassifier.IsCapturable(networkInterface);
                 OperationalStatus operationalStatus;
-                string stateText = TryGetOperationalStatus(networkInterface, out operationalStatus) &&
+                string stateText = NetworkAdapterClassifier.TryGetOperationalStatus(networkInterface, out operationalStatus) &&
                     operationalStatus == OperationalStatus.Up
                     ? UiLanguage.Get("Calibration.AdapterStateActive", "aktiv")
                     : UiLanguage.Get("Calibration.AdapterStateInactive", "inaktiv");
@@ -217,7 +217,7 @@ namespace TrafficView
 
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectableInSetup(networkInterface))
+                if (!NetworkAdapterClassifier.IsSelectableInSetup(networkInterface))
                 {
                     continue;
                 }
@@ -227,7 +227,7 @@ namespace TrafficView
                     continue;
                 }
 
-                return IsCapturable(networkInterface)
+                return NetworkAdapterClassifier.IsCapturable(networkInterface)
                     ? AdapterAvailabilityState.Available
                     : AdapterAvailabilityState.Inactive;
             }
@@ -290,7 +290,7 @@ namespace TrafficView
         {
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectableInSetup(networkInterface))
+                if (!NetworkAdapterClassifier.IsSelectableInSetup(networkInterface))
                 {
                     continue;
                 }
@@ -300,7 +300,7 @@ namespace TrafficView
                     continue;
                 }
 
-                if (!IsCapturable(networkInterface))
+                if (!NetworkAdapterClassifier.IsCapturable(networkInterface))
                 {
                     return new NetworkSnapshot(0L, 0L, 0, networkInterface.Name);
                 }
@@ -318,132 +318,13 @@ namespace TrafficView
             return new NetworkSnapshot(0L, 0L, 0, settings.AdapterName);
         }
 
-        private static bool IsSelectable(NetworkInterface networkInterface)
-        {
-            if (networkInterface == null)
-            {
-                return false;
-            }
 
-            NetworkInterfaceType type;
-            try
-            {
-                type = networkInterface.NetworkInterfaceType;
-            }
-            catch (NetworkInformationException)
-            {
-                return false;
-            }
 
-            if (type == NetworkInterfaceType.Loopback ||
-                type == NetworkInterfaceType.Tunnel ||
-                type == NetworkInterfaceType.Unknown)
-            {
-                return false;
-            }
 
-            if (LooksLikeAuxiliaryVirtualAdapter(networkInterface))
-            {
-                return false;
-            }
 
-            try
-            {
-                if (networkInterface.IsReceiveOnly)
-                {
-                    return false;
-                }
-            }
-            catch (NetworkInformationException)
-            {
-                return false;
-            }
 
-            return SupportsTrafficProtocols(networkInterface);
-        }
 
-        private static bool IsSelectableInSetup(NetworkInterface networkInterface)
-        {
-            return IsSelectable(networkInterface) &&
-                !LooksLikeVirtualAdapterForSetup(networkInterface);
-        }
 
-        private static bool LooksLikeAuxiliaryVirtualAdapter(NetworkInterface networkInterface)
-        {
-            string name = SafeInterfaceText(networkInterface != null ? networkInterface.Name : null);
-            string description = SafeInterfaceText(networkInterface != null ? networkInterface.Description : null);
-
-            return ContainsAuxiliaryInterfaceMarker(name) ||
-                ContainsAuxiliaryInterfaceMarker(description);
-        }
-
-        private static bool LooksLikeVirtualAdapterForSetup(NetworkInterface networkInterface)
-        {
-            string name = SafeInterfaceText(networkInterface != null ? networkInterface.Name : null);
-            string description = SafeInterfaceText(networkInterface != null ? networkInterface.Description : null);
-
-            return ContainsVirtualAdapterMarker(name) ||
-                ContainsVirtualAdapterMarker(description);
-        }
-
-        private static string SafeInterfaceText(string value)
-        {
-            return string.IsNullOrWhiteSpace(value)
-                ? string.Empty
-                : value.Trim().ToLowerInvariant();
-        }
-
-        private static bool ContainsAuxiliaryInterfaceMarker(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return false;
-            }
-
-            return value.Contains("ndis 6 filter") ||
-                value.Contains("lightweight filter") ||
-                value.Contains("filter driver") ||
-                value.Contains("qos packet scheduler") ||
-                value.Contains("kerneldebugger") ||
-                value.Contains("kernel debugger") ||
-                value.Contains("pseudo-interface") ||
-                value.Contains("wi-fi direct") ||
-                value.Contains("wifi direct") ||
-                value.Contains("virtual wifi");
-        }
-
-        private static bool ContainsVirtualAdapterMarker(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return false;
-            }
-
-            return value.Contains("virtual") ||
-                value.Contains("vpn") ||
-                value.Contains("tunnel") ||
-                value.Contains("tap-") ||
-                value.Contains("tap ") ||
-                value.Contains("tap-windows") ||
-                value.Contains("wireguard") ||
-                value.Contains("mullvad") ||
-                value.Contains("openvpn") ||
-                value.Contains("hyper-v") ||
-                value.Contains("vethernet") ||
-                value.Contains("wi-fi direct") ||
-                value.Contains("wifi direct") ||
-                value.Contains("pseudo-interface") ||
-                value.Contains("pseudo interface");
-        }
-
-        private static bool IsCapturable(NetworkInterface networkInterface)
-        {
-            OperationalStatus operationalStatus;
-            return IsSelectable(networkInterface) &&
-                TryGetOperationalStatus(networkInterface, out operationalStatus) &&
-                operationalStatus == OperationalStatus.Up &&
-                HasUsableUnicastAddress(networkInterface);
-        }
 
         private static NetworkInterface SelectAutomaticAdapter(NetworkInterface[] interfaces)
         {
@@ -458,14 +339,14 @@ namespace TrafficView
 
             foreach (NetworkInterface networkInterface in interfaces)
             {
-                if (!IsSelectableInSetup(networkInterface) || !IsCapturable(networkInterface))
+                if (!NetworkAdapterClassifier.IsSelectableInSetup(networkInterface) || !NetworkAdapterClassifier.IsCapturable(networkInterface))
                 {
                     continue;
                 }
 
-                int typePriority = GetAutomaticAdapterTypePriority(networkInterface);
+                int typePriority = NetworkAdapterClassifier.GetAutomaticAdapterTypePriority(networkInterface);
                 long speed;
-                if (!TryGetInterfaceSpeed(networkInterface, out speed))
+                if (!NetworkAdapterClassifier.TryGetInterfaceSpeed(networkInterface, out speed))
                 {
                     speed = 0L;
                 }
@@ -492,62 +373,7 @@ namespace TrafficView
             return bestAdapter;
         }
 
-        private static int GetAutomaticAdapterTypePriority(NetworkInterface networkInterface)
-        {
-            if (networkInterface == null)
-            {
-                return 0;
-            }
 
-            NetworkInterfaceType type;
-            try
-            {
-                type = networkInterface.NetworkInterfaceType;
-            }
-            catch (NetworkInformationException)
-            {
-                return 0;
-            }
-
-            switch (type)
-            {
-                case NetworkInterfaceType.Ethernet:
-                case NetworkInterfaceType.GigabitEthernet:
-                case NetworkInterfaceType.FastEthernetFx:
-                case NetworkInterfaceType.FastEthernetT:
-                    return 300;
-                case NetworkInterfaceType.Wireless80211:
-                    return 250;
-                case NetworkInterfaceType.Ppp:
-                    return 200;
-                default:
-                    return 100;
-            }
-        }
-
-        private static bool TryGetInterfaceSpeed(NetworkInterface networkInterface, out long speed)
-        {
-            speed = 0L;
-
-            if (networkInterface == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                speed = Math.Max(0L, networkInterface.Speed);
-                return true;
-            }
-            catch (NetworkInformationException)
-            {
-                return false;
-            }
-            catch (NotSupportedException)
-            {
-                return false;
-            }
-        }
 
         private static bool TryReadStatistics(
             NetworkInterface networkInterface,
@@ -662,7 +488,7 @@ namespace TrafficView
             interfaceIndex = 0U;
 
             IPInterfaceProperties properties;
-            if (!TryGetIpProperties(networkInterface, out properties) || properties == null)
+            if (!NetworkAdapterClassifier.TryGetIpProperties(networkInterface, out properties) || properties == null)
             {
                 return false;
             }
@@ -696,92 +522,9 @@ namespace TrafficView
             return false;
         }
 
-        private static bool SupportsTrafficProtocols(NetworkInterface networkInterface)
-        {
-            try
-            {
-                return networkInterface.Supports(NetworkInterfaceComponent.IPv4) ||
-                    networkInterface.Supports(NetworkInterfaceComponent.IPv6);
-            }
-            catch (NetworkInformationException)
-            {
-                return false;
-            }
-            catch (NotSupportedException)
-            {
-                return false;
-            }
-        }
 
-        private static bool TryGetOperationalStatus(NetworkInterface networkInterface, out OperationalStatus operationalStatus)
-        {
-            operationalStatus = OperationalStatus.Unknown;
 
-            if (networkInterface == null)
-            {
-                return false;
-            }
 
-            try
-            {
-                operationalStatus = networkInterface.OperationalStatus;
-                return true;
-            }
-            catch (NetworkInformationException)
-            {
-                return false;
-            }
-        }
-
-        private static bool HasUsableUnicastAddress(NetworkInterface networkInterface)
-        {
-            IPInterfaceProperties properties;
-            if (!TryGetIpProperties(networkInterface, out properties) || properties == null)
-            {
-                return false;
-            }
-
-            foreach (UnicastIPAddressInformation addressInformation in properties.UnicastAddresses)
-            {
-                if (addressInformation == null || addressInformation.Address == null)
-                {
-                    continue;
-                }
-
-                if (System.Net.IPAddress.IsLoopback(addressInformation.Address))
-                {
-                    continue;
-                }
-
-                if (addressInformation.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ||
-                    addressInformation.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool TryGetIpProperties(NetworkInterface networkInterface, out IPInterfaceProperties properties)
-        {
-            properties = null;
-
-            if (networkInterface == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                properties = networkInterface.GetIPProperties();
-                return properties != null;
-            }
-            catch (NetworkInformationException)
-            {
-                return false;
-            }
-        }
 
         private static MibIfRow2 CreateEmptyMibIfRow2()
         {
