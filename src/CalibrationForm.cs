@@ -650,7 +650,7 @@ namespace TrafficView
                 this.progressBar.Value = 0;
                 this.statusLabel.Text = UiLanguage.Get(
                     "Calibration.ReadyStatus",
-                    "Bereit fur die Kalibration. Bitte mit Starten beginnen und spater mit Speichern bestatigen oder mit Abbrechen schliessen.");
+                    "Bereit für die Kalibration. Bitte mit Starten beginnen und später mit Speichern bestätigen oder mit Abbrechen schließen.");
                 this.startButton.Enabled = true;
                 this.SetCalibrationButtonText(this.startButton, UiLanguage.Get("Calibration.Start", "Starten"));
                 this.saveButton.Enabled = false;

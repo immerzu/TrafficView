@@ -417,7 +417,7 @@ namespace TrafficView
                 this.settings.TransparencyPercent);
             this.sizeItem.Text = UiLanguage.Format(
                 "Menu.SizeFormat",
-                "Göße ({0} %)",
+                "Größe ({0} %)",
                 this.settings.PopupScalePercent);
             this.displayModeItem.Text = UiLanguage.Get(
                 "Menu.DisplayMode",
