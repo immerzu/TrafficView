@@ -53,23 +53,39 @@ namespace TrafficView
             get { return this.topMostPauseDepth > 0; }
         }
 
-        private void ComputeTrafficRates(NetworkSnapshot snapshot, DateTime nowUtc)
+        private static void ComputeRawTrafficRates(
+            NetworkSnapshot snapshot,
+            long lastReceivedBytes,
+            long lastSentBytes,
+            DateTime lastSampleUtc,
+            DateTime nowUtc,
+            out long measuredDownloadBytes,
+            out long measuredUploadBytes,
+            out double downloadBytesPerSecond,
+            out double uploadBytesPerSecond)
         {
-            double downloadBytesPerSecond = 0D;
-            double uploadBytesPerSecond = 0D;
+            measuredDownloadBytes = 0L;
+            measuredUploadBytes = 0L;
+            downloadBytesPerSecond = 0D;
+            uploadBytesPerSecond = 0D;
 
-            if (this.lastSampleUtc != DateTime.MinValue)
+            if (lastSampleUtc != DateTime.MinValue)
             {
-                long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
-                long sentDiff = snapshot.BytesSent - this.lastSentBytes;
-                double elapsedSeconds = (nowUtc - this.lastSampleUtc).TotalSeconds;
+                long receivedDiff = snapshot.BytesReceived - lastReceivedBytes;
+                long sentDiff = snapshot.BytesSent - lastSentBytes;
+                measuredDownloadBytes = Math.Max(0L, receivedDiff);
+                measuredUploadBytes = Math.Max(0L, sentDiff);
+                double elapsedSeconds = (nowUtc - lastSampleUtc).TotalSeconds;
                 if (elapsedSeconds > 0.1D)
                 {
-                    downloadBytesPerSecond = Math.Max(0L, receivedDiff) / elapsedSeconds;
-                    uploadBytesPerSecond = Math.Max(0L, sentDiff) / elapsedSeconds;
+                    downloadBytesPerSecond = measuredDownloadBytes / elapsedSeconds;
+                    uploadBytesPerSecond = measuredUploadBytes / elapsedSeconds;
                 }
             }
+        }
 
+        private void ComputeTrafficRates(NetworkSnapshot snapshot, DateTime nowUtc, double downloadBytesPerSecond, double uploadBytesPerSecond)
+        {
             this.lastSampleUtc = nowUtc;
             this.lastReceivedBytes = snapshot.BytesReceived;
             this.lastSentBytes = snapshot.BytesSent;
@@ -134,16 +150,22 @@ namespace TrafficView
             }
 
             DateTime nowUtc = DateTime.UtcNow;
-            long measuredDownloadBytes = 0L;
-            long measuredUploadBytes = 0L;
+            long measuredDownloadBytes;
+            long measuredUploadBytes;
+            double downloadBytesPerSecond;
+            double uploadBytesPerSecond;
+            ComputeRawTrafficRates(
+                snapshot,
+                this.lastReceivedBytes,
+                this.lastSentBytes,
+                this.lastSampleUtc,
+                nowUtc,
+                out measuredDownloadBytes,
+                out measuredUploadBytes,
+                out downloadBytesPerSecond,
+                out uploadBytesPerSecond);
 
-            if (this.lastSampleUtc != DateTime.MinValue)
-            {
-                measuredDownloadBytes = Math.Max(0L, snapshot.BytesReceived - this.lastReceivedBytes);
-                measuredUploadBytes = Math.Max(0L, snapshot.BytesSent - this.lastSentBytes);
-            }
-
-            this.ComputeTrafficRates(snapshot, nowUtc);
+            this.ComputeTrafficRates(snapshot, nowUtc, downloadBytesPerSecond, uploadBytesPerSecond);
 
             this.downloadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedDownloadBytesPerSecond);
             this.uploadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedUploadBytesPerSecond);
