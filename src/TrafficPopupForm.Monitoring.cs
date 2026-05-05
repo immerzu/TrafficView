@@ -84,27 +84,27 @@ namespace TrafficView
             }
         }
 
-        private void ComputeTrafficRates(NetworkSnapshot snapshot, DateTime nowUtc, double downloadBytesPerSecond, double uploadBytesPerSecond)
+        private void ApplyTrafficRates(NetworkSnapshot snapshot, DateTime nowUtc, double rawDownloadBytesPerSecond, double rawUploadBytesPerSecond)
         {
             this.lastSampleUtc = nowUtc;
             this.lastReceivedBytes = snapshot.BytesReceived;
             this.lastSentBytes = snapshot.BytesSent;
-            this.latestDownloadBytesPerSecond = downloadBytesPerSecond;
-            this.latestUploadBytesPerSecond = uploadBytesPerSecond;
-            this.UpdateRingDisplayRates(downloadBytesPerSecond, uploadBytesPerSecond);
+            this.latestDownloadBytesPerSecond = rawDownloadBytesPerSecond;
+            this.latestUploadBytesPerSecond = rawUploadBytesPerSecond;
+            this.UpdateRingDisplayRates(rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
             this.visualDownloadPeakBytesPerSecond = this.GetVisualizationPeak(
-                downloadBytesPerSecond,
+                rawDownloadBytesPerSecond,
                 this.visualDownloadPeakBytesPerSecond,
                 this.settings.GetDownloadVisualizationPeak(),
                 true);
             this.visualUploadPeakBytesPerSecond = this.GetVisualizationPeak(
-                uploadBytesPerSecond,
+                rawUploadBytesPerSecond,
                 this.visualUploadPeakBytesPerSecond,
                 this.settings.GetUploadVisualizationPeak(),
                 false);
 
-            TrafficRateSmoothing.AddSample(this.recentDownloadSamples, downloadBytesPerSecond, DisplaySmoothingSampleCount);
-            TrafficRateSmoothing.AddSample(this.recentUploadSamples, uploadBytesPerSecond, DisplaySmoothingSampleCount);
+            TrafficRateSmoothing.AddSample(this.recentDownloadSamples, rawDownloadBytesPerSecond, DisplaySmoothingSampleCount);
+            TrafficRateSmoothing.AddSample(this.recentUploadSamples, rawUploadBytesPerSecond, DisplaySmoothingSampleCount);
             double smoothedDownloadBytesPerSecond = TrafficRateSmoothing.GetSmoothedRate(this.recentDownloadSamples, DisplaySmoothingWeights);
             double smoothedUploadBytesPerSecond = TrafficRateSmoothing.GetSmoothedRate(this.recentUploadSamples, DisplaySmoothingWeights);
 
@@ -152,8 +152,8 @@ namespace TrafficView
             DateTime nowUtc = DateTime.UtcNow;
             long measuredDownloadBytes;
             long measuredUploadBytes;
-            double downloadBytesPerSecond;
-            double uploadBytesPerSecond;
+            double rawDownloadBytesPerSecond;
+            double rawUploadBytesPerSecond;
             ComputeRawTrafficRates(
                 snapshot,
                 this.lastReceivedBytes,
@@ -162,10 +162,10 @@ namespace TrafficView
                 nowUtc,
                 out measuredDownloadBytes,
                 out measuredUploadBytes,
-                out downloadBytesPerSecond,
-                out uploadBytesPerSecond);
+                out rawDownloadBytesPerSecond,
+                out rawUploadBytesPerSecond);
 
-            this.ComputeTrafficRates(snapshot, nowUtc, downloadBytesPerSecond, uploadBytesPerSecond);
+            this.ApplyTrafficRates(snapshot, nowUtc, rawDownloadBytesPerSecond, rawUploadBytesPerSecond);
 
             this.downloadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedDownloadBytesPerSecond);
             this.uploadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedUploadBytesPerSecond);
