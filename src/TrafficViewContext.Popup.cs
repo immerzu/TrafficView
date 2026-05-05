@@ -477,6 +477,7 @@ namespace TrafficView
             this.activityBorderGlowItem.Checked = this.settings.ActivityBorderGlowEnabled;
             this.activityBorderGlowItem.Enabled = !this.settings.TaskbarIntegrationEnabled;
             this.skinItem.Text = UiLanguage.Get("Menu.Skins", "Skins");
+            this.skinItem.Visible = this.panelSkinMenuItems.Count > 0;
             this.deleteSkinItem.Text = UiLanguage.Get("Menu.DeleteSkin", "Skin löschen");
 
             foreach (KeyValuePair<string, ToolStripMenuItem> pair in this.panelSkinMenuItems)
