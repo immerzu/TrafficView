@@ -823,6 +823,7 @@ namespace TrafficView
             }
             catch
             {
+                System.Diagnostics.Trace.WriteLine("[TrafficView] UsageSummaryForm Logo konnte nicht geladen werden.");
                 return null;
             }
         }
