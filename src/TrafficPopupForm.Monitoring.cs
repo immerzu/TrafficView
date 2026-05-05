@@ -119,10 +119,8 @@ namespace TrafficView
             this.AddTrafficHistorySample(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
         }
 
-        private void RefreshTraffic()
+        private void ProcessTrafficSnapshot(NetworkSnapshot snapshot)
         {
-            NetworkSnapshot snapshot = NetworkSnapshot.Capture(this.settings);
-
             if (!snapshot.HasAdapters)
             {
                 this.lastSampleUtc = DateTime.MinValue;
@@ -182,6 +180,12 @@ namespace TrafficView
 
             this.OnRatesUpdated(this.displayedDownloadBytesPerSecond, this.displayedUploadBytesPerSecond);
             this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
+        }
+
+        private void RefreshTraffic()
+        {
+            NetworkSnapshot snapshot = NetworkSnapshot.Capture(this.settings);
+            this.ProcessTrafficSnapshot(snapshot);
         }
     }
 }
