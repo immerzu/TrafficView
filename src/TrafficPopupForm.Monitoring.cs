@@ -53,6 +53,51 @@ namespace TrafficView
             get { return this.topMostPauseDepth > 0; }
         }
 
+        private void ComputeTrafficRates(NetworkSnapshot snapshot, DateTime nowUtc)
+        {
+            double downloadBytesPerSecond = 0D;
+            double uploadBytesPerSecond = 0D;
+
+            if (this.lastSampleUtc != DateTime.MinValue)
+            {
+                long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
+                long sentDiff = snapshot.BytesSent - this.lastSentBytes;
+                double elapsedSeconds = (nowUtc - this.lastSampleUtc).TotalSeconds;
+                if (elapsedSeconds > 0.1D)
+                {
+                    downloadBytesPerSecond = Math.Max(0L, receivedDiff) / elapsedSeconds;
+                    uploadBytesPerSecond = Math.Max(0L, sentDiff) / elapsedSeconds;
+                }
+            }
+
+            this.lastSampleUtc = nowUtc;
+            this.lastReceivedBytes = snapshot.BytesReceived;
+            this.lastSentBytes = snapshot.BytesSent;
+            this.latestDownloadBytesPerSecond = downloadBytesPerSecond;
+            this.latestUploadBytesPerSecond = uploadBytesPerSecond;
+            this.UpdateRingDisplayRates(downloadBytesPerSecond, uploadBytesPerSecond);
+            this.visualDownloadPeakBytesPerSecond = this.GetVisualizationPeak(
+                downloadBytesPerSecond,
+                this.visualDownloadPeakBytesPerSecond,
+                this.settings.GetDownloadVisualizationPeak(),
+                true);
+            this.visualUploadPeakBytesPerSecond = this.GetVisualizationPeak(
+                uploadBytesPerSecond,
+                this.visualUploadPeakBytesPerSecond,
+                this.settings.GetUploadVisualizationPeak(),
+                false);
+
+            TrafficRateSmoothing.AddSample(this.recentDownloadSamples, downloadBytesPerSecond, DisplaySmoothingSampleCount);
+            TrafficRateSmoothing.AddSample(this.recentUploadSamples, uploadBytesPerSecond, DisplaySmoothingSampleCount);
+            double smoothedDownloadBytesPerSecond = TrafficRateSmoothing.GetSmoothedRate(this.recentDownloadSamples, DisplaySmoothingWeights);
+            double smoothedUploadBytesPerSecond = TrafficRateSmoothing.GetSmoothedRate(this.recentUploadSamples, DisplaySmoothingWeights);
+
+            this.displayedDownloadBytesPerSecond = smoothedDownloadBytesPerSecond;
+            this.displayedUploadBytesPerSecond = smoothedUploadBytesPerSecond;
+            this.UpdatePeakHoldRates(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond, nowUtc);
+            this.AddTrafficHistorySample(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
+        }
+
         private void RefreshTraffic()
         {
             NetworkSnapshot snapshot = NetworkSnapshot.Capture(this.settings);
@@ -89,60 +134,26 @@ namespace TrafficView
             }
 
             DateTime nowUtc = DateTime.UtcNow;
-            double downloadBytesPerSecond = 0D;
-            double uploadBytesPerSecond = 0D;
             long measuredDownloadBytes = 0L;
             long measuredUploadBytes = 0L;
 
             if (this.lastSampleUtc != DateTime.MinValue)
             {
-                long receivedDiff = snapshot.BytesReceived - this.lastReceivedBytes;
-                long sentDiff = snapshot.BytesSent - this.lastSentBytes;
-                measuredDownloadBytes = Math.Max(0L, receivedDiff);
-                measuredUploadBytes = Math.Max(0L, sentDiff);
-                double elapsedSeconds = (nowUtc - this.lastSampleUtc).TotalSeconds;
-                if (elapsedSeconds > 0.1D)
-                {
-                    downloadBytesPerSecond = measuredDownloadBytes / elapsedSeconds;
-                    uploadBytesPerSecond = measuredUploadBytes / elapsedSeconds;
-                }
+                measuredDownloadBytes = Math.Max(0L, snapshot.BytesReceived - this.lastReceivedBytes);
+                measuredUploadBytes = Math.Max(0L, snapshot.BytesSent - this.lastSentBytes);
             }
 
-            this.lastSampleUtc = nowUtc;
-            this.lastReceivedBytes = snapshot.BytesReceived;
-            this.lastSentBytes = snapshot.BytesSent;
-            this.latestDownloadBytesPerSecond = downloadBytesPerSecond;
-            this.latestUploadBytesPerSecond = uploadBytesPerSecond;
-            this.UpdateRingDisplayRates(downloadBytesPerSecond, uploadBytesPerSecond);
-            this.visualDownloadPeakBytesPerSecond = this.GetVisualizationPeak(
-                downloadBytesPerSecond,
-                this.visualDownloadPeakBytesPerSecond,
-                this.settings.GetDownloadVisualizationPeak(),
-                true);
-            this.visualUploadPeakBytesPerSecond = this.GetVisualizationPeak(
-                uploadBytesPerSecond,
-                this.visualUploadPeakBytesPerSecond,
-                this.settings.GetUploadVisualizationPeak(),
-                false);
+            this.ComputeTrafficRates(snapshot, nowUtc);
 
-            TrafficRateSmoothing.AddSample(this.recentDownloadSamples, downloadBytesPerSecond, DisplaySmoothingSampleCount);
-            TrafficRateSmoothing.AddSample(this.recentUploadSamples, uploadBytesPerSecond, DisplaySmoothingSampleCount);
-            double smoothedDownloadBytesPerSecond = TrafficRateSmoothing.GetSmoothedRate(this.recentDownloadSamples, DisplaySmoothingWeights);
-            double smoothedUploadBytesPerSecond = TrafficRateSmoothing.GetSmoothedRate(this.recentUploadSamples, DisplaySmoothingWeights);
-
-            this.displayedDownloadBytesPerSecond = smoothedDownloadBytesPerSecond;
-            this.displayedUploadBytesPerSecond = smoothedUploadBytesPerSecond;
-            this.UpdatePeakHoldRates(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond, nowUtc);
-            this.downloadValueLabel.Text = TrafficRateFormatter.FormatSpeed(smoothedDownloadBytesPerSecond);
-            this.uploadValueLabel.Text = TrafficRateFormatter.FormatSpeed(smoothedUploadBytesPerSecond);
-            this.AddTrafficHistorySample(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
+            this.downloadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedDownloadBytesPerSecond);
+            this.uploadValueLabel.Text = TrafficRateFormatter.FormatSpeed(this.displayedUploadBytesPerSecond);
             this.UpdateAnimationTimerState();
             if (this.Visible && !this.ShouldDeferVisualSurfaceRefreshDuringManualDrag())
             {
                 this.RefreshVisualSurface();
             }
 
-            this.OnRatesUpdated(smoothedDownloadBytesPerSecond, smoothedUploadBytesPerSecond);
+            this.OnRatesUpdated(this.displayedDownloadBytesPerSecond, this.displayedUploadBytesPerSecond);
             this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
         }
     }
