@@ -46,34 +46,6 @@ namespace TrafficView
             }
         }
 
-        private static Bitmap GetPanelOverlayAssetFromDirectory(string assetDirectoryPath, Size targetSize)
-        {
-            string normalizedDirectoryPath = string.IsNullOrWhiteSpace(assetDirectoryPath)
-                ? AppStorage.BaseDirectory
-                : assetDirectoryPath;
-
-            lock (PanelBackgroundAssetSync)
-            {
-                bool loadAttempted;
-                if (!PanelOverlayAssetLoadAttemptedByDirectory.TryGetValue(normalizedDirectoryPath, out loadAttempted) || !loadAttempted)
-                {
-                    Dictionary<string, Bitmap> assets = LoadPanelOverlayAssets(normalizedDirectoryPath);
-                    CachedPanelOverlayAssetsByDirectory[normalizedDirectoryPath] = assets;
-                    PanelOverlayAssetLoadAttemptedByDirectory[normalizedDirectoryPath] = true;
-                }
-
-                Dictionary<string, Bitmap> cachedAssets;
-                if (!CachedPanelOverlayAssetsByDirectory.TryGetValue(normalizedDirectoryPath, out cachedAssets) ||
-                    cachedAssets == null ||
-                    cachedAssets.Count == 0)
-                {
-                    return null;
-                }
-
-                return SelectBestPanelBackgroundAsset(cachedAssets, targetSize);
-            }
-        }
-
         internal static void ReleasePanelBackgroundAssetCache(string assetDirectoryPath)
         {
             string normalizedDirectoryPath = string.IsNullOrWhiteSpace(assetDirectoryPath)
@@ -97,22 +69,6 @@ namespace TrafficView
 
                 CachedPanelBackgroundAssetsByDirectory.Remove(normalizedDirectoryPath);
                 PanelBackgroundAssetLoadAttemptedByDirectory.Remove(normalizedDirectoryPath);
-
-                Dictionary<string, Bitmap> cachedOverlayAssets;
-                if (CachedPanelOverlayAssetsByDirectory.TryGetValue(normalizedDirectoryPath, out cachedOverlayAssets) &&
-                    cachedOverlayAssets != null)
-                {
-                    foreach (KeyValuePair<string, Bitmap> asset in cachedOverlayAssets)
-                    {
-                        if (asset.Value != null)
-                        {
-                            asset.Value.Dispose();
-                        }
-                    }
-                }
-
-                CachedPanelOverlayAssetsByDirectory.Remove(normalizedDirectoryPath);
-                PanelOverlayAssetLoadAttemptedByDirectory.Remove(normalizedDirectoryPath);
             }
         }
 
@@ -157,29 +113,6 @@ namespace TrafficView
             }
 
             return loadedAssets;
-        }
-
-        private static string[] GetPanelOverlayAssetPaths(string assetDirectoryPath)
-        {
-            string normalizedDirectoryPath = string.IsNullOrWhiteSpace(assetDirectoryPath)
-                ? AppStorage.BaseDirectory
-                : assetDirectoryPath;
-            List<string> assetPaths = new List<string>();
-
-            for (int i = 0; i < PanelBackgroundPreparedScalePercents.Length; i++)
-            {
-                int scalePercent = PanelBackgroundPreparedScalePercents[i];
-                string fileName = scalePercent == 100
-                    ? PanelOverlayAssetFileName
-                    : string.Format(PanelOverlayScaledAssetFileNameFormat, scalePercent);
-                string assetPath = Path.Combine(normalizedDirectoryPath, fileName);
-                if (File.Exists(assetPath))
-                {
-                    assetPaths.Add(assetPath);
-                }
-            }
-
-            return assetPaths.ToArray();
         }
 
         private static string[] GetPanelBackgroundAssetPaths(string assetDirectoryPath)
@@ -231,36 +164,6 @@ namespace TrafficView
             long heightDelta = Math.Abs(assetSize.Height - targetSize.Height);
             long areaDelta = Math.Abs((assetSize.Width * assetSize.Height) - (targetSize.Width * targetSize.Height));
             return (widthDelta * widthDelta) + (heightDelta * heightDelta) + areaDelta;
-        }
-
-        private static Dictionary<string, Bitmap> LoadPanelOverlayAssets(string assetDirectoryPath)
-        {
-            Dictionary<string, Bitmap> loadedAssets = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
-            string[] assetPaths = GetPanelOverlayAssetPaths(assetDirectoryPath);
-
-            for (int i = 0; i < assetPaths.Length; i++)
-            {
-                string assetPath = assetPaths[i];
-
-                try
-                {
-                    using (Image image = Image.FromFile(assetPath))
-                    {
-                        loadedAssets[assetPath] = new Bitmap(image);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppLog.WarnOnce(
-                        "panel-overlay-asset-load-failed-" + assetPath,
-                        string.Format(
-                            "The panel overlay asset could not be loaded from '{0}'.",
-                            assetPath),
-                        ex);
-                }
-            }
-
-            return loadedAssets;
         }
     }
 }

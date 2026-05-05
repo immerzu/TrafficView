@@ -219,8 +219,6 @@ namespace TrafficView
         private const int MiniGraphUploadPeakMarkerAlpha = 176;
         private const string PanelBackgroundAssetFileName = "TrafficView.panel.png";
         private const string PanelBackgroundScaledAssetFileNameFormat = "TrafficView.panel.{0}.png";
-        private const string PanelOverlayAssetFileName = "TrafficView.overlay.panel.png";
-        private const string PanelOverlayScaledAssetFileNameFormat = "TrafficView.overlay.panel.{0}.png";
         private const string SimpleModeAssetDirectoryName = "Simple";
         private const string SimpleBlueModeAssetDirectoryName = "SimpleBlue";
         private static readonly double[] DisplaySmoothingWeights = new double[] { 0.15D, 0.30D, 0.55D };
@@ -229,10 +227,6 @@ namespace TrafficView
         private static readonly Dictionary<string, Dictionary<string, Bitmap>> CachedPanelBackgroundAssetsByDirectory =
             new Dictionary<string, Dictionary<string, Bitmap>>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, bool> PanelBackgroundAssetLoadAttemptedByDirectory =
-            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, Dictionary<string, Bitmap>> CachedPanelOverlayAssetsByDirectory =
-            new Dictionary<string, Dictionary<string, Bitmap>>(StringComparer.OrdinalIgnoreCase);
-        private static readonly Dictionary<string, bool> PanelOverlayAssetLoadAttemptedByDirectory =
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private static readonly object MeterCenterAssetSync = new object();
         private static string cachedMeterCenterAssetPath = string.Empty;
