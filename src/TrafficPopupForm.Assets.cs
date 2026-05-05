@@ -64,6 +64,39 @@ namespace TrafficView
                     }
                 }
 
+                Bitmap panelOverlayAsset = GetPanelOverlayAssetFromDirectory(
+                    this.GetActivePanelAssetDirectoryPath(),
+                    this.ClientSize);
+                if (panelOverlayAsset != null)
+                {
+                    using (Bitmap adjustedOverlay = CreateSelectiveTransparencyBitmap(panelOverlayAsset, backgroundAlpha))
+                    {
+                        if (adjustedOverlay.Width == this.ClientSize.Width &&
+                            adjustedOverlay.Height == this.ClientSize.Height)
+                        {
+                            graphics.DrawImage(
+                                adjustedOverlay,
+                                new Rectangle(0, 0, adjustedOverlay.Width, adjustedOverlay.Height),
+                                0,
+                                0,
+                                adjustedOverlay.Width,
+                                adjustedOverlay.Height,
+                                GraphicsUnit.Pixel);
+                        }
+                        else
+                        {
+                            graphics.DrawImage(
+                                adjustedOverlay,
+                                new Rectangle(0, 0, this.ClientSize.Width, this.ClientSize.Height),
+                                0,
+                                0,
+                                adjustedOverlay.Width,
+                                adjustedOverlay.Height,
+                                GraphicsUnit.Pixel);
+                        }
+                    }
+                }
+
                 return true;
             }
             catch (ExternalException ex)
