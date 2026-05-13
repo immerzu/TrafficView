@@ -288,10 +288,35 @@ namespace TrafficView
                     return false;
                 }
 
+                const long MaxPngFileBytes = 2L * 1024L * 1024L;
+                const int MaxBitmapDimension = 4096;
+
+                FileInfo pngFileInfo = new FileInfo(assetPath);
+                if (pngFileInfo.Length > MaxPngFileBytes)
+                {
+                    errorMessage = string.Format(
+                        "Die Skin-Datei '{0}' ist zu gross ({1:N0} Bytes, Maximum {2:N0} Bytes).",
+                        fileName,
+                        pngFileInfo.Length,
+                        MaxPngFileBytes);
+                    return false;
+                }
+
                 try
                 {
                     using (Bitmap bitmap = new Bitmap(assetPath))
                     {
+                        if (bitmap.Width > MaxBitmapDimension || bitmap.Height > MaxBitmapDimension)
+                        {
+                            errorMessage = string.Format(
+                                "Die Skin-Datei '{0}' hat zu grosse Abmessungen ({1}x{2}, Maximum {3}x{3}).",
+                                fileName,
+                                bitmap.Width,
+                                bitmap.Height,
+                                MaxBitmapDimension);
+                            return false;
+                        }
+
                         if (bitmap.Width != expectedSize.Width || bitmap.Height != expectedSize.Height)
                         {
                             errorMessage = string.Format(
@@ -349,8 +374,20 @@ namespace TrafficView
             clientSize = null;
             errorMessage = string.Empty;
 
+            const long MaxSkinIniBytes = 64L * 1024L;
+
             try
             {
+                FileInfo iniFileInfo = new FileInfo(settingsPath);
+                if (iniFileInfo.Length > MaxSkinIniBytes)
+                {
+                    errorMessage = string.Format(
+                        "Die skin.ini ist zu gross ({0:N0} Bytes, Maximum {1:N0} Bytes).",
+                        iniFileInfo.Length,
+                        MaxSkinIniBytes);
+                    return false;
+                }
+
                 string[] lines = File.ReadAllLines(settingsPath);
                 for (int i = 0; i < lines.Length; i++)
                 {
@@ -674,8 +711,20 @@ namespace TrafficView
             drawMeterValueSupport = true;
             errorMessage = string.Empty;
 
+            const long MaxSkinIniBytes = 64L * 1024L;
+
             try
             {
+                FileInfo iniFileInfo = new FileInfo(settingsPath);
+                if (iniFileInfo.Length > MaxSkinIniBytes)
+                {
+                    errorMessage = string.Format(
+                        "Die skin.ini ist zu gross ({0:N0} Bytes, Maximum {1:N0} Bytes).",
+                        iniFileInfo.Length,
+                        MaxSkinIniBytes);
+                    return false;
+                }
+
                 string[] lines = File.ReadAllLines(settingsPath);
                 for (int i = 0; i < lines.Length; i++)
                 {
