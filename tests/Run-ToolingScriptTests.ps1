@@ -309,10 +309,60 @@ foreach ($relativeScriptPath in $scriptsToParse) {
     Test-ScriptSyntax -ScriptPath (Join-Path $repoRoot $relativeScriptPath)
 }
 
+function Test-PortableReleaseSha256 {
+    $tempRoot = Join-Path $env:TEMP ("TrafficViewSha256_" + [Guid]::NewGuid().ToString("N"))
+    $releaseName = "TrafficView_Portable_ShaTest"
+    $zipPath = Join-Path $tempRoot ($releaseName + ".zip")
+    $sha256Path = $zipPath + ".sha256"
+
+    try {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "Create-PortableRelease.ps1") `
+            -OutputRoot $tempRoot `
+            -ReleaseName $releaseName `
+            -SkipBuild
+        if ($LASTEXITCODE -ne 0) {
+            throw "Create-PortableRelease.ps1 fuer SHA256-Test ist fehlgeschlagen."
+        }
+
+        if (-not (Test-Path -LiteralPath $zipPath)) {
+            throw "ZIP fehlt: $zipPath"
+        }
+
+        if (-not (Test-Path -LiteralPath $sha256Path)) {
+            throw "SHA256-Begleitdatei fehlt: $sha256Path"
+        }
+
+        $sha256Content = (Get-Content -LiteralPath $sha256Path -Raw).Trim()
+        if ($sha256Content -notmatch '^[0-9a-f]{64}  .+\.zip$') {
+            throw "SHA256-Begleitdatei hat unerwartetes Format: $sha256Content"
+        }
+
+        $parts = $sha256Content -split '  '
+        $hashFromFile = $parts[0]
+        $fileNameFromFile = $parts[1]
+
+        $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($hashFromFile -ne $zipHash) {
+            throw "SHA256-Hash stimmt nicht ueberein: Datei=$hashFromFile Get-FileHash=$zipHash"
+        }
+
+        $zipFileName = Split-Path -Leaf $zipPath
+        if ($fileNameFromFile -ne $zipFileName) {
+            throw "ZIP-Dateiname in SHA256-Datei stimmt nicht: '$fileNameFromFile' vs '$zipFileName'"
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
+}
+
 Test-UserDataBackupRestore
 Test-UserDataRestoreRejectsTamperedBackup
 Test-UserDataRestoreRejectsIncompleteManifestBackup
 Test-UserDataRestoreRejectsEmptyBackup
 Test-BuildBackupRestore
+Test-PortableReleaseSha256
 
 Write-Host "Tooling script tests passed."
