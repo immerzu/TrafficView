@@ -309,6 +309,43 @@ foreach ($relativeScriptPath in $scriptsToParse) {
     Test-ScriptSyntax -ScriptPath (Join-Path $repoRoot $relativeScriptPath)
 }
 
+function Test-ImportSkinRejectsOversizedIni {
+    $tempRoot = Join-Path $env:TEMP ("TrafficViewSkinIni_" + [Guid]::NewGuid().ToString("N"))
+    $skinDir = Join-Path $tempRoot "TestSkin"
+
+    try {
+        New-Item -ItemType Directory -Force -Path $skinDir | Out-Null
+
+        Set-Content -LiteralPath (Join-Path $skinDir "skin.ini") -Value ([string]::new('X', 65537)) -Encoding ASCII -NoNewline
+
+        @("TrafficView.panel.90.png", "TrafficView.panel.png", "TrafficView.panel.110.png", "TrafficView.panel.125.png", "TrafficView.panel.150.png") | ForEach-Object {
+            Set-Content -LiteralPath (Join-Path $skinDir $_) -Value "" -Encoding ASCII
+        }
+
+        $stdoutPath = Join-Path $tempRoot "import-stdout.txt"
+        $stderrPath = Join-Path $tempRoot "import-stderr.txt"
+        $process = Start-Process -FilePath "powershell" -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            (Join-Path $repoRoot "Import-Skin.ps1"),
+            "-SourceSkinDirectory",
+            $skinDir,
+            "-ReplaceExisting"
+        ) -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+        if ($process.ExitCode -eq 0) {
+            throw "Import-Skin.ps1 hat uebergrosse skin.ini akzeptiert."
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
+}
+
 function Test-PortableReleaseSha256 {
     $tempRoot = Join-Path $env:TEMP ("TrafficViewSha256_" + [Guid]::NewGuid().ToString("N"))
     $releaseName = "TrafficView_Portable_ShaTest"
@@ -364,5 +401,6 @@ Test-UserDataRestoreRejectsIncompleteManifestBackup
 Test-UserDataRestoreRejectsEmptyBackup
 Test-BuildBackupRestore
 Test-PortableReleaseSha256
+Test-ImportSkinRejectsOversizedIni
 
 Write-Host "Tooling script tests passed."
