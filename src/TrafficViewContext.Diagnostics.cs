@@ -60,6 +60,17 @@ namespace TrafficView
                         return;
                     }
 
+                    DialogResult confirmResult = MessageBox.Show(
+                        "Die Diagnose-ZIP kann Logs, lokale Pfade und Adapterinformationen enthalten.",
+                        "TrafficView",
+                        MessageBoxButtons.OKCancel,
+                        MessageBoxIcon.Warning);
+
+                    if (confirmResult != DialogResult.OK)
+                    {
+                        return;
+                    }
+
                     if (string.Equals(Path.GetExtension(dialog.FileName), ".txt", StringComparison.OrdinalIgnoreCase))
                     {
                         File.WriteAllText(dialog.FileName, diagnosticsText, new UTF8Encoding(true));

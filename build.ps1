@@ -636,6 +636,28 @@ function Copy-SkinDirectoriesToOutput {
     }
 }
 
+$buildBackupTargets = @(
+    $settingsOutputFile,
+    $settingsBackupOutputFile,
+    $usageOutputFile,
+    $usageBackupOutputFile,
+    $usageArchiveOutputFile,
+    $usageArchiveBackupOutputFile
+)
+
+foreach ($target in $buildBackupTargets) {
+    $backupPath = $target + ".build_backup"
+    if (Test-Path $backupPath) {
+        if (Test-Path $target) {
+            Write-Host "[Warnung] Backup und Original existieren: $target"
+        }
+        else {
+            Write-Host "[Wiederherstellung] $target aus .build_backup"
+            Copy-Item -LiteralPath $backupPath -Destination $target -Force
+        }
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $buildStagingDirectory | Out-Null
 
