@@ -273,6 +273,7 @@ namespace TrafficView
             }
             catch
             {
+                System.Diagnostics.Trace.WriteLine("[TrafficView] AppLog internal fallback failed.");
             }
         }
     }

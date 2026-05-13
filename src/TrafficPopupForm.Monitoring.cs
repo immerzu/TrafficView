@@ -196,6 +196,18 @@ namespace TrafficView
                 return;
             }
 
+            try
+            {
+                await this.RefreshTrafficAsync();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("RefreshTraffic abgebrochen.", ex);
+            }
+        }
+
+        private async System.Threading.Tasks.Task RefreshTrafficAsync()
+        {
             this.isCapturingTrafficSnapshot = true;
 
             try
@@ -213,16 +225,18 @@ namespace TrafficView
                     return;
                 }
 
-                if (!this.IsDisposed)
+                if (this.IsDisposed || !this.IsHandleCreated)
                 {
-                    try
-                    {
-                        this.ProcessTrafficSnapshot(snapshot);
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] ProcessTrafficSnapshot fehlgeschlagen: {0}", ex.Message));
-                    }
+                    return;
+                }
+
+                try
+                {
+                    this.ProcessTrafficSnapshot(snapshot);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] ProcessTrafficSnapshot fehlgeschlagen: {0}", ex.Message));
                 }
             }
             finally

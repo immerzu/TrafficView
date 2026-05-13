@@ -43,11 +43,11 @@ namespace TrafficView
 
                 RegisterUnhandledExceptionLogging();
                 AppLog.Info(string.Format(
-                    "Session started. Version={0}; OS={1}; 64BitOS={2}; Machine={3}; {4}",
+                    "Session started. Version={0}; OS={1}; 64BitOS={2}; PortableMode={3}; {4}",
                     typeof(Program).Assembly.GetName().Version,
                     Environment.OSVersion.VersionString,
                     Environment.Is64BitOperatingSystem ? "yes" : "no",
-                    Environment.MachineName,
+                    AppStorage.IsPortableMode ? "yes" : "no",
                     RuntimeDiagnostics.CreateDiagnosticsText(string.Empty).Replace("\r\n", "; ")));
                 DpiHelper.EnableHighDpiSupport();
                 Application.EnableVisualStyles();
@@ -71,6 +71,7 @@ namespace TrafficView
                         }
                         catch
                         {
+                            System.Diagnostics.Trace.WriteLine("[TrafficView] Program.Main ReleaseMutex schlug fehl.");
                         }
                     }
 

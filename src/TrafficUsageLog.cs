@@ -834,6 +834,11 @@ namespace TrafficView
         private static string EscapeCsvValue(string value)
         {
             string safeValue = value ?? string.Empty;
+            if (safeValue.Length > 0 && (safeValue[0] == '=' || safeValue[0] == '+' || safeValue[0] == '-' || safeValue[0] == '@'))
+            {
+                safeValue = "'" + safeValue;
+            }
+
             bool mustQuote = safeValue.IndexOfAny(new char[] { ';', '"', '\r', '\n' }) >= 0;
             if (!mustQuote)
             {

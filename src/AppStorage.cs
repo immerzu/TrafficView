@@ -175,6 +175,7 @@ namespace TrafficView
                 }
                 catch
                 {
+                    System.Diagnostics.Trace.WriteLine("[TrafficView] AppStorage.IsDirectoryWritable Temp-Datei konnte nicht geloescht werden.");
                 }
             }
         }

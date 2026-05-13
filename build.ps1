@@ -647,26 +647,32 @@ $preservedUsageArchiveLines = Read-ExistingTextFile -Path $usageArchiveOutputFil
 $preservedUsageArchiveBackupLines = Read-ExistingTextFile -Path $usageArchiveBackupOutputFile
 
 if (Test-Path $settingsOutputFile) {
+    Copy-Item -LiteralPath $settingsOutputFile -Destination ($settingsOutputFile + ".build_backup") -Force
     Remove-Item -LiteralPath $settingsOutputFile -Force
 }
 
 if (Test-Path $settingsBackupOutputFile) {
+    Copy-Item -LiteralPath $settingsBackupOutputFile -Destination ($settingsBackupOutputFile + ".build_backup") -Force
     Remove-Item -LiteralPath $settingsBackupOutputFile -Force
 }
 
 if (Test-Path $usageOutputFile) {
+    Copy-Item -LiteralPath $usageOutputFile -Destination ($usageOutputFile + ".build_backup") -Force
     Remove-Item -LiteralPath $usageOutputFile -Force
 }
 
 if (Test-Path $usageBackupOutputFile) {
+    Copy-Item -LiteralPath $usageBackupOutputFile -Destination ($usageBackupOutputFile + ".build_backup") -Force
     Remove-Item -LiteralPath $usageBackupOutputFile -Force
 }
 
 if (Test-Path $usageArchiveOutputFile) {
+    Copy-Item -LiteralPath $usageArchiveOutputFile -Destination ($usageArchiveOutputFile + ".build_backup") -Force
     Remove-Item -LiteralPath $usageArchiveOutputFile -Force
 }
 
 if (Test-Path $usageArchiveBackupOutputFile) {
+    Copy-Item -LiteralPath $usageArchiveBackupOutputFile -Destination ($usageArchiveBackupOutputFile + ".build_backup") -Force
     Remove-Item -LiteralPath $usageArchiveBackupOutputFile -Force
 }
 
@@ -789,6 +795,13 @@ Restore-TextFileIfAvailable -Path $usageOutputFile -Lines $preservedUsageLines
 Restore-TextFileIfAvailable -Path $usageBackupOutputFile -Lines $preservedUsageBackupLines
 Restore-TextFileIfAvailable -Path $usageArchiveOutputFile -Lines $preservedUsageArchiveLines
 Restore-TextFileIfAvailable -Path $usageArchiveBackupOutputFile -Lines $preservedUsageArchiveBackupLines
+
+Remove-Item -LiteralPath ($settingsOutputFile + ".build_backup") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath ($settingsBackupOutputFile + ".build_backup") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath ($usageOutputFile + ".build_backup") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath ($usageBackupOutputFile + ".build_backup") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath ($usageArchiveOutputFile + ".build_backup") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath ($usageArchiveBackupOutputFile + ".build_backup") -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Fertig:" $outputFile

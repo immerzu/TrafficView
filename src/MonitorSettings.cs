@@ -1188,12 +1188,20 @@ namespace TrafficView
                 string.Equals(normalized, "zh-hans", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static string SanitizeSettingsValue(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+        }
+
         private string[] CreateSerializedLines()
         {
             return new string[]
             {
-                string.Format("AdapterId={0}", this.AdapterId),
-                string.Format("AdapterName={0}", this.AdapterName),
+                string.Format("AdapterId={0}", SanitizeSettingsValue(this.AdapterId)),
+                string.Format("AdapterName={0}", SanitizeSettingsValue(this.AdapterName)),
                 string.Format(
                     "CalibrationPeakBytesPerSecond={0}",
                     this.CalibrationPeakBytesPerSecond.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -1206,12 +1214,12 @@ namespace TrafficView
                 string.Format("InitialCalibrationPromptHandled={0}", this.InitialCalibrationPromptHandled ? "1" : "0"),
                 string.Format("InitialLanguagePromptHandled={0}", this.InitialLanguagePromptHandled ? "1" : "0"),
                 string.Format("TransparencyPercent={0}", this.TransparencyPercent),
-                string.Format("LanguageCode={0}", this.LanguageCode),
+                string.Format("LanguageCode={0}", SanitizeSettingsValue(this.LanguageCode)),
                 string.Format("HasSavedPopupLocation={0}", this.HasSavedPopupLocation ? "1" : "0"),
                 string.Format("PopupLocationX={0}", this.PopupLocationX),
                 string.Format("PopupLocationY={0}", this.PopupLocationY),
                 string.Format("PopupScalePercent={0}", this.PopupScalePercent),
-                string.Format("PanelSkinId={0}", this.PanelSkinId),
+                string.Format("PanelSkinId={0}", SanitizeSettingsValue(this.PanelSkinId)),
                 string.Format("PopupDisplayMode={0}", this.PopupDisplayMode),
                 string.Format("PopupSectionMode={0}", this.PopupSectionMode),
                 string.Format("TaskbarPopupSectionMode={0}", this.TaskbarPopupSectionMode),
