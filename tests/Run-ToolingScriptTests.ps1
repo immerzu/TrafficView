@@ -346,6 +346,60 @@ function Test-ImportSkinRejectsOversizedIni {
     }
 }
 
+function Test-ImportSkinRejectsOversizedPng {
+    $tempRoot = Join-Path $env:TEMP ("TrafficViewSkinPng_" + [Guid]::NewGuid().ToString("N"))
+    $skinDir = Join-Path $tempRoot "TestSkin"
+
+    try {
+        New-Item -ItemType Directory -Force -Path $skinDir | Out-Null
+
+        Set-Content -LiteralPath (Join-Path $skinDir "skin.ini") -Value "Id=TestSkin`r`nDisplayNameFallback=TestSkin" -Encoding ASCII
+
+        Add-Type -AssemblyName System.Drawing
+
+        $bmp90 = New-Object System.Drawing.Bitmap(92, 50)
+        $bmp90.Save((Join-Path $skinDir "TrafficView.panel.90.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        $bmp90.Dispose()
+
+        @("TrafficView.panel.110.png", "TrafficView.panel.125.png", "TrafficView.panel.150.png") | ForEach-Object {
+            Set-Content -LiteralPath (Join-Path $skinDir $_) -Value "" -Encoding ASCII
+        }
+
+        $oversizedPngPath = Join-Path $skinDir "TrafficView.panel.png"
+        $pngSignature = [byte[]](0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+        $oversizedBytes = New-Object byte[] (2 * 1024 * 1024 + 1)
+        [Array]::Copy($pngSignature, $oversizedBytes, $pngSignature.Length)
+        [System.IO.File]::WriteAllBytes($oversizedPngPath, $oversizedBytes)
+
+        $stdoutPath = Join-Path $tempRoot "import-stdout.txt"
+        $stderrPath = Join-Path $tempRoot "import-stderr.txt"
+        $process = Start-Process -FilePath "powershell" -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            (Join-Path $repoRoot "Import-Skin.ps1"),
+            "-SourceSkinDirectory",
+            $skinDir,
+            "-ReplaceExisting"
+        ) -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+        if ($process.ExitCode -eq 0) {
+            throw "Import-Skin.ps1 hat uebergrosses PNG akzeptiert."
+        }
+
+        $stderrText = Get-Content -LiteralPath $stderrPath -Raw
+        if ($stderrText -notmatch "zu gross") {
+            throw "Import-Skin.ps1 hat uebergrosses PNG ohne Groessenfehler abgelehnt: $stderrText"
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
+}
+
 function Test-PortableReleaseSha256 {
     $tempRoot = Join-Path $env:TEMP ("TrafficViewSha256_" + [Guid]::NewGuid().ToString("N"))
     $releaseName = "TrafficView_Portable_ShaTest"
@@ -402,5 +456,6 @@ Test-UserDataRestoreRejectsEmptyBackup
 Test-BuildBackupRestore
 Test-PortableReleaseSha256
 Test-ImportSkinRejectsOversizedIni
+Test-ImportSkinRejectsOversizedPng
 
 Write-Host "Tooling script tests passed."
