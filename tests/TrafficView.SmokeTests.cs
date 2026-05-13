@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
 
 namespace TrafficView
 {
@@ -54,6 +55,7 @@ namespace TrafficView
                 TestAppLogRotatesLargeLogFile();
                 TestDiagnosticsExportIncludesRotatedLogs();
                 TestDiagnosticsExportSurvivesLockedLogFile();
+                TestDiagnosticsExportManifest();
                 TestStorageDiagnosticsReportsWritableSettingsPath();
                 TestRuntimeDiagnosticsReportsMemoryAndStartup();
                 Console.WriteLine("Smoke tests passed.");
@@ -573,6 +575,66 @@ namespace TrafficView
             }
 
             CleanupFile(diagnosticsZipPath);
+        }
+
+        private static void TestDiagnosticsExportManifest()
+        {
+            string diagnosticsZipPath = Path.Combine(BaseDirectory, "diagnostics-export-manifest.zip");
+
+            try
+            {
+                CleanupFile(diagnosticsZipPath);
+                DiagnosticsExport.WriteZip(diagnosticsZipPath, "manifest-test-body");
+
+                using (ZipArchive archive = ZipFile.OpenRead(diagnosticsZipPath))
+                {
+                    ZipArchiveEntry manifestEntry = archive.GetEntry("diagnostics-manifest.txt");
+                    AssertTrue(manifestEntry != null, "Diagnostics ZIP should contain diagnostics-manifest.txt.");
+                    AssertTrue(manifestEntry.Name == "diagnostics-manifest.txt", "Manifest entry should have the correct name.");
+
+                    ZipArchiveEntry diagnosticsEntry = archive.GetEntry("diagnostics.txt");
+                    AssertTrue(diagnosticsEntry != null, "Diagnostics ZIP should contain diagnostics.txt.");
+
+                    int entryIndex = 0;
+                    int manifestIndex = -1;
+                    int diagnosticsIndex = -1;
+                    foreach (ZipArchiveEntry entry in archive.Entries)
+                    {
+                        if (entry.Name == "diagnostics-manifest.txt") manifestIndex = entryIndex;
+                        if (entry.Name == "diagnostics.txt") diagnosticsIndex = entryIndex;
+                        entryIndex++;
+                    }
+
+                    AssertTrue(manifestIndex == entryIndex - 1, "diagnostics-manifest.txt should be the last ZIP entry.");
+                    AssertTrue(diagnosticsIndex == 0, "diagnostics.txt should be the first ZIP entry.");
+
+                    string manifestText;
+                    using (StreamReader reader = new StreamReader(manifestEntry.Open(), Encoding.UTF8))
+                    {
+                        manifestText = reader.ReadToEnd();
+                    }
+
+                    AssertTrue(
+                        manifestText.IndexOf("TrafficView Diagnostics Export", StringComparison.Ordinal) >= 0,
+                        "Manifest should contain the export header.");
+
+                    AssertTrue(
+                        manifestText.IndexOf("Created:") >= 0,
+                        "Manifest should contain a creation timestamp.");
+
+                    AssertTrue(
+                        manifestText.IndexOf("diagnostics.txt") >= 0,
+                        "Manifest should list known ZIP entries.");
+
+                    AssertTrue(
+                        manifestText.IndexOf("\\") < 0,
+                        "Manifest must not contain absolute local paths (backslash).");
+                }
+            }
+            finally
+            {
+                CleanupFile(diagnosticsZipPath);
+            }
         }
 
         private static void TestStorageDiagnosticsReportsWritableSettingsPath()
