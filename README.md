@@ -1,4 +1,4 @@
-# TrafficView 1.4.31
+# TrafficView 1.4.32
 
 ## Deutsch
 
