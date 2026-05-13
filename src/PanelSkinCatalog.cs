@@ -302,6 +302,14 @@ namespace TrafficView
                     return false;
                 }
 
+                if (!HasPngSignature(assetPath))
+                {
+                    errorMessage = string.Format(
+                        "Die Skin-Datei '{0}' ist keine gueltige PNG-Datei.",
+                        fileName);
+                    return false;
+                }
+
                 try
                 {
                     using (Bitmap bitmap = new Bitmap(assetPath))
@@ -342,6 +350,44 @@ namespace TrafficView
             }
 
             return true;
+        }
+
+        private static readonly byte[] PngSignature = new byte[]
+        {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+        };
+
+        private static bool HasPngSignature(string filePath)
+        {
+            try
+            {
+                byte[] header = new byte[PngSignature.Length];
+                using (System.IO.FileStream stream = new System.IO.FileStream(
+                    filePath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+                {
+                    int bytesRead = stream.Read(header, 0, header.Length);
+                    if (bytesRead < PngSignature.Length)
+                    {
+                        return false;
+                    }
+                }
+
+                for (int i = 0; i < PngSignature.Length; i++)
+                {
+                    if (header[i] != PngSignature[i])
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine(
+                    string.Format("[TrafficView] PNG-Signaturprüfung fehlgeschlagen: {0}", ex.Message));
+                return false;
+            }
         }
 
         private static KeyValuePair<string, Size>[] GetExpectedAssetDefinitions(Size? clientSizeOverride)
