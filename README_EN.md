@@ -42,6 +42,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Backup-UserData.ps1
 
 Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
 
+## Verify ZIP Integrity After Download
+
+Each portable ZIP is accompanied by a `.sha256` file. After downloading, verify the ZIP integrity with:
+
+```powershell
+Get-FileHash .\TrafficView_Portable_1.4.32.zip -Algorithm SHA256
+```
+
+The output hash must match the content of `TrafficView_Portable_1.4.32.zip.sha256`.
+
 ## Prepare a Release
 
 Version numbers are updated consistently in README files and AssemblyInfo with:

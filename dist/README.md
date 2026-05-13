@@ -48,6 +48,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Create-PortableRelease.ps1
 
 Die Ausgabe landet standardmaessig im Ordner `Ausgabe` neben dem Repository. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden. Das ZIP enthaelt zusaetzlich `release-manifest.json` mit Version, Commit, Dateigroessen und SHA-256-Pruefsummen.
 
+### ZIP-Integritaet nach Download pruefen
+
+Jedes Portable-ZIP wird von einer `.sha256`-Datei begleitet. Nach dem Download kann die ZIP-Integritaet wie folgt geprueft werden:
+
+```powershell
+Get-FileHash .\TrafficView_Portable_1.4.32.zip -Algorithm SHA256
+```
+
+Der ausgegebene Hash muss mit dem Inhalt von `TrafficView_Portable_1.4.32.zip.sha256` uebereinstimmen.
+
 ### Alles pruefen
 
 Vor einem Commit oder Release kann der komplette lokale Pruefpfad mit einem Befehl gestartet werden:
@@ -121,6 +131,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Backup-UserData.ps1
 ```
 
 Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
+
+### Verify ZIP Integrity After Download
+
+Each portable ZIP is accompanied by a `.sha256` file. After downloading, verify the ZIP integrity with:
+
+```powershell
+Get-FileHash .\TrafficView_Portable_1.4.32.zip -Algorithm SHA256
+```
+
+The output hash must match the content of `TrafficView_Portable_1.4.32.zip.sha256`.
 
 ### Prepare a Release
 
