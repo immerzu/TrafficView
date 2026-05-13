@@ -28,8 +28,10 @@ namespace TrafficView
                 using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
                 {
                     List<string> warnings = new List<string>();
+                    List<string> manifestEntries = new List<string>();
                     WriteTextEntry(archive, "diagnostics.txt", diagnosticsText ?? string.Empty);
-                    AddLogFiles(archive, warnings);
+                    manifestEntries.Add("diagnostics.txt");
+                    AddLogFiles(archive, warnings, manifestEntries);
 
                     if (warnings.Count > 0)
                     {
@@ -37,7 +39,10 @@ namespace TrafficView
                             archive,
                             "diagnostics-export-warnings.txt",
                             string.Join("\r\n", warnings.ToArray()));
+                        manifestEntries.Add("diagnostics-export-warnings.txt");
                     }
+
+                    WriteTextEntry(archive, "diagnostics-manifest.txt", CreateDiagnosticsManifest(manifestEntries));
                 }
 
                 if (File.Exists(targetPath))
@@ -55,7 +60,7 @@ namespace TrafficView
             }
         }
 
-        private static void AddLogFiles(ZipArchive archive, List<string> warnings)
+        private static void AddLogFiles(ZipArchive archive, List<string> warnings, List<string> manifestEntries)
         {
             string[] logPaths = AppLog.GetLogFilePathsForDiagnostics();
             for (int i = 0; i < logPaths.Length; i++)
@@ -81,6 +86,11 @@ namespace TrafficView
                         {
                             logStream.CopyTo(entryStream);
                         }
+
+                        if (manifestEntries != null && !manifestEntries.Contains(entryName))
+                        {
+                            manifestEntries.Add(entryName);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -95,6 +105,23 @@ namespace TrafficView
                     }
                 }
             }
+        }
+
+        private static string CreateDiagnosticsManifest(List<string> entryNames)
+        {
+            StringBuilder manifest = new StringBuilder();
+            manifest.AppendLine("TrafficView Diagnostics Export");
+            manifest.AppendLine("Created: " + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss") + " UTC");
+            manifest.AppendLine();
+
+            foreach (string entryName in entryNames)
+            {
+                manifest.AppendLine(entryName);
+            }
+
+            manifest.AppendLine();
+            manifest.AppendLine(entryNames.Count + " entries");
+            return manifest.ToString();
         }
 
         private static void WriteTextEntry(ZipArchive archive, string entryName, string text)
