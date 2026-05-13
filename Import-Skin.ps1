@@ -208,6 +208,26 @@ function Test-SkinDirectory {
         $filePath = Join-Path $SkinDirectoryPath $entry.Key
         $bitmap = $null
         try {
+            $pngSignature = [byte[]]@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+            $header = [byte[]]::new(8)
+            $stream = $null
+            try {
+                $stream = [System.IO.File]::OpenRead($filePath)
+                $bytesRead = $stream.Read($header, 0, 8)
+                if ($bytesRead -lt 8) {
+                    throw "Skin-Datei ist keine gueltige PNG-Datei (zu kurz): $filePath"
+                }
+            }
+            finally {
+                if ($stream -ne $null) { $stream.Dispose() }
+            }
+
+            for ($i = 0; $i -lt 8; $i++) {
+                if ($header[$i] -ne $pngSignature[$i]) {
+                    throw "Skin-Datei ist keine gueltige PNG-Datei: $filePath"
+                }
+            }
+
             $bitmap = New-Object System.Drawing.Bitmap($filePath)
             if ($bitmap.Width -ne $entry.Value.Width -or $bitmap.Height -ne $entry.Value.Height) {
                 throw "Skin-Datei hat falsche Groesse: $filePath ($($bitmap.Width)x$($bitmap.Height) statt $($entry.Value.Width)x$($entry.Value.Height))"
