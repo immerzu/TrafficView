@@ -219,6 +219,80 @@ function Test-UserDataRestoreRejectsEmptyBackup {
     }
 }
 
+function Test-BuildBackupRestore {
+    $tempRoot = Join-Path $env:TEMP ("TrafficViewBuildBackup_" + [Guid]::NewGuid().ToString("N"))
+    $distDir = Join-Path $tempRoot "dist"
+
+    try {
+        New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+
+        $targets = @(
+            "TrafficView.settings.ini",
+            "TrafficView.settings.ini_",
+            "Verbrauch.txt",
+            "Verbrauch.txt_",
+            "Verbrauch.archiv.txt",
+            "Verbrauch.archiv.txt_"
+        )
+
+        # Test 1: Backup existiert, Original fehlt -> Wiederherstellung
+        $testOriginal = Join-Path $distDir $targets[0]
+        $testBackup = $testOriginal + ".build_backup"
+        Set-Content -LiteralPath $testBackup -Value "restored-content" -Encoding ASCII
+
+        foreach ($targetName in $targets) {
+            $target = Join-Path $distDir $targetName
+            $backupPath = $target + ".build_backup"
+            if (Test-Path $backupPath) {
+                if (Test-Path $target) {
+                    Write-Host "[Warnung] Backup und Original existieren: $target"
+                }
+                else {
+                    Write-Host "[Wiederherstellung] $target aus .build_backup"
+                    Copy-Item -LiteralPath $backupPath -Destination $target -Force
+                }
+            }
+        }
+
+        if (-not (Test-Path -LiteralPath $testOriginal)) {
+            throw "Build-Backup: Original wurde nicht aus .build_backup wiederhergestellt."
+        }
+
+        $restoredContent = Get-Content -LiteralPath $testOriginal -Raw
+        if ($restoredContent.IndexOf("restored-content", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            throw "Build-Backup: Wiederhergestellter Inhalt stimmt nicht."
+        }
+
+        # Test 2: Backup und Original existieren -> Original nicht ueberschreiben
+        Set-Content -LiteralPath $testOriginal -Value "original-content" -Encoding ASCII
+        Set-Content -LiteralPath $testBackup -Value "backup-content" -Encoding ASCII
+
+        foreach ($targetName in $targets) {
+            $target = Join-Path $distDir $targetName
+            $backupPath = $target + ".build_backup"
+            if (Test-Path $backupPath) {
+                if (Test-Path $target) {
+                    Write-Host "[Warnung] Backup und Original existieren: $target"
+                }
+                else {
+                    Write-Host "[Wiederherstellung] $target aus .build_backup"
+                    Copy-Item -LiteralPath $backupPath -Destination $target -Force
+                }
+            }
+        }
+
+        $originalContent = Get-Content -LiteralPath $testOriginal -Raw
+        if ($originalContent.IndexOf("original-content", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            throw "Build-Backup: Original wurde ueberschrieben, obwohl beide existierten."
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force
+        }
+    }
+}
+
 $scriptsToParse = @(
     "Backup-UserData.ps1",
     "Bump-Version.ps1",
@@ -239,5 +313,6 @@ Test-UserDataBackupRestore
 Test-UserDataRestoreRejectsTamperedBackup
 Test-UserDataRestoreRejectsIncompleteManifestBackup
 Test-UserDataRestoreRejectsEmptyBackup
+Test-BuildBackupRestore
 
 Write-Host "Tooling script tests passed."

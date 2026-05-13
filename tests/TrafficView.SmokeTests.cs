@@ -50,6 +50,7 @@ namespace TrafficView
                 TestTrafficUsageLogHandlesLargeFilesAndInvalidRecords();
                 TestTrafficUsageLogAppendsAfterPartialLine();
                 TestTrafficUsageLogRoundTrip();
+                TestTrafficUsageLogCsvInjectionPrevention();
                 TestAppLogRotatesLargeLogFile();
                 TestDiagnosticsExportIncludesRotatedLogs();
                 TestDiagnosticsExportSurvivesLockedLogFile();
@@ -345,6 +346,35 @@ namespace TrafficView
             AssertTrue(!File.Exists(TrafficUsageLog.GetUsageFilePath()), "Active usage file should be gone after clearing.");
             AssertTrue(!File.Exists(TrafficUsageLog.GetUsageArchiveFilePath()), "Archive usage file should be gone after clearing.");
             AssertTrue(!File.Exists(compressedArchivePath), "Compressed usage archives should be gone after clearing.");
+        }
+
+        private static void TestTrafficUsageLogCsvInjectionPrevention()
+        {
+            MonitorSettings settings = new MonitorSettings(
+                "adapter-csv",
+                "NormalAdapter",
+                900D,
+                panelSkinId: PanelSkinCatalog.DefaultSkinId);
+
+            TrafficUsageLog log = new TrafficUsageLog();
+            AssertTrue(log.QueueUsage(settings, 100L, 200L), "Usage sample should be queued for CSV injection test.");
+            AssertTrue(log.FlushPending(), "Usage sample should be flushed for CSV injection test.");
+
+            string[] injectionNames = new[] { "=cmd|calc", "+formula", "-value", "@import" };
+            for (int i = 0; i < injectionNames.Length; i++)
+            {
+                string injectionName = injectionNames[i];
+                string csvPath = Path.Combine(BaseDirectory, string.Format("usage-injection-{0}.csv", i));
+                AssertTrue(log.ExportCsv(settings, injectionName, csvPath), "CSV export should succeed for injection name: " + injectionName);
+                string[] csvLines = File.ReadAllLines(csvPath);
+                AssertTrue(csvLines.Length >= 2, "CSV export should contain header and at least one data row.");
+                string dataLine = csvLines[1];
+                AssertTrue(
+                    dataLine.Contains(";'" + injectionName + ";"),
+                    "CSV injection value '" + injectionName + "' should be prefixed with single quote. Got: " + dataLine);
+            }
+
+            AssertTrue(log.ClearAll(), "Usage data should be clearable after CSV injection test.");
         }
 
         private static void TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage()
