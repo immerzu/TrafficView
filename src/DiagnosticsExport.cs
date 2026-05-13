@@ -29,20 +29,28 @@ namespace TrafficView
                 {
                     List<string> warnings = new List<string>();
                     List<string> manifestEntries = new List<string>();
-                    WriteTextEntry(archive, "diagnostics.txt", diagnosticsText ?? string.Empty);
-                    manifestEntries.Add("diagnostics.txt");
-                    AddLogFiles(archive, warnings, manifestEntries);
+                    HashSet<string> usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    string diagnosticsName = ResolveEntryName("diagnostics.txt", usedEntryNames);
+                    WriteTextEntry(archive, diagnosticsName, diagnosticsText ?? string.Empty);
+                    manifestEntries.Add(diagnosticsName);
+                    usedEntryNames.Add(diagnosticsName);
+
+                    AddLogFiles(archive, warnings, manifestEntries, usedEntryNames);
 
                     if (warnings.Count > 0)
                     {
+                        string warningsName = ResolveEntryName("diagnostics-export-warnings.txt", usedEntryNames);
                         WriteTextEntry(
                             archive,
-                            "diagnostics-export-warnings.txt",
+                            warningsName,
                             string.Join("\r\n", warnings.ToArray()));
-                        manifestEntries.Add("diagnostics-export-warnings.txt");
+                        manifestEntries.Add(warningsName);
+                        usedEntryNames.Add(warningsName);
                     }
 
-                    WriteTextEntry(archive, "diagnostics-manifest.txt", CreateDiagnosticsManifest(manifestEntries));
+                    string manifestName = ResolveEntryName("diagnostics-manifest.txt", usedEntryNames);
+                    WriteTextEntry(archive, manifestName, CreateDiagnosticsManifest(manifestEntries));
                 }
 
                 if (File.Exists(targetPath))
@@ -60,7 +68,7 @@ namespace TrafficView
             }
         }
 
-        private static void AddLogFiles(ZipArchive archive, List<string> warnings, List<string> manifestEntries)
+        private static void AddLogFiles(ZipArchive archive, List<string> warnings, List<string> manifestEntries, HashSet<string> usedEntryNames)
         {
             string[] logPaths = AppLog.GetLogFilePathsForDiagnostics();
             for (int i = 0; i < logPaths.Length; i++)
@@ -71,11 +79,13 @@ namespace TrafficView
                     continue;
                 }
 
-                string entryName = Path.GetFileName(logPath);
-                if (string.IsNullOrWhiteSpace(entryName))
+                string desiredName = Path.GetFileName(logPath);
+                if (string.IsNullOrWhiteSpace(desiredName))
                 {
                     continue;
                 }
+
+                string entryName = ResolveEntryName(desiredName, usedEntryNames);
 
                 try
                 {
@@ -87,10 +97,8 @@ namespace TrafficView
                             logStream.CopyTo(entryStream);
                         }
 
-                        if (manifestEntries != null && !manifestEntries.Contains(entryName))
-                        {
-                            manifestEntries.Add(entryName);
-                        }
+                        manifestEntries.Add(entryName);
+                        usedEntryNames.Add(entryName);
                     }
                 }
                 catch (Exception ex)
@@ -122,6 +130,27 @@ namespace TrafficView
             manifest.AppendLine();
             manifest.AppendLine(entryNames.Count + " entries");
             return manifest.ToString();
+        }
+
+        private static string ResolveEntryName(string desiredName, HashSet<string> usedNames)
+        {
+            if (!usedNames.Contains(desiredName))
+            {
+                return desiredName;
+            }
+
+            string nameWithoutExtension = Path.GetFileNameWithoutExtension(desiredName);
+            string extension = Path.GetExtension(desiredName);
+            int counter = 2;
+            string candidate;
+            do
+            {
+                candidate = nameWithoutExtension + "-" + counter.ToString(System.Globalization.CultureInfo.InvariantCulture) + extension;
+                counter++;
+            }
+            while (usedNames.Contains(candidate));
+
+            return candidate;
         }
 
         private static void WriteTextEntry(ZipArchive archive, string entryName, string text)
