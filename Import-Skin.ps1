@@ -165,6 +165,12 @@ function Test-SkinDirectory {
         }
     }
 
+    $maxSkinIniBytes = 64 * 1024
+    $skinIniInfo = Get-Item -LiteralPath $skinSettingsPath
+    if ($skinIniInfo.Length -gt $maxSkinIniBytes) {
+        throw "skin.ini ist zu gross ($($skinIniInfo.Length) Bytes, Maximum $maxSkinIniBytes Bytes): $skinSettingsPath"
+    }
+
     $skinMetadata = Get-SkinMetadata -SkinDirectoryPath $SkinDirectoryPath
     $skinId = $skinMetadata.Id
     $surfaceEffect = $skinMetadata.SurfaceEffect
