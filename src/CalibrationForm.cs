@@ -689,6 +689,16 @@ namespace TrafficView
                 {
                     NetworkSnapshot snapshot = NetworkSnapshot.Capture(captureSettings);
                     DateTime nowUtc = DateTime.UtcNow;
+
+                    if (this.IsDisposed || this.Disposing || !this.IsHandleCreated)
+                    {
+                        AppLog.WarnOnce(
+                            "calibration-begininvoke-disposed",
+                            "Calibration BeginInvoke skipped because form is no longer available.");
+                        this.isCapturing = false;
+                        return;
+                    }
+
                     this.BeginInvoke(new Action(() =>
                     {
                         try
@@ -749,7 +759,14 @@ namespace TrafficView
                 }
                 catch
                 {
-                    this.BeginInvoke(new Action(() => { this.isCapturing = false; }));
+                    if (this.IsDisposed || this.Disposing || !this.IsHandleCreated)
+                    {
+                        this.isCapturing = false;
+                    }
+                    else
+                    {
+                        this.BeginInvoke(new Action(() => { this.isCapturing = false; }));
+                    }
                 }
             });
         }
