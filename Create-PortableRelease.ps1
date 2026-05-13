@@ -448,6 +448,11 @@ Assert-ReleaseExeVersion -ReleaseDirectory $releaseDirectory -ExpectedVersion $v
 Compress-Archive -LiteralPath $releaseDirectory -DestinationPath $zipPath -CompressionLevel Optimal
 Test-PortableZipContents -ZipPath $zipPath
 
+$zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$zipFileName = Split-Path -Leaf $zipPath
+$sha256Path = $zipPath + ".sha256"
+"$zipHash  $zipFileName" | Set-Content -LiteralPath $sha256Path -Encoding ASCII
+
 Write-Host ""
 Write-Host "Portable-Ausgabe erstellt:" $releaseDirectory
 Write-Host "Portable-ZIP erstellt:" $zipPath
