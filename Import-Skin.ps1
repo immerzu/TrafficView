@@ -166,6 +166,7 @@ function Test-SkinDirectory {
     }
 
     $maxSkinIniBytes = 64 * 1024
+    $maxSkinPngBytes = 2 * 1024 * 1024
     $skinIniInfo = Get-Item -LiteralPath $skinSettingsPath
     if ($skinIniInfo.Length -gt $maxSkinIniBytes) {
         throw "skin.ini ist zu gross ($($skinIniInfo.Length) Bytes, Maximum $maxSkinIniBytes Bytes): $skinSettingsPath"
@@ -212,6 +213,12 @@ function Test-SkinDirectory {
 
     foreach ($entry in $expectedAssetSizes.GetEnumerator()) {
         $filePath = Join-Path $SkinDirectoryPath $entry.Key
+
+        $pngInfo = Get-Item -LiteralPath $filePath -ErrorAction Stop
+        if ($pngInfo.Length -gt $maxSkinPngBytes) {
+            throw "Skin PNG ist zu gross: $filePath ($($pngInfo.Length) Bytes, maximal $maxSkinPngBytes Bytes)"
+        }
+
         $bitmap = $null
         try {
             $pngSignature = [byte[]]@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
