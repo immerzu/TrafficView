@@ -1,5 +1,3 @@
-$ErrorActionPreference = "Stop"
-
 param(
     [Parameter(Mandatory = $true)]
     [string]$SourceSkinDirectory,
@@ -10,6 +8,8 @@ param(
     [Parameter(Mandatory = $false)]
     [switch]$ReplaceExisting
 )
+
+$ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.Drawing
 
