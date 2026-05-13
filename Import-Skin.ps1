@@ -167,6 +167,7 @@ function Test-SkinDirectory {
 
     $maxSkinIniBytes = 64 * 1024
     $maxSkinPngBytes = 2 * 1024 * 1024
+    $maxSkinBitmapDimension = 4096
     $skinIniInfo = Get-Item -LiteralPath $skinSettingsPath
     if ($skinIniInfo.Length -gt $maxSkinIniBytes) {
         throw "skin.ini ist zu gross ($($skinIniInfo.Length) Bytes, Maximum $maxSkinIniBytes Bytes): $skinSettingsPath"
@@ -242,6 +243,10 @@ function Test-SkinDirectory {
             }
 
             $bitmap = New-Object System.Drawing.Bitmap($filePath)
+            if ($bitmap.Width -gt $maxSkinBitmapDimension -or $bitmap.Height -gt $maxSkinBitmapDimension) {
+                throw "Skin PNG hat zu grosse Abmessungen: $filePath ($($bitmap.Width)x$($bitmap.Height) px, maximal ${maxSkinBitmapDimension}x${maxSkinBitmapDimension} px)"
+            }
+
             if ($bitmap.Width -ne $entry.Value.Width -or $bitmap.Height -ne $entry.Value.Height) {
                 throw "Skin-Datei hat falsche Groesse: $filePath ($($bitmap.Width)x$($bitmap.Height) statt $($entry.Value.Width)x$($entry.Value.Height))"
             }
