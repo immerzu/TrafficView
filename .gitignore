@@ -13,6 +13,7 @@ dist/*.bak_*
 dist/*.ini_
 dist/*.lnk
 dist/Verbrauch.txt
+dist/Verbrauch.archiv.*.txt.gz
 
 /TrafficView.settings.ini
 /TrafficView.settings.ini_
