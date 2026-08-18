@@ -168,7 +168,7 @@ namespace TrafficView
         private static readonly StringFormat TrafficRightAlignedTextFormat = CreateTrafficTextFormat(false, StringAlignment.Far);
         private const double LowTrafficVisualizationExponent = 0.72D;
         private const double ArrowMotionDeadZoneRatio = 0.05D;
-        private const double ArrowMotionFullRatio = 0.30D;
+        private const double ArrowMotionFullRatio = 1.0D;
         private const int RingSegmentCount = 18;
         private const float RingSegmentGapDegrees = 4.2F;
         private const float MinimumVisibleSegmentSweepDegrees = 0.9F;
@@ -199,8 +199,8 @@ namespace TrafficView
         private const double PeakHoldReleaseDelaySeconds = 0.70D;
         private const double PeakHoldDecayPerSecond = 0.42D;
         private const double MeterGlossAnimationThresholdRatio = 0.02D;
-        private const double MeterGlossClockwiseMaxRotationDegreesPerSecond = 138D;
-        private const double MeterGlossCounterClockwiseMaxRotationDegreesPerSecond = 110D;
+        private const double MeterGlossClockwiseMaxRotationDegreesPerSecond = 166D;
+        private const double MeterGlossCounterClockwiseMaxRotationDegreesPerSecond = 132D;
         private const double ActivityBorderFadeInStartRatio = 0.008D;
         private const double ActivityBorderFadeInFullRatio = 0.165D;
         private const double ActivityBorderAnimationThresholdRatio = 0.006D;

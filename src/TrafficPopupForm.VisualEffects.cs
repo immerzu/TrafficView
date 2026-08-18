@@ -198,7 +198,7 @@ namespace TrafficView
                             upperSheenBrush.CenterPoint = new PointF(
                                 upperSheenBounds.Left + (upperSheenBounds.Width * 0.64F),
                                 upperSheenBounds.Top + (upperSheenBounds.Height * 0.18F));
-                            upperSheenBrush.CenterColor = Color.FromArgb(110, 255, 255, 255);
+                            upperSheenBrush.CenterColor = Color.FromArgb(132, 255, 255, 255);
                             upperSheenBrush.SurroundColors = new Color[] { Color.Transparent };
                             graphics.FillEllipse(upperSheenBrush, upperSheenBounds);
                         }
@@ -217,7 +217,7 @@ namespace TrafficView
                             topRightHighlightBrush.CenterPoint = new PointF(
                                 topRightHighlightBounds.Left + (topRightHighlightBounds.Width * 0.60F),
                                 topRightHighlightBounds.Top + (topRightHighlightBounds.Height * 0.44F));
-                            topRightHighlightBrush.CenterColor = Color.FromArgb(122, 255, 255, 255);
+                            topRightHighlightBrush.CenterColor = Color.FromArgb(146, 255, 255, 255);
                             topRightHighlightBrush.SurroundColors = new Color[] { Color.Transparent };
                             graphics.FillEllipse(topRightHighlightBrush, topRightHighlightBounds);
                         }
@@ -236,7 +236,7 @@ namespace TrafficView
                             lowerBlueGlowBrush.CenterPoint = new PointF(
                                 lowerBlueGlowBounds.Left + (lowerBlueGlowBounds.Width * 0.38F),
                                 lowerBlueGlowBounds.Top + (lowerBlueGlowBounds.Height * 0.58F));
-                            lowerBlueGlowBrush.CenterColor = Color.FromArgb(112, 78, 176, 255);
+                            lowerBlueGlowBrush.CenterColor = Color.FromArgb(134, 78, 176, 255);
                             lowerBlueGlowBrush.SurroundColors = new Color[] { Color.Transparent };
                             graphics.FillEllipse(lowerBlueGlowBrush, lowerBlueGlowBounds);
                         }
@@ -255,7 +255,7 @@ namespace TrafficView
                             counterGlossBrush.CenterPoint = new PointF(
                                 counterGlossBounds.Left + (counterGlossBounds.Width * 0.46F),
                                 counterGlossBounds.Top + (counterGlossBounds.Height * 0.46F));
-                            counterGlossBrush.CenterColor = Color.FromArgb(68, 220, 242, 255);
+                            counterGlossBrush.CenterColor = Color.FromArgb(82, 220, 242, 255);
                             counterGlossBrush.SurroundColors = new Color[] { Color.Transparent };
                             graphics.FillEllipse(counterGlossBrush, counterGlossBounds);
                         }

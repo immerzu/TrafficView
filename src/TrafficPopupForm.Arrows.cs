@@ -86,7 +86,7 @@ namespace TrafficView
             float glowBaseWidth,
             double intensity)
         {
-            float scale = 0.92F + ((float)intensity * 0.10F) + (pulse * 0.04F);
+            float scale = 0.92F + ((float)intensity * 0.15F) + (pulse * 0.04F);
             PointF stableCenter = GetStableArrowCenter(center);
             float scaledWidth = NormalizeArrowDimension(width * scale);
             float scaledHeight = NormalizeArrowDimension(height * scale);
@@ -95,9 +95,9 @@ namespace TrafficView
             bool ultraTransparent = transparencyPercent >= 100;
             float glowWidth = glowBaseWidth
                 + (pulse * this.ScaleFloat(0.85F))
-                + ((float)intensity * this.ScaleFloat(0.75F))
+                + ((float)intensity * this.ScaleFloat(1.12F))
                 + (ultraTransparent ? this.ScaleFloat(0.95F) : 0F);
-            int glowAlpha = 96 + (int)Math.Round((pulse * 36F) + (float)intensity * 54F, MidpointRounding.AwayFromZero);
+            int glowAlpha = 96 + (int)Math.Round((pulse * 36F) + (float)intensity * 81F, MidpointRounding.AwayFromZero);
             if (ultraTransparent)
             {
                 glowAlpha = Math.Min(232, glowAlpha + 62);
