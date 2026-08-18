@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TrafficView
@@ -43,7 +44,7 @@ namespace TrafficView
         private readonly int calibrationFooterLogoHeight;
         private readonly int calibrationFooterLogoMinimumWidth;
         private readonly int calibrationFooterLogoMaximumWidth;
-        private readonly Timer calibrationTimer;
+        private readonly System.Windows.Forms.Timer calibrationTimer;
         private readonly TableLayoutPanel rootLayout;
         private readonly bool isInitialCalibrationRequired;
         private bool selectedAdapterAvailable = true;
@@ -57,7 +58,8 @@ namespace TrafficView
         private int elapsedSeconds;
         private bool calibrationDialogSizeLocked;
         private bool allowClose;
-        private bool isCapturing;
+        private int isCapturing;
+        private readonly CancellationTokenSource calibrationCaptureCancellation = new CancellationTokenSource();
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -319,7 +321,7 @@ namespace TrafficView
             this.AcceptButton = this.startButton;
             this.CancelButton = this.cancelButton;
 
-            this.calibrationTimer = new Timer();
+            this.calibrationTimer = new System.Windows.Forms.Timer();
             this.calibrationTimer.Interval = 1000;
             this.calibrationTimer.Tick += this.CalibrationTimer_Tick;
 
@@ -343,12 +345,38 @@ namespace TrafficView
                 return;
             }
 
+            try
+            {
+                this.calibrationCaptureCancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
             if (this.calibrationTimer.Enabled)
             {
                 this.calibrationTimer.Stop();
             }
 
             base.OnFormClosing(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    this.calibrationCaptureCancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+
+                this.calibrationCaptureCancellation.Dispose();
+            }
+
+            base.Dispose(disposing);
         }
 
         private void CalibrationForm_Load(object sender, EventArgs e)
@@ -676,33 +704,48 @@ namespace TrafficView
                 return;
             }
 
-            if (this.isCapturing)
+            if (Interlocked.CompareExchange(ref this.isCapturing, 1, 0) != 0)
             {
                 return;
             }
 
             MonitorSettings captureSettings = this.activeSettings.Clone();
-            this.isCapturing = true;
+            CancellationToken cancellationToken = this.calibrationCaptureCancellation.Token;
+
+            if (cancellationToken.IsCancellationRequested || this.IsDisposed || this.Disposing)
+            {
+                Interlocked.Exchange(ref this.isCapturing, 0);
+                return;
+            }
+
             Task.Run(() =>
             {
+                bool handedToUi = false;
+
                 try
                 {
-                    NetworkSnapshot snapshot = NetworkSnapshot.Capture(captureSettings);
-                    DateTime nowUtc = DateTime.UtcNow;
-
-                    if (this.IsDisposed || this.Disposing || !this.IsHandleCreated)
+                    if (cancellationToken.IsCancellationRequested)
                     {
-                        AppLog.WarnOnce(
-                            "calibration-begininvoke-disposed",
-                            "Calibration BeginInvoke skipped because form is no longer available.");
-                        this.isCapturing = false;
                         return;
                     }
 
-                    this.BeginInvoke(new Action(() =>
+                    NetworkSnapshot snapshot = NetworkSnapshot.Capture(captureSettings);
+                    DateTime nowUtc = DateTime.UtcNow;
+
+                    if (cancellationToken.IsCancellationRequested || this.IsDisposed || this.Disposing)
+                    {
+                        return;
+                    }
+
+                    handedToUi = this.TryBeginInvokeSafely(new Action(() =>
                     {
                         try
                         {
+                            if (cancellationToken.IsCancellationRequested || this.IsDisposed || this.Disposing)
+                            {
+                                return;
+                            }
+
                             if (!snapshot.HasAdapters)
                             {
                                 AppLog.WarnOnce(
@@ -747,60 +790,98 @@ namespace TrafficView
                                 TrafficRateFormatter.FormatSpeed(this.peakDownloadBytesPerSecond),
                                 TrafficRateFormatter.FormatSpeed(this.peakUploadBytesPerSecond));
                         }
-                        catch
-                        {
-                            System.Diagnostics.Trace.WriteLine("[TrafficView] CalibrationForm Capture-Task-Verarbeitung schlug fehl.");
-                        }
                         finally
                         {
-                            this.isCapturing = false;
+                            Interlocked.Exchange(ref this.isCapturing, 0);
                         }
-                    }));
+                    }), "capture-result");
+
+                    if (!handedToUi)
+                    {
+                        Interlocked.Exchange(ref this.isCapturing, 0);
+                    }
                 }
-                catch
+                catch (OperationCanceledException)
                 {
-                    if (this.IsDisposed || this.Disposing || !this.IsHandleCreated)
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce(
+                        "calibration-capture-task-failed-" + GetCalibrationAdapterLogKey(captureSettings),
+                        "Calibration capture task failed.",
+                        ex);
+
+                    if (!this.TryBeginInvokeSafely(new Action(() =>
                     {
-                        this.isCapturing = false;
-                    }
-                    else
+                        Interlocked.Exchange(ref this.isCapturing, 0);
+                    }), "capture-task-failed"))
                     {
-                        this.BeginInvoke(new Action(() => { this.isCapturing = false; }));
+                        Interlocked.Exchange(ref this.isCapturing, 0);
                     }
                 }
-            });
+                finally
+                {
+                    if (!handedToUi)
+                    {
+                        Interlocked.Exchange(ref this.isCapturing, 0);
+                    }
+                }
+            }, cancellationToken);
         }
         private void FinishCalibration()
         {
             this.calibrationTimer.Stop();
 
-            double storedPeak = NormalizeCalibrationPeak(this.peakBytesPerSecond);
-            if (storedPeak <= 0D)
+            double measuredPeak = NormalizeCalibrationPeak(this.peakBytesPerSecond);
+            double measuredDownloadPeak = NormalizeCalibrationPeak(this.peakDownloadBytesPerSecond);
+            double measuredUploadPeak = NormalizeCalibrationPeak(this.peakUploadBytesPerSecond);
+
+            double storedPeak = IsUsefulCalibrationPeak(measuredPeak)
+                ? measuredPeak
+                : NormalizeCalibrationPeak(this.currentSettings.CalibrationPeakBytesPerSecond);
+
+            double storedDownloadPeak = IsUsefulCalibrationPeak(measuredDownloadPeak)
+                ? measuredDownloadPeak
+                : NormalizeCalibrationPeak(this.currentSettings.CalibrationDownloadPeakBytesPerSecond);
+
+            if (!IsUsefulCalibrationPeak(storedDownloadPeak))
             {
-                storedPeak = NormalizeCalibrationPeak(this.currentSettings.CalibrationPeakBytesPerSecond);
+                storedDownloadPeak = IsUsefulCalibrationPeak(storedPeak) ? storedPeak : 0D;
             }
 
-            double storedDownloadPeak = NormalizeCalibrationPeak(this.peakDownloadBytesPerSecond);
-            if (storedDownloadPeak <= 0D)
+            double storedUploadPeak = IsUsefulCalibrationPeak(measuredUploadPeak)
+                ? measuredUploadPeak
+                : NormalizeCalibrationPeak(this.currentSettings.CalibrationUploadPeakBytesPerSecond);
+
+            if (!IsUsefulCalibrationPeak(storedUploadPeak))
             {
-                storedDownloadPeak = NormalizeCalibrationPeak(this.currentSettings.CalibrationDownloadPeakBytesPerSecond);
-                if (storedDownloadPeak <= 0D)
+                storedUploadPeak = IsUsefulCalibrationPeak(storedPeak) ? storedPeak : 0D;
+            }
+
+            if (!IsUsefulCalibrationPeak(storedPeak))
+            {
+                if (IsUsefulCalibrationPeak(storedDownloadPeak) || IsUsefulCalibrationPeak(storedUploadPeak))
                 {
-                    storedDownloadPeak = storedPeak;
+                    storedPeak = Math.Max(storedDownloadPeak, storedUploadPeak);
+                }
+                else
+                {
+                    storedPeak = 0D;
                 }
             }
 
-            double storedUploadPeak = NormalizeCalibrationPeak(this.peakUploadBytesPerSecond);
-            if (storedUploadPeak <= 0D)
+            if ((measuredPeak > 0D && !IsUsefulCalibrationPeak(measuredPeak)) ||
+                (measuredDownloadPeak > 0D && !IsUsefulCalibrationPeak(measuredDownloadPeak)) ||
+                (measuredUploadPeak > 0D && !IsUsefulCalibrationPeak(measuredUploadPeak)))
             {
-                storedUploadPeak = NormalizeCalibrationPeak(this.currentSettings.CalibrationUploadPeakBytesPerSecond);
-                if (storedUploadPeak <= 0D)
-                {
-                    storedUploadPeak = storedPeak;
-                }
+                AppLog.WarnOnce(
+                    "calibration-measured-peaks-too-small-" + GetCalibrationAdapterLogKey(this.activeSettings),
+                    "Calibration measured traffic peaks were below the useful threshold and were not used as new calibration values.");
             }
 
-            if (storedPeak <= 0D && storedDownloadPeak <= 0D && storedUploadPeak <= 0D)
+            if (!IsUsefulCalibrationPeak(storedPeak) &&
+                !IsUsefulCalibrationPeak(storedDownloadPeak) &&
+                !IsUsefulCalibrationPeak(storedUploadPeak))
             {
                 AppLog.WarnOnce(
                     "calibration-finished-without-traffic-" + GetCalibrationAdapterLogKey(this.activeSettings),
@@ -810,6 +891,10 @@ namespace TrafficView
                             ? this.activeSettings.GetAdapterDisplayName()
                             : this.currentSettings.GetAdapterDisplayName()));
             }
+
+            bool hasUsefulCalibration = IsUsefulCalibrationPeak(storedPeak) ||
+                IsUsefulCalibrationPeak(storedDownloadPeak) ||
+                IsUsefulCalibrationPeak(storedUploadPeak);
 
             this.SelectedSettings = new MonitorSettings(
                 this.activeSettings != null ? this.activeSettings.AdapterId : this.currentSettings.AdapterId,
@@ -832,19 +917,30 @@ namespace TrafficView
                 this.currentSettings.TaskbarIntegrationEnabled,
                 this.currentSettings.ActivityBorderGlowEnabled,
                 this.currentSettings.TaskbarPopupSectionMode);
-            this.statusLabel.Text = UiLanguage.Format(
-                "Calibration.CompletedStatus",
-                "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' bestätigen.",
-                TrafficRateFormatter.FormatSpeed(storedDownloadPeak),
-                TrafficRateFormatter.FormatSpeed(storedUploadPeak));
+
+            if (hasUsefulCalibration)
+            {
+                this.statusLabel.Text = UiLanguage.Format(
+                    "Calibration.CompletedStatus",
+                    "Kalibration abgeschlossen. DL {0} | UL {1}. Mit 'Speichern' bestätigen.",
+                    TrafficRateFormatter.FormatSpeed(storedDownloadPeak),
+                    TrafficRateFormatter.FormatSpeed(storedUploadPeak));
+            }
+            else
+            {
+                this.statusLabel.Text = UiLanguage.Get(
+                    "Calibration.CompletedWithoutUsefulTrafficStatus",
+                    "Kalibration abgeschlossen, aber ohne ausreichend messbaren Datenverkehr. Bitte Speedtest starten und neu messen.");
+            }
+
             this.startButton.Enabled = true;
             this.SetCalibrationButtonText(this.startButton, UiLanguage.Get("Calibration.Remeasure", "Neu messen"));
             this.saveAdapterButton.Enabled = true;
             this.adapterComboBox.Enabled = true;
-            this.saveButton.Enabled = true;
+            this.saveButton.Enabled = hasUsefulCalibration;
             this.rootLayout.PerformLayout();
-            this.AcceptButton = this.saveButton;
-            this.ActiveControl = this.saveButton;
+            this.AcceptButton = hasUsefulCalibration ? this.saveButton : this.startButton;
+            this.ActiveControl = hasUsefulCalibration ? (Control)this.saveButton : this.startButton;
         }
 
         private static double NormalizeCalibrationPeak(double value)
@@ -855,6 +951,68 @@ namespace TrafficView
             }
 
             return value;
+        }
+
+        private static bool IsUsefulCalibrationPeak(double value)
+        {
+            return NormalizeCalibrationPeak(value) >= MonitorSettings.MinimumUsefulCalibrationBytesPerSecond;
+        }
+
+        private bool TryBeginInvokeSafely(Action action, string logKey)
+        {
+            if (action == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (this.IsDisposed || this.Disposing || !this.IsHandleCreated)
+                {
+                    AppLog.WarnOnce(
+                        "calibration-begininvoke-skipped-" + (logKey ?? "unknown"),
+                        "Calibration BeginInvoke skipped because the form is no longer available.");
+                    return false;
+                }
+
+                this.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (this.IsDisposed || this.Disposing)
+                        {
+                            return;
+                        }
+
+                        action();
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.WarnOnce(
+                            "calibration-begininvoke-action-failed-" + (logKey ?? "unknown"),
+                            "Calibration BeginInvoke action failed.",
+                            ex);
+                    }
+                }));
+
+                return true;
+            }
+            catch (ObjectDisposedException ex)
+            {
+                AppLog.WarnOnce(
+                    "calibration-begininvoke-objectdisposed-" + (logKey ?? "unknown"),
+                    "Calibration BeginInvoke failed because the form was disposed.",
+                    ex);
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                AppLog.WarnOnce(
+                    "calibration-begininvoke-invalidoperation-" + (logKey ?? "unknown"),
+                    "Calibration BeginInvoke failed because the form handle was not available.",
+                    ex);
+                return false;
+            }
         }
 
         private static string GetCalibrationAdapterLogKey(MonitorSettings settings)

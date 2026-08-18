@@ -29,8 +29,10 @@ $sourceFiles = @(
     (Join-Path $sourceDir "PanelSkinCatalog.cs"),
     (Join-Path $sourceDir "RuntimeDiagnostics.cs"),
     (Join-Path $sourceDir "SkinPathPolicy.cs"),
+    (Join-Path $sourceDir "FileRetry.cs"),
     (Join-Path $sourceDir "TrafficRateFormatter.cs"),
     (Join-Path $sourceDir "TrafficRateSmoothing.cs"),
+    (Join-Path $sourceDir "TrafficSnapshotBaselinePolicy.cs"),
     (Join-Path $sourceDir "TrafficUsageLog.cs"),
     (Join-Path $sourceDir "TrafficUsageFormatter.cs"),
     $testSourcePath

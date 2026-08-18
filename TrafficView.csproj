@@ -135,6 +135,8 @@
     <Compile Include="src\TaskbarIntegrationTypes.cs" />
     <Compile Include="src\TrafficRateFormatter.cs" />
     <Compile Include="src\TrafficRateSmoothing.cs" />
+    <Compile Include="src\FileRetry.cs" />
+    <Compile Include="src\TrafficSnapshotBaselinePolicy.cs" />
     <Compile Include="src\TrafficUsageLog.cs" />
     <Compile Include="src\TrafficUsageFormatter.cs" />
     <Compile Include="src\TrafficViewEventModels.cs" />

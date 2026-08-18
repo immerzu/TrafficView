@@ -9,6 +9,7 @@ namespace TrafficView
         private const string SettingsFileName = "TrafficView.settings.ini";
         private const string SettingsBackupFileName = "TrafficView.settings.ini_";
         public const string AutomaticAdapterId = "__AUTO__";
+        internal const double MinimumUsefulCalibrationBytesPerSecond = 16D * 1024D;
         private static readonly int[] SupportedPopupScalePercents = new int[] { 90, 100, 110, 125, 150 };
         public MonitorSettings(
             string adapterId,
@@ -511,9 +512,10 @@ namespace TrafficView
 
         public void Save()
         {
+            MonitorSettings normalized = this.CreateNormalizedForSave();
             string settingsPath = GetSettingsPath();
             string backupSettingsPath = GetSettingsBackupPath();
-            string[] serializedLines = this.CreateSerializedLines();
+            string[] serializedLines = normalized.CreateSerializedLines();
 
             if (!TryWriteSettingsFile(settingsPath, serializedLines))
             {
@@ -1335,16 +1337,22 @@ namespace TrafficView
                 }
 
                 tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-                File.WriteAllLines(tempPath, lines);
+                FileRetry.Execute("settings-write-temp", delegate
+                {
+                    File.WriteAllLines(tempPath, lines);
+                });
 
-                if (File.Exists(path))
+                FileRetry.Execute("settings-replace", delegate
                 {
-                    File.Replace(tempPath, path, null, true);
-                }
-                else
-                {
-                    File.Move(tempPath, path);
-                }
+                    if (File.Exists(path))
+                    {
+                        File.Replace(tempPath, path, null, true);
+                    }
+                    else
+                    {
+                        File.Move(tempPath, path);
+                    }
+                });
 
                 return true;
             }
@@ -1425,10 +1433,13 @@ namespace TrafficView
             {
                 EnsurePortableSettingsPathAllowed(path);
 
-                if (File.Exists(path))
+                FileRetry.Execute("settings-delete", delegate
                 {
-                    File.Delete(path);
-                }
+                    if (File.Exists(path))
+                    {
+                        File.Delete(path);
+                    }
+                });
             }
             catch (IOException)
             {
@@ -1515,6 +1526,46 @@ namespace TrafficView
         public static byte ToOpacityByte(int transparencyPercent)
         {
             return (byte)Math.Round(ToOpacityValue(transparencyPercent) * 255D);
+        }
+
+        private MonitorSettings CreateNormalizedForSave()
+        {
+            return new MonitorSettings(
+                this.AdapterId,
+                this.AdapterName,
+                this.CalibrationPeakBytesPerSecond,
+                this.CalibrationDownloadPeakBytesPerSecond,
+                this.CalibrationUploadPeakBytesPerSecond,
+                this.InitialCalibrationPromptHandled,
+                this.InitialLanguagePromptHandled,
+                ClampInt(this.TransparencyPercent, 10, 100),
+                UiLanguage.NormalizeLanguageCode(this.LanguageCode),
+                this.HasSavedPopupLocation,
+                ClampInt(this.PopupLocationX, -32000, 32000),
+                ClampInt(this.PopupLocationY, -32000, 32000),
+                ClampInt(this.PopupScalePercent, 50, 300),
+                this.PanelSkinId,
+                Enum.IsDefined(typeof(PopupDisplayMode), this.PopupDisplayMode) ? this.PopupDisplayMode : PopupDisplayMode.Standard,
+                Enum.IsDefined(typeof(PopupSectionMode), this.PopupSectionMode) ? this.PopupSectionMode : PopupSectionMode.Both,
+                this.RotatingMeterGlossEnabled,
+                this.TaskbarIntegrationEnabled,
+                this.ActivityBorderGlowEnabled,
+                Enum.IsDefined(typeof(PopupSectionMode), this.TaskbarPopupSectionMode) ? this.TaskbarPopupSectionMode : PopupSectionMode.Both);
+        }
+
+        private static int ClampInt(int value, int minimum, int maximum)
+        {
+            if (value < minimum)
+            {
+                return minimum;
+            }
+
+            if (value > maximum)
+            {
+                return maximum;
+            }
+
+            return value;
         }
 
         private static int ClampTransparencyPercent(int transparencyPercent)
@@ -1684,5 +1735,112 @@ namespace TrafficView
 
             return false;
         }
+
+        internal MonitorSettingsDiagnostics CreateDiagnostics()
+        {
+            MonitorSettings normalized = this.CreateNormalizedForSave();
+
+            bool hasUsefulPeak = normalized.CalibrationPeakBytesPerSecond >= MinimumUsefulCalibrationBytesPerSecond;
+            bool hasUsefulDownloadPeak = normalized.CalibrationDownloadPeakBytesPerSecond >= MinimumUsefulCalibrationBytesPerSecond;
+            bool hasUsefulUploadPeak = normalized.CalibrationUploadPeakBytesPerSecond >= MinimumUsefulCalibrationBytesPerSecond;
+
+            return new MonitorSettingsDiagnostics(
+                normalized.GetAdapterDisplayName(),
+                normalized.UsesAutomaticAdapterSelection(),
+                normalized.CalibrationPeakBytesPerSecond,
+                normalized.CalibrationDownloadPeakBytesPerSecond,
+                normalized.CalibrationUploadPeakBytesPerSecond,
+                normalized.TransparencyPercent,
+                normalized.LanguageCode,
+                normalized.HasSavedPopupLocation,
+                normalized.PopupLocationX,
+                normalized.PopupLocationY,
+                normalized.PopupScalePercent,
+                normalized.PanelSkinId,
+                normalized.PopupDisplayMode,
+                normalized.PopupSectionMode,
+                normalized.RotatingMeterGlossEnabled,
+                normalized.TaskbarIntegrationEnabled,
+                normalized.ActivityBorderGlowEnabled,
+                normalized.TaskbarPopupSectionMode,
+                MinimumUsefulCalibrationBytesPerSecond,
+                hasUsefulPeak,
+                hasUsefulDownloadPeak,
+                hasUsefulUploadPeak);
+        }
+    }
+
+    internal sealed class MonitorSettingsDiagnostics
+    {
+        public MonitorSettingsDiagnostics(
+            string adapterDisplayName,
+            bool usesAutomaticAdapterSelection,
+            double calibrationPeakBytesPerSecond,
+            double calibrationDownloadPeakBytesPerSecond,
+            double calibrationUploadPeakBytesPerSecond,
+            int transparencyPercent,
+            string languageCode,
+            bool hasSavedPopupLocation,
+            int popupLocationX,
+            int popupLocationY,
+            int popupScalePercent,
+            string panelSkinId,
+            PopupDisplayMode popupDisplayMode,
+            PopupSectionMode popupSectionMode,
+            bool rotatingMeterGlossEnabled,
+            bool taskbarIntegrationEnabled,
+            bool activityBorderGlowEnabled,
+            PopupSectionMode taskbarPopupSectionMode,
+            double minimumUsefulCalibrationBytesPerSecond,
+            bool hasUsefulCalibrationPeak,
+            bool hasUsefulDownloadCalibrationPeak,
+            bool hasUsefulUploadCalibrationPeak)
+        {
+            this.AdapterDisplayName = adapterDisplayName ?? string.Empty;
+            this.UsesAutomaticAdapterSelection = usesAutomaticAdapterSelection;
+            this.CalibrationPeakBytesPerSecond = calibrationPeakBytesPerSecond;
+            this.CalibrationDownloadPeakBytesPerSecond = calibrationDownloadPeakBytesPerSecond;
+            this.CalibrationUploadPeakBytesPerSecond = calibrationUploadPeakBytesPerSecond;
+            this.TransparencyPercent = transparencyPercent;
+            this.LanguageCode = languageCode ?? string.Empty;
+            this.HasSavedPopupLocation = hasSavedPopupLocation;
+            this.PopupLocationX = popupLocationX;
+            this.PopupLocationY = popupLocationY;
+            this.PopupScalePercent = popupScalePercent;
+            this.PanelSkinId = panelSkinId ?? string.Empty;
+            this.PopupDisplayMode = popupDisplayMode;
+            this.PopupSectionMode = popupSectionMode;
+            this.RotatingMeterGlossEnabled = rotatingMeterGlossEnabled;
+            this.TaskbarIntegrationEnabled = taskbarIntegrationEnabled;
+            this.ActivityBorderGlowEnabled = activityBorderGlowEnabled;
+            this.TaskbarPopupSectionMode = taskbarPopupSectionMode;
+            this.MinimumUsefulCalibrationBytesPerSecond = minimumUsefulCalibrationBytesPerSecond;
+            this.HasUsefulCalibrationPeak = hasUsefulCalibrationPeak;
+            this.HasUsefulDownloadCalibrationPeak = hasUsefulDownloadCalibrationPeak;
+            this.HasUsefulUploadCalibrationPeak = hasUsefulUploadCalibrationPeak;
+        }
+
+        public string AdapterDisplayName { get; private set; }
+        public bool UsesAutomaticAdapterSelection { get; private set; }
+        public double CalibrationPeakBytesPerSecond { get; private set; }
+        public double CalibrationDownloadPeakBytesPerSecond { get; private set; }
+        public double CalibrationUploadPeakBytesPerSecond { get; private set; }
+        public int TransparencyPercent { get; private set; }
+        public string LanguageCode { get; private set; }
+        public bool HasSavedPopupLocation { get; private set; }
+        public int PopupLocationX { get; private set; }
+        public int PopupLocationY { get; private set; }
+        public int PopupScalePercent { get; private set; }
+        public string PanelSkinId { get; private set; }
+        public PopupDisplayMode PopupDisplayMode { get; private set; }
+        public PopupSectionMode PopupSectionMode { get; private set; }
+        public bool RotatingMeterGlossEnabled { get; private set; }
+        public bool TaskbarIntegrationEnabled { get; private set; }
+        public bool ActivityBorderGlowEnabled { get; private set; }
+        public PopupSectionMode TaskbarPopupSectionMode { get; private set; }
+        public double MinimumUsefulCalibrationBytesPerSecond { get; private set; }
+        public bool HasUsefulCalibrationPeak { get; private set; }
+        public bool HasUsefulDownloadCalibrationPeak { get; private set; }
+        public bool HasUsefulUploadCalibrationPeak { get; private set; }
     }
 }

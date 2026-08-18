@@ -209,7 +209,10 @@ namespace TrafficView
                 EnsurePortableLogPathAllowed(oldestBackupPath);
                 if (File.Exists(oldestBackupPath))
                 {
-                    File.Delete(oldestBackupPath);
+                    ExecuteFileOperationWithTraceRetry("log-delete-oldest-backup", delegate
+                    {
+                        File.Delete(oldestBackupPath);
+                    });
                 }
 
                 for (int index = MaxLogBackupFiles - 1; index >= 1; index--)
@@ -221,16 +224,74 @@ namespace TrafficView
 
                     if (File.Exists(sourceBackupPath))
                     {
-                        File.Move(sourceBackupPath, targetBackupPath);
+                        ExecuteFileOperationWithTraceRetry("log-move-backup", delegate
+                        {
+                            File.Move(sourceBackupPath, targetBackupPath);
+                        });
                     }
                 }
 
-                File.Move(logPath, GetBackupLogPath(logPath, 1));
+                ExecuteFileOperationWithTraceRetry("log-move-current-to-backup", delegate
+                {
+                    File.Move(logPath, GetBackupLogPath(logPath, 1));
+                });
             }
             catch (Exception ex)
             {
                 SafeTraceAppLogFailure("RotateIfNeeded", null, null, ex);
             }
+        }
+
+        private static void ExecuteFileOperationWithTraceRetry(string operationName, Action action)
+        {
+            if (action == null)
+            {
+                throw new ArgumentNullException("action");
+            }
+
+            int[] delaysMilliseconds = new int[]
+            {
+                50,
+                150,
+                300
+            };
+
+            for (int attempt = 0; attempt <= delaysMilliseconds.Length; attempt++)
+            {
+                try
+                {
+                    action();
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (!IsTransientLogFileException(ex) || attempt >= delaysMilliseconds.Length)
+                    {
+                        throw;
+                    }
+
+                    try
+                    {
+                        Trace.WriteLine(string.Format(
+                            "[TrafficView] AppLog file operation '{0}' failed, retry {1}/{2}: {3}: {4}",
+                            operationName ?? "unknown",
+                            attempt + 1,
+                            delaysMilliseconds.Length,
+                            ex.GetType().Name,
+                            ex.Message));
+                    }
+                    catch
+                    {
+                    }
+
+                    System.Threading.Thread.Sleep(delaysMilliseconds[attempt]);
+                }
+            }
+        }
+
+        private static bool IsTransientLogFileException(Exception exception)
+        {
+            return exception is IOException || exception is UnauthorizedAccessException;
         }
 
         private static string GetBackupLogPath(string logPath, int index)

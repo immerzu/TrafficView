@@ -1,4 +1,4 @@
-# TrafficView 1.4.32
+# TrafficView 1.4.33
 
 TrafficView allows only one active instance during normal operation. A second launch shows an informational message and keeps the already running instance active.
 

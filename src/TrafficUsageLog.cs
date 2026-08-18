@@ -58,6 +58,7 @@ namespace TrafficView
         private const string UsageArchiveFileName = "Verbrauch.archiv.txt";
         private const string CompressedArchiveFileNamePrefix = "Verbrauch.archiv.";
         private const string CompressedArchiveFileNameSuffix = ".txt.gz";
+        private const long MaxActiveUsageFileBytes = 2L * 1024L * 1024L;
         private readonly object syncRoot = new object();
         private readonly List<string> pendingLines = new List<string>();
         private DateTime lastMaintenanceUtc = DateTime.MinValue;
@@ -125,7 +126,12 @@ namespace TrafficView
             try
             {
                 EnsureUsageDirectoryExists();
-                AtomicAppendAllLines(path, linesToWrite.ToArray());
+                AppendAllLinesDirect(path, linesToWrite.ToArray());
+
+                if (IsActiveUsageFileTooLarge(path))
+                {
+                    this.ForceMaintenanceSoon();
+                }
 
                 this.RunMaintenanceIfNeeded();
                 return true;
@@ -429,6 +435,41 @@ namespace TrafficView
                         localTimestamp.Month == nowLocal.Month;
                 default:
                     return false;
+            }
+        }
+
+        private void ForceMaintenanceSoon()
+        {
+            lock (this.syncRoot)
+            {
+                this.lastMaintenanceUtc = DateTime.MinValue;
+            }
+        }
+
+        private static bool IsActiveUsageFileTooLarge(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+
+                FileInfo info = new FileInfo(path);
+                return info.Length >= MaxActiveUsageFileBytes;
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "usage-size-check-failed",
+                    "Usage file size check failed.",
+                    ex);
+                return false;
             }
         }
 
@@ -919,15 +960,18 @@ namespace TrafficView
 
             try
             {
-                using (FileStream fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (GZipStream gzipStream = new GZipStream(fileStream, CompressionMode.Compress))
-                using (StreamWriter writer = new StreamWriter(gzipStream, new UTF8Encoding(false)))
+                FileRetry.Execute("usage-write-compressed-temp", delegate
                 {
-                    for (int i = 0; i < lines.Count; i++)
+                    using (FileStream fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    using (GZipStream gzipStream = new GZipStream(fileStream, CompressionMode.Compress))
+                    using (StreamWriter writer = new StreamWriter(gzipStream, new UTF8Encoding(false)))
                     {
-                        writer.WriteLine(lines[i]);
+                        for (int i = 0; i < lines.Count; i++)
+                        {
+                            writer.WriteLine(lines[i]);
+                        }
                     }
-                }
+                });
 
                 AtomicReplaceFile(tempPath, path);
             }
@@ -935,6 +979,57 @@ namespace TrafficView
             {
                 DeleteIfExists(tempPath);
             }
+        }
+
+        private static void AppendAllLinesDirect(string path, IEnumerable<string> lines)
+        {
+            if (string.IsNullOrWhiteSpace(path) || lines == null)
+            {
+                return;
+            }
+
+            string directoryPath = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            FileRetry.Execute("usage-append-direct", delegate
+            {
+                bool needsLeadingLineBreak = false;
+
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        using (FileStream checkStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        {
+                            needsLeadingLineBreak = DoesStreamNeedTrailingLineBreak(checkStream);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce(
+                        "usage-append-direct-check-failed",
+                        "Usage append line-break check failed.",
+                        ex);
+                }
+
+                using (FileStream stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read))
+                using (StreamWriter writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                {
+                    if (needsLeadingLineBreak)
+                    {
+                        writer.WriteLine();
+                    }
+
+                    foreach (string line in lines)
+                    {
+                        writer.WriteLine(line ?? string.Empty);
+                    }
+                }
+            });
         }
 
         private static void AtomicAppendAllLines(string path, IEnumerable<string> appendedLines)
@@ -960,32 +1055,35 @@ namespace TrafficView
 
             try
             {
-                using (FileStream tempStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                FileRetry.Execute("usage-write-append-temp", delegate
                 {
-                    bool appendLineBreakBeforeNewLines = false;
-
-                    if (File.Exists(path))
+                    using (FileStream tempStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                     {
-                        using (FileStream sourceStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        bool appendLineBreakBeforeNewLines = false;
+
+                        if (File.Exists(path))
                         {
-                            appendLineBreakBeforeNewLines = DoesStreamNeedTrailingLineBreak(sourceStream);
-                            sourceStream.CopyTo(tempStream);
+                            using (FileStream sourceStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                            {
+                                appendLineBreakBeforeNewLines = DoesStreamNeedTrailingLineBreak(sourceStream);
+                                sourceStream.CopyTo(tempStream);
+                            }
+                        }
+
+                        using (StreamWriter writer = new StreamWriter(tempStream, new UTF8Encoding(false)))
+                        {
+                            if (appendLineBreakBeforeNewLines)
+                            {
+                                writer.WriteLine();
+                            }
+
+                            foreach (string line in appendedLines)
+                            {
+                                writer.WriteLine(line ?? string.Empty);
+                            }
                         }
                     }
-
-                    using (StreamWriter writer = new StreamWriter(tempStream, new UTF8Encoding(false)))
-                    {
-                        if (appendLineBreakBeforeNewLines)
-                        {
-                            writer.WriteLine();
-                        }
-
-                        foreach (string line in appendedLines)
-                        {
-                            writer.WriteLine(line ?? string.Empty);
-                        }
-                    }
-                }
+                });
 
                 AtomicReplaceFile(tempPath, path);
             }
@@ -1038,14 +1136,17 @@ namespace TrafficView
 
             try
             {
-                using (FileStream fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                using (StreamWriter writer = new StreamWriter(fileStream, new UTF8Encoding(false)))
+                FileRetry.Execute("usage-write-temp", delegate
                 {
-                    foreach (string line in lines)
+                    using (FileStream fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    using (StreamWriter writer = new StreamWriter(fileStream, new UTF8Encoding(false)))
                     {
-                        writer.WriteLine(line ?? string.Empty);
+                        foreach (string line in lines)
+                        {
+                            writer.WriteLine(line ?? string.Empty);
+                        }
                     }
-                }
+                });
 
                 AtomicReplaceFile(tempPath, path);
             }
@@ -1065,14 +1166,17 @@ namespace TrafficView
             EnsurePortablePathAllowed(targetPath, "Verbrauchsdatei");
             EnsurePortablePathAllowed(tempPath, "Temporaere Verbrauchsdatei");
 
-            if (File.Exists(targetPath))
+            FileRetry.Execute("usage-atomic-replace", delegate
             {
-                File.Replace(tempPath, targetPath, null, true);
-            }
-            else
-            {
-                File.Move(tempPath, targetPath);
-            }
+                if (File.Exists(targetPath))
+                {
+                    File.Replace(tempPath, targetPath, null, true);
+                }
+                else
+                {
+                    File.Move(tempPath, targetPath);
+                }
+            });
         }
 
         private static List<string> MergeUniqueLines(List<string> existingLines, List<string> newLines)
@@ -1140,12 +1244,15 @@ namespace TrafficView
 
             try
             {
-                if (!File.Exists(path))
+                FileRetry.Execute("usage-delete", delegate
                 {
-                    return;
-                }
+                    if (!File.Exists(path))
+                    {
+                        return;
+                    }
 
-                File.Delete(path);
+                    File.Delete(path);
+                });
             }
             catch (Exception ex)
             {
@@ -1339,5 +1446,68 @@ namespace TrafficView
             public readonly string OriginalPath;
             public readonly string BackupPath;
         }
+
+        internal TrafficUsageLogDiagnostics CreateDiagnostics()
+        {
+            int pendingCount;
+            DateTime lastMaintenance;
+
+            lock (this.syncRoot)
+            {
+                pendingCount = this.pendingLines.Count;
+                lastMaintenance = this.lastMaintenanceUtc;
+            }
+
+            bool exists = false;
+            long size = 0L;
+
+            try
+            {
+                string path = GetUsageFilePath();
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    FileInfo info = new FileInfo(path);
+                    exists = true;
+                    size = info.Length;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "usage-diagnostics-file-size-failed",
+                    "Usage diagnostics file size check failed.",
+                    ex);
+            }
+
+            return new TrafficUsageLogDiagnostics(
+                pendingCount,
+                lastMaintenance,
+                exists,
+                size,
+                MaxActiveUsageFileBytes);
+        }
+    }
+
+    internal sealed class TrafficUsageLogDiagnostics
+    {
+        public TrafficUsageLogDiagnostics(
+            int pendingRecordCount,
+            DateTime lastMaintenanceUtc,
+            bool activeFileExists,
+            long activeFileBytes,
+            long maxActiveFileBytes)
+        {
+            this.PendingRecordCount = pendingRecordCount;
+            this.LastMaintenanceUtc = lastMaintenanceUtc;
+            this.ActiveFileExists = activeFileExists;
+            this.ActiveFileBytes = activeFileBytes;
+            this.MaxActiveFileBytes = maxActiveFileBytes;
+        }
+
+        public int PendingRecordCount { get; private set; }
+        public DateTime LastMaintenanceUtc { get; private set; }
+        public bool ActiveFileExists { get; private set; }
+        public long ActiveFileBytes { get; private set; }
+        public long MaxActiveFileBytes { get; private set; }
     }
 }

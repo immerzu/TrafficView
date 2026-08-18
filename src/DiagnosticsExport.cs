@@ -24,43 +24,49 @@ namespace TrafficView
                     Directory.CreateDirectory(directoryPath);
                 }
 
-                using (FileStream stream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
-                using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
+                FileRetry.Execute("diagnostics-write-temp-zip", delegate
                 {
-                    List<string> warnings = new List<string>();
-                    List<string> manifestEntries = new List<string>();
-                    HashSet<string> usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                    string diagnosticsName = ResolveEntryName("diagnostics.txt", usedEntryNames);
-                    WriteTextEntry(archive, diagnosticsName, diagnosticsText ?? string.Empty);
-                    manifestEntries.Add(diagnosticsName);
-                    usedEntryNames.Add(diagnosticsName);
-
-                    AddLogFiles(archive, warnings, manifestEntries, usedEntryNames);
-
-                    if (warnings.Count > 0)
+                    using (FileStream stream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+                    using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
                     {
-                        string warningsName = ResolveEntryName("diagnostics-export-warnings.txt", usedEntryNames);
-                        WriteTextEntry(
-                            archive,
-                            warningsName,
-                            string.Join("\r\n", warnings.ToArray()));
-                        manifestEntries.Add(warningsName);
-                        usedEntryNames.Add(warningsName);
+                        List<string> warnings = new List<string>();
+                        List<string> manifestEntries = new List<string>();
+                        HashSet<string> usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                        string diagnosticsName = ResolveEntryName("diagnostics.txt", usedEntryNames);
+                        WriteTextEntry(archive, diagnosticsName, diagnosticsText ?? string.Empty);
+                        manifestEntries.Add(diagnosticsName);
+                        usedEntryNames.Add(diagnosticsName);
+
+                        AddLogFiles(archive, warnings, manifestEntries, usedEntryNames);
+
+                        if (warnings.Count > 0)
+                        {
+                            string warningsName = ResolveEntryName("diagnostics-export-warnings.txt", usedEntryNames);
+                            WriteTextEntry(
+                                archive,
+                                warningsName,
+                                string.Join("\r\n", warnings.ToArray()));
+                            manifestEntries.Add(warningsName);
+                            usedEntryNames.Add(warningsName);
+                        }
+
+                        string manifestName = ResolveEntryName("diagnostics-manifest.txt", usedEntryNames);
+                        WriteTextEntry(archive, manifestName, CreateDiagnosticsManifest(manifestEntries));
                     }
+                });
 
-                    string manifestName = ResolveEntryName("diagnostics-manifest.txt", usedEntryNames);
-                    WriteTextEntry(archive, manifestName, CreateDiagnosticsManifest(manifestEntries));
-                }
-
-                if (File.Exists(targetPath))
+                FileRetry.Execute("diagnostics-replace", delegate
                 {
-                    File.Replace(tempPath, targetPath, null, true);
-                }
-                else
-                {
-                    File.Move(tempPath, targetPath);
-                }
+                    if (File.Exists(targetPath))
+                    {
+                        File.Replace(tempPath, targetPath, null, true);
+                    }
+                    else
+                    {
+                        File.Move(tempPath, targetPath);
+                    }
+                });
             }
             finally
             {

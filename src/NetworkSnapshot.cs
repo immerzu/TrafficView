@@ -111,6 +111,12 @@ namespace TrafficView
             get { return this.BytesReceived + this.BytesSent; }
         }
 
+        private const int AutomaticAdapterSwitchConfirmationSamples = 3;
+        private static readonly object AutomaticAdapterSelectionSyncRoot = new object();
+        private static string confirmedAutomaticAdapterKey = string.Empty;
+        private static string pendingAutomaticAdapterKey = string.Empty;
+        private static int pendingAutomaticAdapterConfirmationCount;
+
         public static List<AdapterListItem> GetAdapterItems()
         {
             List<AdapterListItem> items = new List<AdapterListItem>();
@@ -273,8 +279,18 @@ namespace TrafficView
             NetworkInterface primaryAdapter = SelectAutomaticAdapter(interfaces);
             if (primaryAdapter == null)
             {
+                lock (AutomaticAdapterSelectionSyncRoot)
+                {
+                    confirmedAutomaticAdapterKey = string.Empty;
+                    pendingAutomaticAdapterKey = string.Empty;
+                    pendingAutomaticAdapterConfirmationCount = 0;
+                }
+
                 return new NetworkSnapshot(0L, 0L, 0, string.Empty);
             }
+
+            List<NetworkInterface> candidateAdapters = GetAutomaticAdapterCandidates(interfaces);
+            primaryAdapter = ApplyAutomaticAdapterHysteresis(primaryAdapter, candidateAdapters);
 
             long bytesReceived;
             long bytesSent;
@@ -373,7 +389,191 @@ namespace TrafficView
             return bestAdapter;
         }
 
+        private static List<NetworkInterface> GetAutomaticAdapterCandidates(NetworkInterface[] interfaces)
+        {
+            List<NetworkInterface> candidates = new List<NetworkInterface>();
 
+            if (interfaces != null)
+            {
+                foreach (NetworkInterface networkInterface in interfaces)
+                {
+                    if (!NetworkAdapterClassifier.IsSelectableInSetup(networkInterface) || !NetworkAdapterClassifier.IsCapturable(networkInterface))
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(networkInterface);
+                }
+            }
+
+            return candidates;
+        }
+
+        private static NetworkInterface ApplyAutomaticAdapterHysteresis(
+            NetworkInterface selectedAdapter,
+            List<NetworkInterface> candidateAdapters)
+        {
+            if (selectedAdapter == null)
+            {
+                lock (AutomaticAdapterSelectionSyncRoot)
+                {
+                    confirmedAutomaticAdapterKey = string.Empty;
+                    pendingAutomaticAdapterKey = string.Empty;
+                    pendingAutomaticAdapterConfirmationCount = 0;
+                }
+
+                return null;
+            }
+
+            string selectedKey = CreateAutomaticAdapterKey(selectedAdapter);
+            if (string.IsNullOrWhiteSpace(selectedKey))
+            {
+                return selectedAdapter;
+            }
+
+            lock (AutomaticAdapterSelectionSyncRoot)
+            {
+                if (string.IsNullOrWhiteSpace(confirmedAutomaticAdapterKey))
+                {
+                    confirmedAutomaticAdapterKey = selectedKey;
+                    pendingAutomaticAdapterKey = string.Empty;
+                    pendingAutomaticAdapterConfirmationCount = 0;
+                    return selectedAdapter;
+                }
+
+                if (string.Equals(confirmedAutomaticAdapterKey, selectedKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    pendingAutomaticAdapterKey = string.Empty;
+                    pendingAutomaticAdapterConfirmationCount = 0;
+                    return selectedAdapter;
+                }
+
+                if (IsAutomaticAdapterCandidateStillAvailable(confirmedAutomaticAdapterKey, candidateAdapters))
+                {
+                    if (string.Equals(pendingAutomaticAdapterKey, selectedKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        pendingAutomaticAdapterConfirmationCount++;
+                    }
+                    else
+                    {
+                        pendingAutomaticAdapterKey = selectedKey;
+                        pendingAutomaticAdapterConfirmationCount = 1;
+                    }
+
+                    if (pendingAutomaticAdapterConfirmationCount < AutomaticAdapterSwitchConfirmationSamples)
+                    {
+                        NetworkInterface confirmedAdapter = FindAutomaticAdapterByKey(
+                            confirmedAutomaticAdapterKey,
+                            candidateAdapters);
+
+                        if (confirmedAdapter != null)
+                        {
+                            AppLog.WarnOnce(
+                                "automatic-adapter-switch-pending-" + SanitizeAutomaticAdapterLogKey(selectedKey),
+                                string.Format(
+                                    "Automatic adapter switch pending. Current='{0}', Candidate='{1}', Confirmation={2}/{3}.",
+                                    confirmedAutomaticAdapterKey,
+                                    selectedKey,
+                                    pendingAutomaticAdapterConfirmationCount,
+                                    AutomaticAdapterSwitchConfirmationSamples));
+
+                            return confirmedAdapter;
+                        }
+                    }
+                }
+
+                confirmedAutomaticAdapterKey = selectedKey;
+                pendingAutomaticAdapterKey = string.Empty;
+                pendingAutomaticAdapterConfirmationCount = 0;
+
+                AppLog.WarnOnce(
+                    "automatic-adapter-switch-confirmed-" + SanitizeAutomaticAdapterLogKey(selectedKey),
+                    string.Format(
+                        "Automatic adapter switch confirmed: '{0}'.",
+                        selectedKey));
+
+                return selectedAdapter;
+            }
+        }
+
+        private static string CreateAutomaticAdapterKey(NetworkInterface adapter)
+        {
+            if (adapter == null)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(adapter.Id))
+            {
+                return adapter.Id;
+            }
+
+            if (!string.IsNullOrWhiteSpace(adapter.Name))
+            {
+                return adapter.Name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(adapter.Description))
+            {
+                return adapter.Description;
+            }
+
+            return string.Empty;
+        }
+
+        private static bool IsAutomaticAdapterCandidateStillAvailable(
+            string adapterKey,
+            List<NetworkInterface> candidateAdapters)
+        {
+            return FindAutomaticAdapterByKey(adapterKey, candidateAdapters) != null;
+        }
+
+        private static NetworkInterface FindAutomaticAdapterByKey(
+            string adapterKey,
+            List<NetworkInterface> candidateAdapters)
+        {
+            if (string.IsNullOrWhiteSpace(adapterKey) || candidateAdapters == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < candidateAdapters.Count; i++)
+            {
+                NetworkInterface adapter = candidateAdapters[i];
+                if (adapter == null)
+                {
+                    continue;
+                }
+
+                string currentKey = CreateAutomaticAdapterKey(adapter);
+                if (string.Equals(adapterKey, currentKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return adapter;
+                }
+            }
+
+            return null;
+        }
+
+        private static string SanitizeAutomaticAdapterLogKey(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "unknown";
+            }
+
+            char[] chars = value.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                if (!char.IsLetterOrDigit(c) && c != '-' && c != '_')
+                {
+                    chars[i] = '-';
+                }
+            }
+
+            return new string(chars);
+        }
 
         private static bool TryReadStatistics(
             NetworkInterface networkInterface,
@@ -543,5 +743,37 @@ namespace TrafficView
         {
             return value > long.MaxValue ? long.MaxValue : (long)value;
         }
+
+        internal static AutomaticAdapterSelectionDiagnostics GetAutomaticAdapterSelectionDiagnostics()
+        {
+            lock (AutomaticAdapterSelectionSyncRoot)
+            {
+                return new AutomaticAdapterSelectionDiagnostics(
+                    AutomaticAdapterSwitchConfirmationSamples,
+                    confirmedAutomaticAdapterKey,
+                    pendingAutomaticAdapterKey,
+                    pendingAutomaticAdapterConfirmationCount);
+            }
+        }
+    }
+
+    internal sealed class AutomaticAdapterSelectionDiagnostics
+    {
+        public AutomaticAdapterSelectionDiagnostics(
+            int requiredConfirmationSamples,
+            string confirmedAdapterKey,
+            string pendingAdapterKey,
+            int pendingConfirmationCount)
+        {
+            this.RequiredConfirmationSamples = requiredConfirmationSamples;
+            this.ConfirmedAdapterKey = confirmedAdapterKey ?? string.Empty;
+            this.PendingAdapterKey = pendingAdapterKey ?? string.Empty;
+            this.PendingConfirmationCount = pendingConfirmationCount;
+        }
+
+        public int RequiredConfirmationSamples { get; private set; }
+        public string ConfirmedAdapterKey { get; private set; }
+        public string PendingAdapterKey { get; private set; }
+        public int PendingConfirmationCount { get; private set; }
     }
 }

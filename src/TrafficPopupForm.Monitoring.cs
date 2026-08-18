@@ -1,14 +1,15 @@
 using System;
+using System.Threading;
 
 namespace TrafficView
 {
     internal sealed partial class TrafficPopupForm
     {
-        private bool isCapturingTrafficSnapshot;
+        private int isCapturingTrafficSnapshot;
 
         private void RefreshTimer_Tick(object sender, EventArgs e)
         {
-            if (this.isCapturingTrafficSnapshot)
+            if (this.isCapturingTrafficSnapshot != 0)
             {
                 return;
             }
@@ -133,6 +134,7 @@ namespace TrafficView
                 this.lastSampleUtc = DateTime.MinValue;
                 this.lastReceivedBytes = 0L;
                 this.lastSentBytes = 0L;
+                this.lastTrafficSnapshotAdapterKey = string.Empty;
                 this.latestDownloadBytesPerSecond = 0D;
                 this.latestUploadBytesPerSecond = 0D;
                 this.displayedDownloadBytesPerSecond = 0D;
@@ -160,6 +162,55 @@ namespace TrafficView
             }
 
             DateTime nowUtc = DateTime.UtcNow;
+
+            if (this.lastSampleUtc != DateTime.MinValue)
+            {
+                string currentAdapterKey = CreateTrafficSnapshotAdapterKey(snapshot);
+                string baselineResetReason;
+                long previousTotalBytes = this.lastReceivedBytes + this.lastSentBytes;
+
+                bool resetBaseline = TrafficSnapshotBaselinePolicy.ShouldResetBaseline(
+                    this.lastReceivedBytes,
+                    this.lastSentBytes,
+                    previousTotalBytes,
+                    this.lastTrafficSnapshotAdapterKey,
+                    snapshot.BytesReceived,
+                    snapshot.BytesSent,
+                    snapshot.TotalBytes,
+                    currentAdapterKey,
+                    out baselineResetReason);
+
+                if (resetBaseline)
+                {
+                    string reason = string.IsNullOrWhiteSpace(baselineResetReason)
+                        ? "unknown"
+                        : baselineResetReason;
+
+                    AppLog.WarnOnce(
+                        "traffic-snapshot-baseline-reset-" + reason + "-" + SanitizeAdapterKeyForLog(currentAdapterKey),
+                        string.Format(
+                            "Traffic snapshot baseline reset. Reason={0}. Adapter={1}",
+                            reason,
+                            snapshot.DisplayName ?? string.Empty));
+
+                    this.lastReceivedBytes = snapshot.BytesReceived;
+                    this.lastSentBytes = snapshot.BytesSent;
+                    this.lastSampleUtc = nowUtc;
+                    this.lastTrafficSnapshotAdapterKey = currentAdapterKey;
+                    this.latestDownloadBytesPerSecond = 0D;
+                    this.latestUploadBytesPerSecond = 0D;
+
+                    if (this.Visible && !this.ShouldDeferVisualSurfaceRefreshDuringManualDrag())
+                    {
+                        this.RefreshVisualSurface();
+                    }
+
+                    return;
+                }
+            }
+
+            this.lastTrafficSnapshotAdapterKey = CreateTrafficSnapshotAdapterKey(snapshot);
+
             long measuredDownloadBytes;
             long measuredUploadBytes;
             double rawDownloadBytesPerSecond;
@@ -189,9 +240,92 @@ namespace TrafficView
             this.OnTrafficUsageMeasured(measuredDownloadBytes, measuredUploadBytes);
         }
 
+        private static string CreateTrafficSnapshotAdapterKey(NetworkSnapshot snapshot)
+        {
+            return snapshot.DisplayName ?? string.Empty;
+        }
+
+        internal string CreateMonitoringDiagnosticsText()
+        {
+            string adapterMode;
+            if (this.settings == null)
+            {
+                adapterMode = "unknown";
+            }
+            else if (this.settings.UsesAutomaticAdapterSelection())
+            {
+                adapterMode = "automatic";
+            }
+            else
+            {
+                adapterMode = "manual";
+            }
+
+            string configuredAdapter = this.settings != null
+                ? this.settings.GetAdapterDisplayName()
+                : "unknown";
+
+            string lastSnapshotAdapter = string.IsNullOrWhiteSpace(this.lastTrafficSnapshotAdapterKey)
+                ? "none"
+                : this.lastTrafficSnapshotAdapterKey;
+
+            string lastSample = FormatDiagnosticsUtc(this.lastSampleUtc);
+
+            string currentRates = string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "DL {0} / UL {1}",
+                TrafficRateFormatter.FormatSpeed(this.displayedDownloadBytesPerSecond),
+                TrafficRateFormatter.FormatSpeed(this.displayedUploadBytesPerSecond));
+
+            string captureActive = System.Threading.Volatile.Read(ref this.isCapturingTrafficSnapshot) != 0
+                ? "yes"
+                : "no";
+
+            return string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "Monitoring diagnostics:\r\nAdapter selection mode: {0}\r\nConfigured adapter: {1}\r\nLast snapshot adapter: {2}\r\nLast successful sample UTC: {3}\r\nCurrent rates: {4}\r\nCapture active: {5}",
+                adapterMode,
+                configuredAdapter,
+                lastSnapshotAdapter,
+                lastSample,
+                currentRates,
+                captureActive);
+        }
+
+        private static string FormatDiagnosticsUtc(DateTime value)
+        {
+            if (value == DateTime.MinValue)
+            {
+                return "none";
+            }
+
+            DateTime utc = value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
+            return utc.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + " UTC";
+        }
+
+        private static string SanitizeAdapterKeyForLog(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return "unknown";
+            }
+
+            char[] chars = key.ToCharArray();
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                if (!char.IsLetterOrDigit(c) && c != '-' && c != '_')
+                {
+                    chars[i] = '-';
+                }
+            }
+
+            return new string(chars);
+        }
+
         private async void RefreshTraffic()
         {
-            if (this.isCapturingTrafficSnapshot)
+            if (Interlocked.CompareExchange(ref this.isCapturingTrafficSnapshot, 1, 0) != 0)
             {
                 return;
             }
@@ -208,20 +342,32 @@ namespace TrafficView
 
         private async System.Threading.Tasks.Task RefreshTrafficAsync()
         {
-            this.isCapturingTrafficSnapshot = true;
+            CancellationToken cancellationToken = this.trafficSnapshotCancellation.Token;
 
             try
             {
+                if (cancellationToken.IsCancellationRequested || this.IsDisposed || this.Disposing)
+                {
+                    return;
+                }
+
                 MonitorSettings settings = this.settings;
                 NetworkSnapshot snapshot;
 
                 try
                 {
-                    snapshot = await System.Threading.Tasks.Task.Run(() => NetworkSnapshot.Capture(settings));
+                    snapshot = await System.Threading.Tasks.Task.Run(
+                        () => NetworkSnapshot.Capture(settings),
+                        cancellationToken);
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] RefreshTraffic-Capture fehlgeschlagen: {0}", ex.Message));
+                    return;
+                }
+
+                if (cancellationToken.IsCancellationRequested || this.IsDisposed || this.Disposing)
+                {
                     return;
                 }
 
@@ -239,9 +385,12 @@ namespace TrafficView
                     System.Diagnostics.Trace.WriteLine(string.Format("[TrafficView] ProcessTrafficSnapshot fehlgeschlagen: {0}", ex.Message));
                 }
             }
+            catch (OperationCanceledException)
+            {
+            }
             finally
             {
-                this.isCapturingTrafficSnapshot = false;
+                Interlocked.Exchange(ref this.isCapturingTrafficSnapshot, 0);
             }
         }
     }

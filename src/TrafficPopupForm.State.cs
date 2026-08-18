@@ -21,6 +21,7 @@ namespace TrafficView
         private long lastReceivedBytes;
         private long lastSentBytes;
         private DateTime lastSampleUtc;
+        private string lastTrafficSnapshotAdapterKey = string.Empty;
         private int currentDpi;
         private Font captionFont;
         private Font valueFont;
@@ -92,6 +93,7 @@ namespace TrafficView
         private DateTime dragTaskbarSnapshotCapturedUtc = DateTime.MinValue;
         private IntPtr lastTaskbarLocalZOrderAnchorHandle = IntPtr.Zero;
         private IntPtr taskbarIntegrationHostHandle = IntPtr.Zero;
+        private readonly System.Threading.CancellationTokenSource trafficSnapshotCancellation = new System.Threading.CancellationTokenSource();
 
         public event EventHandler OverlayMenuRequested;
         public event EventHandler OverlayLocationCommitted;

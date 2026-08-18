@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace TrafficView
@@ -34,6 +35,16 @@ namespace TrafficView
                 {
                     this.taskbarRefreshDebounceTimer.Dispose();
                 }
+
+                try
+                {
+                    this.trafficSnapshotCancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+
+                this.trafficSnapshotCancellation.Dispose();
 
                 this.DisposeSurfaceBitmaps();
                 ReleaseCachedMeterCenterAsset();
