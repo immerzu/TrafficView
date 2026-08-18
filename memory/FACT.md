@@ -8,7 +8,7 @@ TrafficView ist ein **Windows-Desktop-Netzwerkverbrauchs-Monitor** (C# / WinForm
 
 ## Technische Eckdaten (verifiziert 2026-08-18)
 
-- **Version:** 1.4.33 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.33.0")` + `AssemblyFileVersion("1.4.33.0")`, README: `# TrafficView 1.4.33`. Letzter Git-Tag: `v1.4.32-15-g0edecaf` (HEAD `0edecaf`).
+- **Version:** 1.4.34 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.34.0")` + `AssemblyFileVersion("1.4.34.0")`, README: `# TrafficView 1.4.34`. Letzter Git-Tag: `v1.4.34` (zeigt auf `662706d`; HEAD `27a8b2f`).
 - **Build-System:** `TrafficView.csproj` ist ein **klassisches (Nicht-SDK-)Projekt** mit manueller `<Compile Include="…">`-Liste. **WICHTIG: Neue `.cs`-Dateien müssen manuell in die Compile-Liste eingetragen werden**, sonst bauen sie nicht mit (Beleg 2026-08-18: `src/FileRetry.cs` + `src/TrafficSnapshotBaselinePolicy.cs` sind untracked, aber bereits in der Liste).
 - **Kein Hauptfenster:** Die App lebt im Tray (`NotifyIcon`); Dialoge sind `UsageSummaryForm`, `CalibrationForm`, `DialogForms`.
 
