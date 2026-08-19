@@ -1,6 +1,6 @@
 # TrafficView — Projektgedächtnis (FACT.md)
 
-Stand: 2026-08-19 — Release v1.4.38 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260819_v1.4.38.md`.
+Stand: 2026-08-19 — Release v1.4.39 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260819_v1.4.39.md`.
 
 ## Projekt
 
@@ -8,7 +8,7 @@ TrafficView ist ein **Windows-Desktop-Netzwerkverbrauchs-Monitor** (C# / WinForm
 
 ## Technische Eckdaten (verifiziert 2026-08-18)
 
-- **Version:** 1.4.38 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.38.0")` + `AssemblyFileVersion("1.4.38.0")`, README: `# TrafficView 1.4.38`. Letzter Git-Tag: `v1.4.38`.
+- **Version:** 1.4.39 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.39.0")` + `AssemblyFileVersion("1.4.39.0")`, README: `# TrafficView 1.4.39`. Letzter Git-Tag: `v1.4.39`.
 - **Build-System:** `TrafficView.csproj` ist ein **klassisches (Nicht-SDK-)Projekt** mit manueller `<Compile Include="…">`-Liste. **WICHTIG: Neue `.cs`-Dateien müssen manuell in die Compile-Liste eingetragen werden**, sonst bauen sie nicht mit (Beleg 2026-08-18: `src/FileRetry.cs` + `src/TrafficSnapshotBaselinePolicy.cs` mussten nachgetragen werden; committet in `fd3247a`).
 - **Kein Hauptfenster:** Die App lebt im Tray (`NotifyIcon`); Dialoge sind `UsageSummaryForm`, `CalibrationForm`, `DialogForms`.
 
@@ -111,7 +111,17 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 - **GitHub-Release:** „TrafficView v1.4.38" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.38), **2 Assets**: `TrafficView_Portable_1.4.38.zip` (507.347 B) + `.zip.sha256` (99 B).
 - **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.38.zip` — SHA-256 `73adcead13d1e6456f23e6b01e1eff9233e7ec71824ce327e2bc9476b364d6d7` (= `.sha256`), Manifest `version 1.4.38` / `commit e0bc07b…` (Build nach Release-Commit).
 
+## Release v1.4.39 (2026-08-19, Patch-Release)
+
+- **Inhalt:** Ring-Fix (Schrumpfen gleitet weich statt ruckelig) + Bump. Commits: `bdee35a` (fix: smooth ring decay on traffic decrease — EIN Commit mit 3 Codedateien + 6 Versionsdateien):
+  - `RingSegments.cs` `DrawSegmentedProgressSet`: Teilsegment schrumpft kontinuierlich und blendet per Alpha-Fade aus (`partialSegmentRatio > 0D` statt `> 0.02D`, keine 0.9°-Klemme, `ApplyAlpha` mit `SmoothStep(partialRatio/PartialSegmentFadeRatio)`).
+  - `Constants.cs`: `RingDisplayFallSmoothingFactor` 0.14 → 0.28 (symmetrisch zum Rise); neu `PartialSegmentFadeRatio = 0.25D`.
+  - `MonitoringAnimations.cs` `ShouldAnimateVisualEffects`: `ringMotionThreshold` = 0.001 B/s (Timer bleibt bis exakte Zielerreichung inkl. 0 aktiv).
+- **Tag:** `v1.4.39` (annotiert, „Release v1.4.39") → `bdee35a`, gepusht.
+- **GitHub-Release:** „TrafficView v1.4.39" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.39), **2 Assets**: `TrafficView_Portable_1.4.39.zip` (507.372 B) + `.zip.sha256` (99 B).
+- **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.39.zip` — SHA-256 `fb62b6cd6540d546f5dcc7a2410e6b9e9ece364e1432f2a05827749ea52e6710` (= `.sha256`), Manifest `version 1.4.39` / `commit bdee35a…` (Build nach Release-Commit).
+
 ## Aktueller Arbeitsbaum (Stand 2026-08-19)
 
-- `main` == `origin/main` == `e0bc07b`; Tag v1.4.38 auf `e0bc07b`; Arbeitsbaum sauber.
-- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`); manuelle UI-Abnahme des Über-Dialogs (v1.4.38) steht aus. Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37) als Momentaufnahmen.
+- `main` == `origin/main` == `bdee35a`; Tag v1.4.39 auf `bdee35a`; Arbeitsbaum sauber.
+- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`); manuelle UI-Abnahmen (Über-Dialog v1.4.38, Ring-Glättung v1.4.39) stehen aus. Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37/38) als Momentaufnahmen.
