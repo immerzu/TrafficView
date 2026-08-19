@@ -1,6 +1,6 @@
 # TrafficView — Projektgedächtnis (FACT.md)
 
-Stand: 2026-08-18 (nacht) — Release v1.4.35 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260818_v1.4.35.md`.
+Stand: 2026-08-19 — Release v1.4.36 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260819_v1.4.36.md`.
 
 ## Projekt
 
@@ -8,7 +8,7 @@ TrafficView ist ein **Windows-Desktop-Netzwerkverbrauchs-Monitor** (C# / WinForm
 
 ## Technische Eckdaten (verifiziert 2026-08-18)
 
-- **Version:** 1.4.35 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.35.0")` + `AssemblyFileVersion("1.4.35.0")`, README: `# TrafficView 1.4.35`. Letzter Git-Tag: `v1.4.35`.
+- **Version:** 1.4.36 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.36.0")` + `AssemblyFileVersion("1.4.36.0")`, README: `# TrafficView 1.4.36`. Letzter Git-Tag: `v1.4.36`.
 - **Build-System:** `TrafficView.csproj` ist ein **klassisches (Nicht-SDK-)Projekt** mit manueller `<Compile Include="…">`-Liste. **WICHTIG: Neue `.cs`-Dateien müssen manuell in die Compile-Liste eingetragen werden**, sonst bauen sie nicht mit (Beleg 2026-08-18: `src/FileRetry.cs` + `src/TrafficSnapshotBaselinePolicy.cs` mussten nachgetragen werden; committet in `fd3247a`).
 - **Kein Hauptfenster:** Die App lebt im Tray (`NotifyIcon`); Dialoge sind `UsageSummaryForm`, `CalibrationForm`, `DialogForms`.
 
@@ -88,7 +88,15 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 - **Prozess-Lektion (wiederholt bestätigt):** `Bump-Version.ps1` deckt Manual.txt + dist/Manual.txt NICHT ab → manuell mitziehen; `dist/README.md` aus Root-README ableiten; Portable-Build IMMER nach dem Release-Commit ausführen, damit das Manifest den finalen Commit nennt.
 - **gh CLI:** v2.97.0 verfügbar, authentifiziert als `immerzu` (Scopes gist/read:org/repo/workflow) — Releases via `gh release create <tag> <asset>… --title … --notes-file …` erstellen.
 
-## Aktueller Arbeitsbaum (Stand 2026-08-18 nacht)
+## Release v1.4.36 (2026-08-19, Bugfix-Release)
 
-- `main` == `origin/main` == `9e97b5f`; Tag v1.4.35 auf `9e97b5f`; Arbeitsbaum sauber.
-- Offene Punkte aus der Lese-Prüfung (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26). Historisch: `memory/HANDOVER_20260818.md` (v1.4.33-Stand) und `memory/HANDOVER_20260818_v1.4.34.md` als Momentaufnahmen.
+- **Ursache (belegt):** Über-Dialog hatte 3 Fehler — (1) nicht verkleinerbar: `FixedDialog` + `MaximizeBox/MinimizeBox=false`; (2) überladen: 1024×1024-Logo in `SizeMode.Normal` mit `AutoScroll` in fast bildschirmgroßem Fenster; (3) nicht schließbar: `ShowDialog(this.popupForm)` mit rahmenlosem TopMost-Overlay als Owner + Diagnose-MessageBox mit allen Rohdaten im Menüpunkt „Über".
+- **Fix (Commit `cd7b056`):** `AboutItem_Click` zeigt jetzt den Logo-Dialog (keine Diagnose-Rohdaten mehr); `ShowCompanyLogoWindow` (`TrafficViewContext.Branding.cs`): `ShowDialog()` ohne Owner, `ControlBox=true`, `KeyPreview`+ESC-Close, ClientSize max. 90 % WorkingArea mit Seitenverhältnis, `PictureBox` Zoom+Dock, `AutoScroll=false`.
+- **Tag:** `v1.4.36` (annotiert, „Release v1.4.36") → `cd7b056`, gepusht.
+- **GitHub-Release:** „TrafficView v1.4.36" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.36), **2 Assets**: `TrafficView_Portable_1.4.36.zip` (507.039 B) + `.zip.sha256` (99 B).
+- **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.36.zip` — SHA-256 `25a11ecbce1c9857c5e68589406607cae78a75f48a9adf2af76e41a8d180c605` (= `.sha256`), Manifest `version 1.4.36` / `commit cd7b056…` (Build nach Release-Commit).
+
+## Aktueller Arbeitsbaum (Stand 2026-08-19)
+
+- `main` == `origin/main` == `cd7b056`; Tag v1.4.36 auf `cd7b056`; Arbeitsbaum sauber.
+- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`). Historisch: `memory/HANDOVER_20260818.md` (v1.4.33), `HANDOVER_20260818_v1.4.34.md`, `HANDOVER_20260818_v1.4.35.md` als Momentaufnahmen.
