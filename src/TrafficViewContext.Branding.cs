@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Reflection;
 using System.Windows.Forms;
 
 namespace TrafficView
@@ -54,6 +55,26 @@ namespace TrafficView
                 "Menu.VersionFormat",
                 "Version {0}",
                 this.menuVersionNumber);
+        }
+
+        private static string GetAssemblyProductName()
+        {
+            AssemblyProductAttribute attribute = (AssemblyProductAttribute)Attribute.GetCustomAttribute(
+                typeof(Program).Assembly,
+                typeof(AssemblyProductAttribute));
+            return attribute != null && !string.IsNullOrWhiteSpace(attribute.Product)
+                ? attribute.Product
+                : "TrafficView";
+        }
+
+        private static string GetAssemblyCopyrightText()
+        {
+            AssemblyCopyrightAttribute attribute = (AssemblyCopyrightAttribute)Attribute.GetCustomAttribute(
+                typeof(Program).Assembly,
+                typeof(AssemblyCopyrightAttribute));
+            return attribute != null && !string.IsNullOrWhiteSpace(attribute.Copyright)
+                ? attribute.Copyright
+                : string.Empty;
         }
 
         private ToolStripControlHost CreateCompanyLogoHost(Image logoImage, string versionText)
@@ -164,9 +185,15 @@ namespace TrafficView
                     clientHeight = Math.Max(1, (int)Math.Round(clientWidth / imageRatio));
                 }
 
+                int logoAreaHeight = Math.Max(180, (int)Math.Round(clientHeight * 0.55D));
+                string productName = GetAssemblyProductName();
+                string copyrightText = GetAssemblyCopyrightText();
+
                 using (Form logoForm = new Form())
                 using (Panel containerPanel = new Panel())
+                using (Panel logoArea = new Panel())
                 using (PictureBox pictureBox = new PictureBox())
+                using (Panel infoArea = new Panel())
                 {
                     logoForm.Text = "LOLO-SOFT";
                     logoForm.FormBorderStyle = FormBorderStyle.Sizable;
@@ -195,6 +222,10 @@ namespace TrafficView
                     containerPanel.BackColor = Color.White;
                     containerPanel.Padding = Padding.Empty;
 
+                    logoArea.Dock = DockStyle.Top;
+                    logoArea.Height = logoAreaHeight;
+                    logoArea.BackColor = Color.White;
+
                     pictureBox.Dock = DockStyle.Fill;
                     pictureBox.Margin = Padding.Empty;
                     pictureBox.Padding = Padding.Empty;
@@ -202,7 +233,47 @@ namespace TrafficView
                     pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
                     pictureBox.BackColor = Color.White;
 
-                    containerPanel.Controls.Add(pictureBox);
+                    infoArea.Dock = DockStyle.Fill;
+                    infoArea.BackColor = Color.White;
+
+                    Label nameLabel = new Label();
+                    nameLabel.Dock = DockStyle.Top;
+                    nameLabel.AutoSize = false;
+                    nameLabel.Height = Math.Max(30, (int)Math.Round(this.sharedMenu.Font.Height * 2.2D));
+                    nameLabel.Text = productName;
+                    nameLabel.TextAlign = ContentAlignment.MiddleCenter;
+                    nameLabel.Font = new Font(
+                        this.sharedMenu.Font.FontFamily,
+                        this.sharedMenu.Font.Size + 4F,
+                        FontStyle.Bold,
+                        GraphicsUnit.Point);
+                    nameLabel.BackColor = Color.White;
+                    nameLabel.ForeColor = Color.Black;
+
+                    Label versionLabel = new Label();
+                    versionLabel.Dock = DockStyle.Top;
+                    versionLabel.AutoSize = false;
+                    versionLabel.Height = Math.Max(24, (int)Math.Round(this.sharedMenu.Font.Height * 1.6D));
+                    versionLabel.Text = this.GetMenuVersionText();
+                    versionLabel.TextAlign = ContentAlignment.MiddleCenter;
+                    versionLabel.BackColor = Color.White;
+                    versionLabel.ForeColor = Color.Black;
+
+                    Label copyrightLabel = new Label();
+                    copyrightLabel.Dock = DockStyle.Top;
+                    copyrightLabel.AutoSize = false;
+                    copyrightLabel.Height = Math.Max(22, (int)Math.Round(this.sharedMenu.Font.Height * 1.4D));
+                    copyrightLabel.Text = copyrightText;
+                    copyrightLabel.TextAlign = ContentAlignment.MiddleCenter;
+                    copyrightLabel.BackColor = Color.White;
+                    copyrightLabel.ForeColor = Color.Black;
+
+                    logoArea.Controls.Add(pictureBox);
+                    infoArea.Controls.Add(copyrightLabel);
+                    infoArea.Controls.Add(versionLabel);
+                    infoArea.Controls.Add(nameLabel);
+                    containerPanel.Controls.Add(infoArea);
+                    containerPanel.Controls.Add(logoArea);
                     logoForm.Controls.Add(containerPanel);
 
                     logoForm.ShowDialog();
