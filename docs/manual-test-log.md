@@ -2,6 +2,22 @@
 
 Dieses Log ist fuer kurze Release-Notizen nach der UI-Checkliste gedacht.
 
+## 1.4.39
+
+- Datum: 2026-08-19
+- Gegenstand: runde Download-Anzeige, Schrumpfen bei nachlassendem/endendem Download
+- Ergebnis: bestanden
+- Beobachtung: Ring gleitet beim Schrumpfen weich statt zu haken
+- Nutzerbestaetigung: "Erscheint jetzt besser, die anzeige"
+
+## 1.4.38
+
+- Datum: 2026-08-19
+- Gegenstand: Ueber-Dialog (Logo + Programminformationen)
+- Ergebnis: bestanden
+- Beobachtung: Logo mittig oben; Programmname, Version, Copyright korrekt sichtbar; Dialog verkleinerbar und schliessbar
+- Nutzerbestaetigung: "Anzeige ist wieder korrekt"
+
 ## 1.4.34
 
 - Manuelle UI-Checkliste: vom Nutzer durchgefuehrt und als korrekt bestaetigt (Nutzerangabe 2026-08-18).
