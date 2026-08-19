@@ -172,8 +172,9 @@ namespace TrafficView
         private const int RingSegmentCount = 18;
         private const float RingSegmentGapDegrees = 4.2F;
         private const float MinimumVisibleSegmentSweepDegrees = 0.9F;
+        private const double PartialSegmentFadeRatio = 0.25D;
         private const double RingDisplayRiseSmoothingFactor = 0.28D;
-        private const double RingDisplayFallSmoothingFactor = 0.14D;
+        private const double RingDisplayFallSmoothingFactor = 0.28D;
         private const double RingDisplayNoiseFloorBytesPerSecond = 8D * 1024D;
         private const int DisplaySmoothingSampleCount = 3;
         private const int TrafficHistorySampleCount = 60;

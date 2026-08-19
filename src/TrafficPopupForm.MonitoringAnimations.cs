@@ -27,7 +27,11 @@ namespace TrafficView
         private bool ShouldAnimateVisualEffects()
         {
             double ringNoiseFloorBytesPerSecond = this.GetRingDisplayNoiseFloorBytesPerSecond();
-            double ringMotionThreshold = ringNoiseFloorBytesPerSecond * 0.25D;
+            // Timer bleibt aktiv, bis der Ring-Anzeigewert das Ziel (inkl. 0) exakt
+            // erreicht hat (UpdateRingDisplayRate setzt dann exakt target). Eine
+            // größere Schwelle würde den letzten Rest einfrieren und beim
+            // 1-s-Refresh als Sprung sichtbar machen.
+            double ringMotionThreshold = 0.001D;
             double holdMotionThreshold = ringNoiseFloorBytesPerSecond * 0.20D;
 
             return Math.Abs(this.ringDisplayDownloadBytesPerSecond - this.latestDownloadBytesPerSecond) > ringMotionThreshold ||

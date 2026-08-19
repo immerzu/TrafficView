@@ -121,22 +121,23 @@ namespace TrafficView
                     continue;
                 }
 
-                if (index == fullyLitSegments && partialSegmentRatio > 0.02D)
+                if (index == fullyLitSegments && partialSegmentRatio > 0D)
                 {
-                    float partialSweep = Math.Max(
-                        MinimumVisibleSegmentSweepDegrees,
-                        segmentSweep * (float)partialSegmentRatio);
+                    float partialSweep = segmentSweep * (float)partialSegmentRatio;
                     Color partialColor = GetInterpolatedColor(
                         startColor,
                         activeEndColor,
                         SmoothStep(clampedRatio));
+                    byte partialAlpha = (byte)Math.Round(
+                        255D * SmoothStep(partialSegmentRatio / PartialSegmentFadeRatio),
+                        MidpointRounding.AwayFromZero);
                     this.DrawRingSegment(
                         graphics,
                         bounds,
                         strokeWidth,
                         segmentStartAngle,
                         partialSweep,
-                        partialColor,
+                        ApplyAlpha(partialColor, partialAlpha),
                         this.ScaleFloat(0.8F));
                 }
             }
