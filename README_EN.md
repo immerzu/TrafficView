@@ -1,4 +1,4 @@
-# TrafficView 1.4.37
+# TrafficView 1.4.38
 
 TrafficView allows only one active instance during normal operation. A second launch shows an informational message and keeps the already running instance active.
 
@@ -47,17 +47,17 @@ Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
 Each portable ZIP is accompanied by a `.sha256` file. After downloading, verify the ZIP integrity with:
 
 ```powershell
-Get-FileHash .\TrafficView_Portable_1.4.37.zip -Algorithm SHA256
+Get-FileHash .\TrafficView_Portable_1.4.38.zip -Algorithm SHA256
 ```
 
-The output hash must match the content of `TrafficView_Portable_1.4.37.zip.sha256`.
+The output hash must match the content of `TrafficView_Portable_1.4.38.zip.sha256`.
 
 ## Prepare a Release
 
 Version numbers are updated consistently in README files and AssemblyInfo with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.37
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.38
 ```
 
 Before publishing a release, also walk through `docs\ui-release-checklist.md` and note the result in `docs\manual-test-log.md`.
