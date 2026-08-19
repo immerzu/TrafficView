@@ -150,8 +150,19 @@ namespace TrafficView
             try
             {
                 Rectangle workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
-                int clientWidth = Math.Min(this.companyLogoImage.Width, Math.Max(320, workingArea.Width - 80));
-                int clientHeight = Math.Min(this.companyLogoImage.Height, Math.Max(240, workingArea.Height - 80));
+                int maxClientWidth = Math.Max(320, (int)Math.Round(workingArea.Width * 0.9D));
+                int maxClientHeight = Math.Max(240, (int)Math.Round(workingArea.Height * 0.9D));
+                int clientWidth = Math.Min(this.companyLogoImage.Width, maxClientWidth);
+                int clientHeight = Math.Min(this.companyLogoImage.Height, maxClientHeight);
+                double imageRatio = (double)this.companyLogoImage.Width / this.companyLogoImage.Height;
+                if ((double)clientWidth / clientHeight > imageRatio)
+                {
+                    clientWidth = Math.Max(1, (int)Math.Round(clientHeight * imageRatio));
+                }
+                else
+                {
+                    clientHeight = Math.Max(1, (int)Math.Round(clientWidth / imageRatio));
+                }
 
                 using (Form logoForm = new Form())
                 using (Panel containerPanel = new Panel())
@@ -163,35 +174,36 @@ namespace TrafficView
                     logoForm.ShowInTaskbar = false;
                     logoForm.MaximizeBox = false;
                     logoForm.MinimizeBox = false;
+                    logoForm.ControlBox = true;
+                    logoForm.KeyPreview = true;
                     logoForm.AutoScaleMode = AutoScaleMode.Dpi;
                     logoForm.Font = this.sharedMenu.Font;
                     logoForm.ClientSize = new Size(clientWidth, clientHeight);
                     logoForm.TopMost = true;
+                    logoForm.KeyDown += delegate(object s, KeyEventArgs e)
+                    {
+                        if (e.KeyCode == Keys.Escape)
+                        {
+                            logoForm.Close();
+                        }
+                    };
 
                     containerPanel.Dock = DockStyle.Fill;
-                    containerPanel.AutoScroll = true;
+                    containerPanel.AutoScroll = false;
                     containerPanel.BackColor = Color.White;
                     containerPanel.Padding = Padding.Empty;
 
-                    pictureBox.Location = new Point(0, 0);
-                    pictureBox.Size = this.companyLogoImage.Size;
+                    pictureBox.Dock = DockStyle.Fill;
                     pictureBox.Margin = Padding.Empty;
                     pictureBox.Padding = Padding.Empty;
                     pictureBox.Image = this.companyLogoImage;
-                    pictureBox.SizeMode = PictureBoxSizeMode.Normal;
+                    pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
                     pictureBox.BackColor = Color.White;
 
                     containerPanel.Controls.Add(pictureBox);
                     logoForm.Controls.Add(containerPanel);
 
-                    if (this.popupForm.Visible)
-                    {
-                        logoForm.ShowDialog(this.popupForm);
-                    }
-                    else
-                    {
-                        logoForm.ShowDialog();
-                    }
+                    logoForm.ShowDialog();
                 }
             }
             finally

@@ -9,18 +9,7 @@ namespace TrafficView
     {
         private void AboutItem_Click(object sender, EventArgs e)
         {
-            string diagnosticsText = CreateDiagnosticsText();
-
-            DialogResult result = MessageBox.Show(
-                diagnosticsText + "\r\nDiagnosebericht speichern?",
-                UiLanguage.Get("Menu.About", "Über TrafficView"),
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Information);
-
-            if (result == DialogResult.Yes)
-            {
-                this.ExportDiagnostics(diagnosticsText);
-            }
+            this.ShowCompanyLogoWindow();
         }
 
         private string CreateDiagnosticsText()
