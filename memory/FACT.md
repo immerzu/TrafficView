@@ -1,6 +1,6 @@
 # TrafficView — Projektgedächtnis (FACT.md)
 
-Stand: 2026-08-19 — Release v1.4.36 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260819_v1.4.36.md`.
+Stand: 2026-08-19 — Release v1.4.37 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260819_v1.4.37.md`.
 
 ## Projekt
 
@@ -8,7 +8,7 @@ TrafficView ist ein **Windows-Desktop-Netzwerkverbrauchs-Monitor** (C# / WinForm
 
 ## Technische Eckdaten (verifiziert 2026-08-18)
 
-- **Version:** 1.4.36 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.36.0")` + `AssemblyFileVersion("1.4.36.0")`, README: `# TrafficView 1.4.36`. Letzter Git-Tag: `v1.4.36`.
+- **Version:** 1.4.37 — `AssemblyInfo.cs`: `AssemblyVersion("1.4.37.0")` + `AssemblyFileVersion("1.4.37.0")`, README: `# TrafficView 1.4.37`. Letzter Git-Tag: `v1.4.37`.
 - **Build-System:** `TrafficView.csproj` ist ein **klassisches (Nicht-SDK-)Projekt** mit manueller `<Compile Include="…">`-Liste. **WICHTIG: Neue `.cs`-Dateien müssen manuell in die Compile-Liste eingetragen werden**, sonst bauen sie nicht mit (Beleg 2026-08-18: `src/FileRetry.cs` + `src/TrafficSnapshotBaselinePolicy.cs` mussten nachgetragen werden; committet in `fd3247a`).
 - **Kein Hauptfenster:** Die App lebt im Tray (`NotifyIcon`); Dialoge sind `UsageSummaryForm`, `CalibrationForm`, `DialogForms`.
 
@@ -96,7 +96,15 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 - **GitHub-Release:** „TrafficView v1.4.36" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.36), **2 Assets**: `TrafficView_Portable_1.4.36.zip` (507.039 B) + `.zip.sha256` (99 B).
 - **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.36.zip` — SHA-256 `25a11ecbce1c9857c5e68589406607cae78a75f48a9adf2af76e41a8d180c605` (= `.sha256`), Manifest `version 1.4.36` / `commit cd7b056…` (Build nach Release-Commit).
 
+## Release v1.4.37 (2026-08-19, Patch-Release)
+
+- **Inhalt:** Patch-Release mit dem Resize-Fix des Über-Dialogs, der in v1.4.36 noch fehlte. Commits: `0aa2416` (fix: make about dialog resizable with minimum size — `FormBorderStyle.Sizable`, `MinimumSize` 320×320, `MaximumSize` 90 % WorkingArea; X/ESC/Zoom/Dock unverändert) → `2d37e56` (chore: Bump version to 1.4.37; nur Versionsdateien).
+- **Tag:** `v1.4.37` (annotiert, „Release v1.4.37") → `2d37e56`, gepusht.
+- **GitHub-Release:** „TrafficView v1.4.37" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.37), **2 Assets**: `TrafficView_Portable_1.4.37.zip` (507.037 B) + `.zip.sha256` (99 B).
+- **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.37.zip` — SHA-256 `a006767d42d696a757be0aae5ac007ffb71fa644973c336f22424176fce44c80` (= `.sha256`), Manifest `version 1.4.37` / `commit 2d37e56…` (Build nach Release-Commit).
+- **Manuelle Abnahme Über-Dialog:** Abnahmeschritte (Verkleinern per Rahmen, X, ESC, nur Logo) im HANDOVER v1.4.37 — Nutzerabnahme ausstehend.
+
 ## Aktueller Arbeitsbaum (Stand 2026-08-19)
 
-- `main` == `origin/main` == `cd7b056`; Tag v1.4.36 auf `cd7b056`; Arbeitsbaum sauber.
-- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`). Historisch: `memory/HANDOVER_20260818.md` (v1.4.33), `HANDOVER_20260818_v1.4.34.md`, `HANDOVER_20260818_v1.4.35.md` als Momentaufnahmen.
+- `main` == `origin/main` == `2d37e56`; Tag v1.4.37 auf `2d37e56`; Arbeitsbaum sauber.
+- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`). Historisch: `memory/HANDOVER_20260818.md` (v1.4.33), `HANDOVER_20260818_v1.4.34.md`, `HANDOVER_20260818_v1.4.35.md`, `HANDOVER_20260819_v1.4.36.md` als Momentaufnahmen.
