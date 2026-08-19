@@ -1,4 +1,4 @@
-# TrafficView 1.4.36
+# TrafficView 1.4.37
 
 ## Deutsch
 
@@ -53,10 +53,10 @@ Die Ausgabe landet standardmaessig im Ordner `Ausgabe` neben dem Repository. Das
 Jedes Portable-ZIP wird von einer `.sha256`-Datei begleitet. Nach dem Download kann die ZIP-Integritaet wie folgt geprueft werden:
 
 ```powershell
-Get-FileHash .\TrafficView_Portable_1.4.36.zip -Algorithm SHA256
+Get-FileHash .\TrafficView_Portable_1.4.37.zip -Algorithm SHA256
 ```
 
-Der ausgegebene Hash muss mit dem Inhalt von `TrafficView_Portable_1.4.36.zip.sha256` uebereinstimmen.
+Der ausgegebene Hash muss mit dem Inhalt von `TrafficView_Portable_1.4.37.zip.sha256` uebereinstimmen.
 
 ### Alles pruefen
 
@@ -83,7 +83,7 @@ Eine Sicherung kann bei Bedarf mit `-Mode Restore -BackupPath <BackupOrdner>` wi
 Versionsnummern werden mit einem Skript konsistent in README und AssemblyInfo aktualisiert:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.36
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.37
 ```
 
 Vor einem Release sollte zusaetzlich die manuelle UI-Checkliste unter `docs\ui-release-checklist.md` abgearbeitet und das Ergebnis in `docs\manual-test-log.md` notiert werden.
@@ -137,7 +137,7 @@ Restore a backup with `-Mode Restore -BackupPath <BackupFolder>` when needed.
 Version numbers are updated consistently in README files and AssemblyInfo with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.36
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Bump-Version.ps1 -Version 1.4.37
 ```
 
 Before publishing a release, also walk through `docs\ui-release-checklist.md` and note the result in `docs\manual-test-log.md`.
