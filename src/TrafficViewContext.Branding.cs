@@ -169,7 +169,7 @@ namespace TrafficView
                 using (PictureBox pictureBox = new PictureBox())
                 {
                     logoForm.Text = "LOLO-SOFT";
-                    logoForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                    logoForm.FormBorderStyle = FormBorderStyle.Sizable;
                     logoForm.StartPosition = FormStartPosition.CenterScreen;
                     logoForm.ShowInTaskbar = false;
                     logoForm.MaximizeBox = false;
@@ -179,6 +179,8 @@ namespace TrafficView
                     logoForm.AutoScaleMode = AutoScaleMode.Dpi;
                     logoForm.Font = this.sharedMenu.Font;
                     logoForm.ClientSize = new Size(clientWidth, clientHeight);
+                    logoForm.MinimumSize = new Size(320, 320);
+                    logoForm.MaximumSize = new Size(maxClientWidth, maxClientHeight);
                     logoForm.TopMost = true;
                     logoForm.KeyDown += delegate(object s, KeyEventArgs e)
                     {
