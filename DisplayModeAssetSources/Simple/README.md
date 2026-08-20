@@ -4,12 +4,12 @@ Dieser Ordner enthaelt die Quellbilder fuer die Simple-Anzeige.
 
 Die fertigen Laufzeitdateien liegen unter:
 
-`F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\Simple`
+`..\..\DisplayModeAssets\Simple`
 
 Erzeugung:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Build-DisplayModeAssets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ..\..\Build-DisplayModeAssets.ps1
 ```
 
 ## Masterdateien

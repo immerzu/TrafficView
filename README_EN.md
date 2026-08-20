@@ -22,6 +22,30 @@ When TrafficView is placed on the taskbar, it starts there with only the right s
 
 In taskbar mode, TrafficView keeps the display locally in front of the current taskbar without using global TopMost or forcing focus. Normal windows, including Windows Explorer and StartAllBack, are not pulled into foreground conflicts.
 
+## Simple Display: Build Display Images
+
+The source images for the Simple display live in the repository under `DisplayModeAssetSources\Simple`.
+
+The runtime images for the app are generated with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Build-DisplayModeAssets.ps1
+```
+
+The generated files are written to `DisplayModeAssets\Simple` and copied to `dist\DisplayModeAssets\Simple` during the build.
+
+The `Simple blue` display uses the same logic as `Simple` but with its own blue image set under `DisplayModeAssets\SimpleBlue`.
+
+## Create a Clean Portable Output
+
+A distributable portable version without local settings, usage data, and logs is created with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Create-PortableRelease.ps1
+```
+
+By default the output is written to the `01_Ausgabe` folder next to the repository (standing rule). The script rebuilds the display images and `TrafficView.exe` from scratch, copies only the released program files, and aborts if private runtime data such as `TrafficView.settings.ini`, `Verbrauch.txt`, or logs is found in the portable output. The ZIP also contains `release-manifest.json` with version, commit, file sizes, and SHA-256 checksums.
+
 ## Run All Checks
 
 Before a commit or release, the complete local verification path can be started with one command:

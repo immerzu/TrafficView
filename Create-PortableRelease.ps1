@@ -16,7 +16,7 @@ $buildAssetsScript = Join-Path $root "Build-DisplayModeAssets.ps1"
 $buildScript = Join-Path $root "build.ps1"
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
-    $OutputRoot = Join-Path (Split-Path -Parent $root) "Ausgabe"
+    $OutputRoot = Join-Path (Split-Path -Parent $root) "01_Ausgabe"
 }
 
 function Get-FullPath {

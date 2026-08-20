@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$') {
-    throw "Version muss im Format Major.Minor.Patch angegeben werden, z. B. 1.4.26."
+    throw "Version muss im Format Major.Minor.Patch angegeben werden, z. B. 1.4.39."
 }
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path

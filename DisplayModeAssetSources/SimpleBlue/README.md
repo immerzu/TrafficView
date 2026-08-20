@@ -4,12 +4,12 @@ Dieser Ordner enthaelt die Quellbilder fuer die Anzeige `Simple blue`.
 
 Die fertigen Laufzeitdateien liegen unter:
 
-`F:\Codex\TrafficView_Moi\TrafficView\DisplayModeAssets\SimpleBlue`
+`..\..\DisplayModeAssets\SimpleBlue`
 
 Erzeugung:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File F:\Codex\TrafficView_Moi\TrafficView\Build-DisplayModeAssets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ..\..\Build-DisplayModeAssets.ps1
 ```
 
 ## Masterdateien

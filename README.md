@@ -46,7 +46,7 @@ Eine weitergabefaehige Portable-Version ohne lokale Einstellungen, Verbrauchsdat
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Create-PortableRelease.ps1
 ```
 
-Die Ausgabe landet standardmaessig im Ordner `Ausgabe` neben dem Repository. Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden. Das ZIP enthaelt zusaetzlich `release-manifest.json` mit Version, Commit, Dateigroessen und SHA-256-Pruefsummen.
+Die Ausgabe landet standardmaessig im Ordner `01_Ausgabe` neben dem Repository (Dauerregel). Das Skript baut die Anzeigebilder und `TrafficView.exe` frisch, kopiert nur die freigegebenen Programmdateien und bricht ab, falls private Laufzeitdaten wie `TrafficView.settings.ini`, `Verbrauch.txt` oder Logs in der Portable-Ausgabe gefunden werden. Das ZIP enthaelt zusaetzlich `release-manifest.json` mit Version, Commit, Dateigroessen und SHA-256-Pruefsummen.
 
 ### ZIP-Integritaet nach Download pruefen
 
