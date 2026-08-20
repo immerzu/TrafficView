@@ -123,6 +123,12 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 
 ## Aktueller Arbeitsbaum (Stand 2026-08-19, verifiziert per Git)
 
-- `main` == `origin/main` == `1ef96ce` („docs: log manual UI acceptances for v1.4.38 and v1.4.39"); Arbeitsbaum sauber (`git status --short` leer, verifiziert). HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`.
+- `main` == `origin/main` == `14f138a` („chore: resolve documented follow-ups H2/H6/H7/H8"); Arbeitsbaum sauber (`git status --short` leer, verifiziert). HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`.
 - **Manuelle UI-Abnahmen 1.4.38 (Über-Dialog) und 1.4.39 (Ring-Glättung): dokumentiert/bestanden** — Einträge in `docs/manual-test-log.md` (Commit `1ef96ce`), Nutzerzitate „Anzeige ist wieder korrekt" bzw. „Erscheint jetzt besser, die anzeige".
-- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`). Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37/38) als Momentaufnahmen.
+- **Erledigte Altlasten (Commit `14f138a` + Asset-Fix):**
+  - H2: `F:\Codex`-Pfade in `DisplayModeAssetSources\*` (4 Dateien) durch portable relative Pfade ersetzt — `rg "F:\Codex"` = 0 Treffer.
+  - H6: `README_EN.md` mit `README.md` synchronisiert (alle 9 wesentlichen Abschnitte, inkl. Simple-Display und Clean-Portable-Output).
+  - H7: `Create-PortableRelease.ps1`-Default `Ausgabe` → `01_Ausgabe` (Dauerregel); README.md/dist/README.md konsistent; Legacy `portable-release.ps1` mit eigenem Default bewusst unverändert (dokumentiert).
+  - H8: `Bump-Version.ps1`-Beispiel 1.4.26 → 1.4.39.
+  - v1.4.34-Asset: altes ZIP (506.817 B) durch finales ZIP (506.810 B, SHA-256 `c854ed49…`) ersetzt — `gh release view v1.4.34` bestätigt genau 1 Asset mit passendem SHA-Digest.
+- **Keine offenen Punkte mehr** aus der früheren Lese-Prüfung; Testpfad nach H-Fixes grün (`Run-AllTests.ps1`). Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37/38/39) als Momentaufnahmen.
