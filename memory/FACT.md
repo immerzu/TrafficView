@@ -75,7 +75,7 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 
 - **Commits (chronologisch, alle gepusht):** `01c9724` (docs-Pfade) → `82961ac` (.gitignore `.reasonix/`) → `fd3247a` (Release 1.4.33-Bündel: Baseline-Policy, File-Retry, Diagnostics, Calibration-Härtung) → `1de29e2` (Bump 1.4.34) → `662706d` (dist-Refresh) → `63cdc18` (Projektgedächtnis) → `27a8b2f` (manual-test-log 1.4.34) → `6b96ab4` (Doku-Sync) → `18e9c90` (Fix W1–W3+H1: Manual.txt/dist-Versionen, FACT.md-HEAD entfernt) → `a59386b` (dist/TrafficView.exe aus Versionierung genommen).
 - **Tags:** `v1.4.33` → `fd3247a`; `v1.4.34` → `18e9c90` (ursprünglich `662706d`, nach Fix-Commit per Force-Push verschoben; GitHub-Release folgt dem Tag).
-- **GitHub-Release:** „TrafficView v1.4.34" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.34), Asset `TrafficView_Portable_1.4.34.zip` — **korrigiert (2026-08-19):** altes ZIP (506.817 B, Build vor `18e9c90`) durch das finale ZIP (506.810 B, Manifest commit `18e9c90`) ersetzt; Release-Body auf SHA-256 `c854ed49…` und commit `18e9c90` aktualisiert (per `gh release edit`).
+- **GitHub-Release:** „TrafficView v1.4.34" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.34), Asset `TrafficView_Portable_1.4.34.zip` — **korrigiert (2026-08-20):** altes ZIP (506.817 B, Build vor `18e9c90`) durch das finale ZIP (506.810 B, Manifest commit `18e9c90`) ersetzt; Release-Body auf SHA-256 `c854ed49…` und commit `18e9c90` aktualisiert (per `gh release edit`; GitHub `updated_at` 2026-08-20T12:10:35Z).
 - **Portable-ZIP (final):** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.34.zip` — 506.810 Bytes, SHA-256 `c854ed4995966221a4fe0a2ac0a99a0c15714148b61557dc7104fa564104ce80` (= `.sha256`), `release-manifest.json`: version `1.4.34`, commit `18e9c90…`, 21 ZIP-Einträge; Inhalt geprüft (Manual.txt 1.4.34, README ohne 1.4.32/1.4.28-Reste).
 - **gh CLI:** v2.97.0 verfügbar, authentifiziert als `immerzu` (Scopes gist/read:org/repo/workflow) — Releases via `gh release create <tag> <asset> --title … --notes-file …` erstellen.
 
@@ -123,7 +123,7 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 
 ## Aktueller Arbeitsbaum (Stand 2026-08-19, verifiziert per Git)
 
-- `main` == `origin/main` == `14f138a` („chore: resolve documented follow-ups H2/H6/H7/H8"); Arbeitsbaum sauber (`git status --short` leer, verifiziert). HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`.
+- `main` == `origin/main` == `79dce5d` („docs: mark v1.4.34 release asset and body corrected in memory"); Arbeitsbaum sauber (`git status --short` leer, verifiziert). HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`.
 - **Manuelle UI-Abnahmen 1.4.38 (Über-Dialog) und 1.4.39 (Ring-Glättung): dokumentiert/bestanden** — Einträge in `docs/manual-test-log.md` (Commit `1ef96ce`), Nutzerzitate „Anzeige ist wieder korrekt" bzw. „Erscheint jetzt besser, die anzeige".
 - **Erledigte Altlasten (Commit `14f138a` + Asset-Fix):**
   - H2: `F:\Codex`-Pfade in `DisplayModeAssetSources\*` (4 Dateien) durch portable relative Pfade ersetzt — `rg "F:\Codex"` = 0 Treffer.
