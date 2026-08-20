@@ -121,7 +121,8 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 - **GitHub-Release:** „TrafficView v1.4.39" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.39), **2 Assets**: `TrafficView_Portable_1.4.39.zip` (507.372 B) + `.zip.sha256` (99 B).
 - **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.39.zip` — SHA-256 `fb62b6cd6540d546f5dcc7a2410e6b9e9ece364e1432f2a05827749ea52e6710` (= `.sha256`), Manifest `version 1.4.39` / `commit bdee35a…` (Build nach Release-Commit).
 
-## Aktueller Arbeitsbaum (Stand 2026-08-19)
+## Aktueller Arbeitsbaum (Stand 2026-08-19, verifiziert per Git)
 
-- `main` == `origin/main` == `bdee35a`; Tag v1.4.39 auf `bdee35a`; Arbeitsbaum sauber.
-- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`); manuelle UI-Abnahmen (Über-Dialog v1.4.38, Ring-Glättung v1.4.39) stehen aus. Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37/38) als Momentaufnahmen.
+- `main` == `origin/main` == `1ef96ce` („docs: log manual UI acceptances for v1.4.38 and v1.4.39"); Arbeitsbaum sauber (`git status --short` leer, verifiziert). HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`.
+- **Manuelle UI-Abnahmen 1.4.38 (Über-Dialog) und 1.4.39 (Ring-Glättung): dokumentiert/bestanden** — Einträge in `docs/manual-test-log.md` (Commit `1ef96ce`), Nutzerzitate „Anzeige ist wieder korrekt" bzw. „Erscheint jetzt besser, die anzeige".
+- Offene Punkte (bewusst NICHT behoben): H2 (F:\Codex-Pfade in `DisplayModeAssetSources\*`, 4 Dateien), H6 (README_EN unvollständig), H7 (Skript-Default `Ausgabe` vs. Dauerregel `01_Ausgabe`), H8 (Bump-Beispiel 1.4.26); Release-Asset v1.4.34 noch altes ZIP (506.817 B, Build-Stand `1de29e2`). Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37/38) als Momentaufnahmen.
