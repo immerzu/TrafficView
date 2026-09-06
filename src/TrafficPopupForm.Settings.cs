@@ -36,6 +36,11 @@ namespace TrafficView
                     this.taskbarRefreshDebounceTimer.Dispose();
                 }
 
+                if (this.manualDragMoveTimer != null)
+                {
+                    this.manualDragMoveTimer.Dispose();
+                }
+
                 try
                 {
                     this.trafficSnapshotCancellation.Cancel();

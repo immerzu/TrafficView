@@ -52,6 +52,7 @@ namespace TrafficView
                 TestTrafficUsageLogAppendsAfterPartialLine();
                 TestTrafficUsageLogRoundTrip();
                 TestTrafficUsageLogCsvInjectionPrevention();
+                TestTrafficUsageLogExportBlocksCompressedArchiveTarget();
                 TestAppLogRotatesLargeLogFile();
                 TestDiagnosticsExportIncludesRotatedLogs();
                 TestDiagnosticsExportSurvivesLockedLogFile();
@@ -377,6 +378,36 @@ namespace TrafficView
             }
 
             AssertTrue(log.ClearAll(), "Usage data should be clearable after CSV injection test.");
+        }
+
+        private static void TestTrafficUsageLogExportBlocksCompressedArchiveTarget()
+        {
+            MonitorSettings settings = new MonitorSettings(
+                "adapter-gz-block",
+                "GzBlockAdapter",
+                900D,
+                panelSkinId: PanelSkinCatalog.DefaultSkinId);
+
+            string compressedArchivePath = Path.Combine(BaseDirectory, "Verbrauch.archiv.2099-01.txt.gz");
+            CleanupFile(compressedArchivePath);
+            try
+            {
+                using (FileStream fileStream = new FileStream(compressedArchivePath, FileMode.CreateNew))
+                using (GZipStream gzipStream = new GZipStream(fileStream, CompressionMode.Compress))
+                using (StreamWriter writer = new StreamWriter(gzipStream))
+                {
+                    writer.Write("dummy");
+                }
+
+                TrafficUsageLog log = new TrafficUsageLog();
+                AssertTrue(
+                    !log.ExportCsv(settings, "GzBlockAdapter", compressedArchivePath),
+                    "CSV export to a compressed usage archive path should be blocked.");
+            }
+            finally
+            {
+                CleanupFile(compressedArchivePath);
+            }
         }
 
         private static void TestTrafficUsageLogRejectsEmptySamplesAndCountsPendingUsage()

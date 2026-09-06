@@ -494,8 +494,23 @@ namespace TrafficView
 
             if (Directory.Exists(skinsDirectoryPath))
             {
-                CleanupDeleteStagingDirectory(skinsDirectoryPath);
-                string[] skinDirectoryPaths = Directory.GetDirectories(skinsDirectoryPath);
+                string[] skinDirectoryPaths;
+                try
+                {
+                    CleanupDeleteStagingDirectory(skinsDirectoryPath);
+                    skinDirectoryPaths = Directory.GetDirectories(skinsDirectoryPath);
+                }
+                catch (Exception ex)
+                {
+                    AppLog.WarnOnce(
+                        "skin-directory-enumeration-failed-" + skinsDirectoryPath,
+                        string.Format(
+                            "Skin-Verzeichnis '{0}' konnte nicht gelesen werden. Es werden keine Laufzeit-Skins geladen.",
+                            skinsDirectoryPath),
+                        ex);
+                    return definitions.ToArray();
+                }
+
                 Array.Sort(skinDirectoryPaths, StringComparer.OrdinalIgnoreCase);
 
                 for (int i = 0; i < skinDirectoryPaths.Length; i++)
@@ -505,7 +520,22 @@ namespace TrafficView
                         continue;
                     }
 
-                    PanelSkinDefinition definition = TryLoadDefinition(skinDirectoryPaths[i]);
+                    PanelSkinDefinition definition;
+                    try
+                    {
+                        definition = TryLoadDefinition(skinDirectoryPaths[i]);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLog.WarnOnce(
+                            "skin-definition-unexpected-load-failure-" + skinDirectoryPaths[i],
+                            string.Format(
+                                "Skin-Ordner '{0}' wurde wegen eines unerwarteten Fehlers uebersprungen.",
+                                skinDirectoryPaths[i]),
+                            ex);
+                        continue;
+                    }
+
                     if (definition == null)
                     {
                         continue;

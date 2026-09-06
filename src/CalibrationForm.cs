@@ -614,7 +614,20 @@ namespace TrafficView
                 this.currentSettings.CalibrationPeakBytesPerSecond,
                 this.currentSettings.CalibrationDownloadPeakBytesPerSecond,
                 this.currentSettings.CalibrationUploadPeakBytesPerSecond);
-            this.currentSettings.Save();
+            try
+            {
+                this.currentSettings.Save();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error("Die Adapter-Auswahl konnte nicht gespeichert werden.", ex);
+                this.statusLabel.Text = UiLanguage.Get(
+                    "Calibration.SaveAdapterFailed",
+                    "Die Internetverbindung konnte nicht gespeichert werden. Bitte erneut versuchen.");
+                this.saveAdapterButton.Enabled = this.selectedAdapterAvailable;
+                return;
+            }
+
             this.SavedAdapterSettings = this.currentSettings.Clone();
 
             if (this.isInitialCalibrationRequired && !this.currentSettings.HasCalibrationData())

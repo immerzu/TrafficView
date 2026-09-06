@@ -222,23 +222,30 @@ namespace TrafficView
                 return false;
             }
 
-            foreach (UnicastIPAddressInformation addressInformation in properties.UnicastAddresses)
+            try
             {
-                if (addressInformation == null || addressInformation.Address == null)
+                foreach (UnicastIPAddressInformation addressInformation in properties.UnicastAddresses)
                 {
-                    continue;
-                }
+                    if (addressInformation == null || addressInformation.Address == null)
+                    {
+                        continue;
+                    }
 
-                if (System.Net.IPAddress.IsLoopback(addressInformation.Address))
-                {
-                    continue;
-                }
+                    if (System.Net.IPAddress.IsLoopback(addressInformation.Address))
+                    {
+                        continue;
+                    }
 
-                if (addressInformation.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ||
-                    addressInformation.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-                {
-                    return true;
+                    if (addressInformation.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ||
+                        addressInformation.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                    {
+                        return true;
+                    }
                 }
+            }
+            catch (NetworkInformationException)
+            {
+                return false;
             }
 
             return false;

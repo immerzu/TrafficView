@@ -123,7 +123,12 @@ namespace TrafficView
                 return;
             }
 
-            if (!this.IsHandleCreated || this.IsDisposed)
+            if (this.IsDisposed)
+            {
+                return;
+            }
+
+            if (!this.IsHandleCreated)
             {
                 this.Location = location;
                 return;

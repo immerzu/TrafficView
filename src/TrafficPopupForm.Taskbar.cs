@@ -255,6 +255,13 @@ namespace TrafficView
                 this.ShowAtTaskbarPlacement(placementBounds, activateWindow);
                 this.UpdateTaskbarMonitorState();
             }
+            catch (Exception ex)
+            {
+                AppLog.WarnOnce(
+                    "taskbar-integration-refresh-failed",
+                    "Die Taskleisten-Integration konnte nicht aktualisiert werden. Der naechste Zyklus versucht es erneut.",
+                    ex);
+            }
             finally
             {
                 this.taskbarIntegrationRefreshInProgress = false;

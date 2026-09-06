@@ -290,7 +290,8 @@ namespace TrafficView
             }
 
             if (ArePathsEqual(targetPath, GetUsageFilePath()) ||
-                ArePathsEqual(targetPath, GetUsageArchiveFilePath()))
+                ArePathsEqual(targetPath, GetUsageArchiveFilePath()) ||
+                ConflictsWithCompressedUsageArchive(targetPath))
             {
                 AppLog.WarnOnce(
                     "traffic-usage-export-target-conflicts-with-usage-storage",
@@ -924,6 +925,24 @@ namespace TrafficView
             {
                 yield return paths[i];
             }
+        }
+
+        private static bool ConflictsWithCompressedUsageArchive(string targetPath)
+        {
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                return false;
+            }
+
+            foreach (string compressedArchivePath in EnumerateCompressedArchiveFilePaths())
+            {
+                if (ArePathsEqual(targetPath, compressedArchivePath))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static List<string> ReadCompressedArchiveLines(string path)
