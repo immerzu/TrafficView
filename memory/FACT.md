@@ -1,6 +1,6 @@
 # TrafficView — Projektgedächtnis (FACT.md)
 
-Stand: 2026-08-19 — Release v1.4.39 abgeschlossen; Gesamtüberblick in `memory/HANDOVER_20260819_v1.4.39.md`.
+Stand: 2026-09-06 — Härtungsrunde abgeschlossen (Commit `94c7387`, kein Release); letztes Release v1.4.39. Session-Überblick in `memory/HANDOVER_20260906_hardening.md`; Release-Stand in `memory/HANDOVER_20260819_v1.4.39.md`.
 
 ## Projekt
 
@@ -121,14 +121,9 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 - **GitHub-Release:** „TrafficView v1.4.39" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.39), **2 Assets**: `TrafficView_Portable_1.4.39.zip` (507.372 B) + `.zip.sha256` (99 B).
 - **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.39.zip` — SHA-256 `fb62b6cd6540d546f5dcc7a2410e6b9e9ece364e1432f2a05827749ea52e6710` (= `.sha256`), Manifest `version 1.4.39` / `commit bdee35a…` (Build nach Release-Commit).
 
-## Aktueller Arbeitsbaum (Stand 2026-08-19, verifiziert per Git)
+## Aktueller Arbeitsbaum (Stand 2026-09-06, verifiziert per Git)
 
-- `main` == `origin/main` == `79dce5d` („docs: mark v1.4.34 release asset and body corrected in memory"); Arbeitsbaum sauber (`git status --short` leer, verifiziert). HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`.
-- **Manuelle UI-Abnahmen 1.4.38 (Über-Dialog) und 1.4.39 (Ring-Glättung): dokumentiert/bestanden** — Einträge in `docs/manual-test-log.md` (Commit `1ef96ce`), Nutzerzitate „Anzeige ist wieder korrekt" bzw. „Erscheint jetzt besser, die anzeige".
-- **Erledigte Altlasten (Commit `14f138a` + Asset-Fix):**
-  - H2: `F:\Codex`-Pfade in `DisplayModeAssetSources\*` (4 Dateien) durch portable relative Pfade ersetzt — `rg "F:\Codex"` = 0 Treffer.
-  - H6: `README_EN.md` mit `README.md` synchronisiert (alle 9 wesentlichen Abschnitte, inkl. Simple-Display und Clean-Portable-Output).
-  - H7: `Create-PortableRelease.ps1`-Default `Ausgabe` → `01_Ausgabe` (Dauerregel); README.md/dist/README.md konsistent; Legacy `portable-release.ps1` mit eigenem Default bewusst unverändert (dokumentiert).
-  - H8: `Bump-Version.ps1`-Beispiel 1.4.26 → 1.4.39.
-  - v1.4.34-Asset: altes ZIP (506.817 B) durch finales ZIP (506.810 B, SHA-256 `c854ed49…`) ersetzt — `gh release view v1.4.34` bestätigt genau 1 Asset mit passendem SHA-Digest.
-- **Keine offenen Punkte mehr** aus der früheren Lese-Prüfung; Testpfad nach H-Fixes grün (`Run-AllTests.ps1`). Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35) und 20260819 (v1.4.36/37/38/39) als Momentaufnahmen.
+- `main` == `origin/main` == `94c7387` („fix: harden robustness across monitoring, taskbar, skins and usage log"); Arbeitsbaum sauber. HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`; zwischen Tag und HEAD nur Doku-Commits (u. a. `14f138a` H2/H6/H7/H8-Resolution, `79dce5d`/`3ad75ee` v1.4.34-Asset-Korrektur + Gedächtnis-Sync).
+- **Härtungsrunde 2026-09-06 (kein Release, kein Bump):** 5 parallele Lese-Audits über alle `src/`-Dateien → 7 belegte Fixes in EINEM Commit (`94c7387`, gepusht): Timer-Dispose-Lücke (`manualDragMoveTimer`), invertierter Dispose-Guard in `ApplyPendingManualDragMove`, `UnicastAddresses`-Absicherung (`NetworkAdapterClassifier`), zentrale Exception-Barriere in `RefreshTaskbarIntegration`, Skin-Katalog-I/O (`LoadDefinitions`-Enumeration + Pro-Skin-Load), Export-Zielschutz für komprimierte Archive (`ConflictsWithCompressedUsageArchive` + Smoke-Test), Kalibrierungs-Save-Fehlerbehandlung (neuer i18n-Key `Calibration.SaveAdapterFailed` in DE/EN/RU/zh-Hans). `Run-AllTests.ps1` grün. Nicht umgesetzte (Verhaltens-/Design-/latente) Befunde für künftige Runden: `memory/HANDOVER_20260906_hardening.md`.
+- **Manuelle UI-Abnahmen 1.4.38/1.4.39:** dokumentiert/bestanden (`docs/manual-test-log.md`, Commit `1ef96ce`).
+- Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35), 20260819 (v1.4.36–39) und 20260906 (Härtungsrunde) als Momentaufnahmen.
