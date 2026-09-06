@@ -1,6 +1,6 @@
 # TrafficView — Projektgedächtnis (FACT.md)
 
-Stand: 2026-09-06 — Härtungsrunde abgeschlossen (Commit `94c7387`, kein Release); letztes Release v1.4.39. Session-Überblick in `memory/HANDOVER_20260906_hardening.md`; Release-Stand in `memory/HANDOVER_20260819_v1.4.39.md`.
+Stand: 2026-09-06 — Release v1.4.40 abgeschlossen (Härtungsrunde + Bump). Überblicke: `memory/HANDOVER_20260906_v1.4.40.md` (Release), `memory/HANDOVER_20260906_hardening.md` (Audit-Details).
 
 ## Projekt
 
@@ -121,9 +121,17 @@ partial-Dateien nach Belangen gruppiert: `Monitoring*`, `Rendering*/Rings*/Spark
 - **GitHub-Release:** „TrafficView v1.4.39" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.39), **2 Assets**: `TrafficView_Portable_1.4.39.zip` (507.372 B) + `.zip.sha256` (99 B).
 - **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.39.zip` — SHA-256 `fb62b6cd6540d546f5dcc7a2410e6b9e9ece364e1432f2a05827749ea52e6710` (= `.sha256`), Manifest `version 1.4.39` / `commit bdee35a…` (Build nach Release-Commit).
 
+## Release v1.4.40 (2026-09-06, Härtungs-Release)
+
+- **Inhalt:** Härtungsrunde (5 Lese-Audits über alle src-Dateien) + Bump. Commits: `94c7387` (fix: harden robustness across monitoring, taskbar, skins and usage log — 7 Fixes + Smoke-Test, Details im HANDOVER v1.4.40/hardening) → `47f1b8a` (chore: bump version to 1.4.40; nur 6 Versionsdateien: README, README_EN, Manual.txt, dist/Manual.txt, dist/README.md, AssemblyInfo).
+- **Kurz-Fixes (94c7387):** Timer-Dispose-Lücke `manualDragMoveTimer`; Dispose-Guard-Korrektur `ApplyPendingManualDragMove`; `UnicastAddresses`-Absicherung (`NetworkAdapterClassifier`); Exception-Barriere `RefreshTaskbarIntegration`; Skin-Katalog-Enumeration/Pro-Skin-Load abgesichert; Export-Zielschutz für `*.txt.gz`-Archive + Smoke-Test; Kalibrierungs-Save-Fehlerbehandlung mit neuem i18n-Key `Calibration.SaveAdapterFailed` (DE/EN/RU/zh-Hans).
+- **Tag:** `v1.4.40` (annotiert, „Release v1.4.40") → `47f1b8a`, gepusht.
+- **GitHub-Release:** „TrafficView v1.4.40" (https://github.com/immerzu/TrafficView/releases/tag/v1.4.40), **2 Assets**: `TrafficView_Portable_1.4.40.zip` (507.854 B) + `.zip.sha256` (99 B).
+- **Portable-ZIP:** `F:\001_Coding_Projekte\TrafficView_Moi\01_Ausgabe\TrafficView_Portable_1.4.40.zip` — SHA-256 `73a698c055611ec018401787190615aee119c2beb20ce63fa57eabfd28332101` (= `.sha256`), Manifest `version 1.4.40` / `commit 47f1b8a…` (Build nach Release-Commit).
+
 ## Aktueller Arbeitsbaum (Stand 2026-09-06, verifiziert per Git)
 
-- `main` == `origin/main` == `94c7387` („fix: harden robustness across monitoring, taskbar, skins and usage log"); Arbeitsbaum sauber. HEAD trägt keinen Tag; `v1.4.39` → `bdee35a`; zwischen Tag und HEAD nur Doku-Commits (u. a. `14f138a` H2/H6/H7/H8-Resolution, `79dce5d`/`3ad75ee` v1.4.34-Asset-Korrektur + Gedächtnis-Sync).
-- **Härtungsrunde 2026-09-06 (kein Release, kein Bump):** 5 parallele Lese-Audits über alle `src/`-Dateien → 7 belegte Fixes in EINEM Commit (`94c7387`, gepusht): Timer-Dispose-Lücke (`manualDragMoveTimer`), invertierter Dispose-Guard in `ApplyPendingManualDragMove`, `UnicastAddresses`-Absicherung (`NetworkAdapterClassifier`), zentrale Exception-Barriere in `RefreshTaskbarIntegration`, Skin-Katalog-I/O (`LoadDefinitions`-Enumeration + Pro-Skin-Load), Export-Zielschutz für komprimierte Archive (`ConflictsWithCompressedUsageArchive` + Smoke-Test), Kalibrierungs-Save-Fehlerbehandlung (neuer i18n-Key `Calibration.SaveAdapterFailed` in DE/EN/RU/zh-Hans). `Run-AllTests.ps1` grün. Nicht umgesetzte (Verhaltens-/Design-/latente) Befunde für künftige Runden: `memory/HANDOVER_20260906_hardening.md`.
-- **Manuelle UI-Abnahmen 1.4.38/1.4.39:** dokumentiert/bestanden (`docs/manual-test-log.md`, Commit `1ef96ce`).
-- Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35), 20260819 (v1.4.36–39) und 20260906 (Härtungsrunde) als Momentaufnahmen.
+- `main` == `origin/main` == `47f1b8a` („chore: bump version to 1.4.40"); Arbeitsbaum sauber. HEAD trägt Tag **`v1.4.40`**; darunter Härtungs-Commit `94c7387`, davor nur Doku-Commits (`14f138a` H2/H6/H7/H8-Resolution, `79dce5d`/`3ad75ee` v1.4.34-Asset-Korrektur + Gedächtnis-Sync) bis `v1.4.39` → `bdee35a`.
+- **Härtungsrunde 2026-09-06 (Release v1.4.40):** 7 belegte Fixes (Details oben bzw. `memory/HANDOVER_20260906_hardening.md`); `Run-AllTests.ps1` grün. Nicht umgesetzte (Verhaltens-/Design-/latente) Befunde als Kandidaten für künftige Runden dokumentiert.
+- **Manuelle UI-Abnahmen 1.4.38/1.4.39:** dokumentiert/bestanden (`docs/manual-test-log.md`, Commit `1ef96ce`); für v1.4.40 nicht nötig (keine sichtbaren UI-Änderungen außer neuem Fehlertext in der Kalibrierung).
+- Historisch: HANDOVER-Dateien 20260818 (v1.4.33/34/35), 20260819 (v1.4.36–39) und 20260906 (Härtung + v1.4.40) als Momentaufnahmen.
