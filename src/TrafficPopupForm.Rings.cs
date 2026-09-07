@@ -136,7 +136,7 @@ namespace TrafficView
                     slotSweep - gapAngle);
                 float uploadSweep = Math.Max(
                     MinimumVisibleSegmentSweepDegrees,
-                    gapAngle * 0.82F);
+                    gapAngle);
                 float uploadOffset = downloadSweep + ((gapAngle - uploadSweep) / 2F);
 
                 this.DrawSegmentedProgressSet(
