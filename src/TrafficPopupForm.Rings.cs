@@ -50,12 +50,8 @@ namespace TrafficView
             {
                 int segmentCount = RingSegmentCount;
                 float slotSweep = 360F / segmentCount;
-                float downloadSegmentSweep = Math.Max(
-                    MinimumVisibleSegmentSweepDegrees,
-                    slotSweep - Math.Min(slotSweep * 0.42F, MiniGraphDownloadRingSegmentGapDegrees));
-                float uploadSegmentSweep = Math.Max(
-                    MinimumVisibleSegmentSweepDegrees,
-                    slotSweep - Math.Min(slotSweep * 0.42F, MiniGraphUploadRingSegmentGapDegrees));
+                float downloadSegmentSweep = slotSweep;
+                float uploadSegmentSweep = slotSweep;
                 float gapBetweenRings = Math.Max(this.ScaleFloat(1.0F), strokeWidth * MiniSoftDualRingInnerGapFactor);
                 float downloadWeight = this.GetChannelRingWeight(true);
                 float uploadWeight = this.GetChannelRingWeight(false);
