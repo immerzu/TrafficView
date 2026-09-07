@@ -170,9 +170,7 @@ namespace TrafficView
 
             int miniGraphSegmentCount = this.GetCurrentRingSegmentCount();
             float miniGraphSlotSweep = 360F / miniGraphSegmentCount;
-            float miniGraphSegmentSweep = Math.Max(
-                MinimumVisibleSegmentSweepDegrees,
-                miniGraphSlotSweep - Math.Min(miniGraphSlotSweep * 0.42F, this.GetCurrentRingSegmentGapDegrees()));
+            float miniGraphSegmentSweep = miniGraphSlotSweep;
             float classicGapBetweenRings = Math.Max(this.ScaleFloat(1.0F), strokeWidth * MiniGraphDualRingInnerGapFactor);
             float classicTotalWeight = MiniGraphDownloadRingWeight + MiniGraphUploadRingWeight;
             float classicUsableBand = Math.Max(2.4F, strokeWidth - classicGapBetweenRings);
